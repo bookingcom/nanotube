@@ -8,16 +8,17 @@ import (
 
 	"nanotube/pkg/metrics"
 	"nanotube/pkg/rec"
+	"nanotube/pkg/rewrites"
 	"nanotube/pkg/rules"
 	"nanotube/pkg/target"
 )
 
 // Process contains all the CPU-intensive processing operations
-func Process(queue <-chan string, rules rules.Rules, workerPoolSize uint16, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
+func Process(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for w := 1; w <= int(workerPoolSize); w++ {
-		go worker(&wg, queue, rules, shouldValidate, shouldLog, lg, metrics)
+		go worker(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 		wg.Add(1)
 	}
 	go func() {
@@ -28,14 +29,41 @@ func Process(queue <-chan string, rules rules.Rules, workerPoolSize uint16, shou
 	return done
 }
 
-func worker(wg *sync.WaitGroup, queue <-chan string, rules rules.Rules, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
+func worker(wg *sync.WaitGroup, queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	defer wg.Done()
 	for j := range queue {
-		proc(&j, rules, shouldValidate, shouldLog, lg, metrics)
+		proc(&j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 	}
 }
 
-func proc(s *string, rules rules.Rules, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
+func pushRec(rec *rec.Rec, rules rules.Rules, lg *zap.Logger, metrics *metrics.Prom) {
+	pushedTo := make(map[*target.Cluster]struct{})
+
+	for _, rl := range rules {
+		matchedRule := rl.Match(rec)
+		if matchedRule {
+			for _, cl := range rl.Targets {
+				if _, pushedBefore := pushedTo[cl]; pushedBefore {
+					continue
+				}
+				err := cl.Push(rec, metrics)
+				if err != nil {
+					lg.Error("push to cluster failed",
+						zap.Error(err),
+						zap.String("cluster", cl.Name),
+						zap.String("record", *rec.Serialize()))
+				}
+				pushedTo[cl] = struct{}{}
+			}
+		}
+
+		if matchedRule && !rl.Continue {
+			break
+		}
+	}
+}
+
+func proc(s *string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	r, err := rec.ParseRec(*s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record", *s), zap.Error(err))
@@ -43,32 +71,15 @@ func proc(s *string, rules rules.Rules, shouldNormalize bool, shouldLog bool, lg
 		return
 	}
 
-	pushedTo := make(map[*target.Cluster]struct{})
-
-	for _, rl := range rules {
-		matchedRules := false
-		for _, re := range rl.CompiledRE {
-			if re.MatchString(r.Path) {
-				matchedRules = true
-				for _, cl := range rl.Targets {
-					if _, pushedBefore := pushedTo[cl]; pushedBefore {
-						continue
-					}
-					err = cl.Push(r, metrics)
-					if err != nil {
-						lg.Error("push to cluster failed",
-							zap.Error(err),
-							zap.String("cluster", cl.Name),
-							zap.String("record", *r.Serialize()))
-					}
-					pushedTo[cl] = struct{}{}
-				}
-				// if one regex in the group matches, move to next rule
-				break
-			}
-		}
-		if matchedRules && !rl.Continue {
-			break
-		}
+	recs, err := rewrites.RewriteMetric(r)
+	if err != nil {
+		//even if we get error here, we should still receive back original record
+		lg.Info("Error rewriting metric", zap.String("record", *s), zap.Error(err))
 	}
+
+	for _, rec := range recs {
+		pushRec(rec, rules, lg, metrics)
+	}
+
+	// TO DO: counter for dropped metrics
 }
