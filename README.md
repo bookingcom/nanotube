@@ -1,7 +1,7 @@
 Nanotube: data router for Graphite
 =================================
 
-This is the router (or relay, or reverse-proxy) for Graphite. It routes incoming records according to the specified rules. Nanotube is designed for high-load systems. It is used at Booking.com to route up to 400k incoming and 1.2M outgoing records/sec on a single box.
+This is the router (or relay, or reverse-proxy) for Graphite. It routes incoming records according to the specified rules. Nanotube is designed for high-load systems. It is used at Booking.com to route up to `400k` incoming and `1.2M` outgoing records/sec on a single box.
 
 Record structure
 ----------------
