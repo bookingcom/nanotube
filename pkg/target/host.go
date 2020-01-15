@@ -178,5 +178,7 @@ func (h *Host) Connect() {
 
 	h.Conn = conn
 
+	h.Wm.Lock()
+	defer h.Wm.Unlock()
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
 }
