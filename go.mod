@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/burntsushi/toml v0.3.1
+	github.com/cespare/xxhash v1.1.0
 	github.com/dgryski/go-jump v0.0.0-20170409065014-e1f439676b57
 	github.com/google/go-cmp v0.3.0
 	github.com/pkg/errors v0.8.1

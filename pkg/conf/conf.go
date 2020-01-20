@@ -20,6 +20,7 @@ type Main struct {
 	IncomingConnIdleTimeoutSec uint32
 	SendTimeoutSec             uint32
 	OutConnTimeoutSec          uint32
+	KeepAliveSec               uint32
 	TermTimeoutSec             uint16
 	// 0 value turns off buffering
 	TCPOutBufSize int

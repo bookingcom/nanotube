@@ -17,6 +17,7 @@ type Clusters struct {
 // JumpCluster distributes the incoming datapoints between hosts according to
 // fnv1a hasing following by the jump one. Every record is sent to only one host.
 const JumpCluster string = "jump"
+const LB string = "lb"
 
 // ToallCluster broadcasts records to all hosts in the cluster.
 const ToallCluster string = "toall"

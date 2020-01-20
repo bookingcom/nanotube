@@ -8,17 +8,26 @@ import (
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
 
+	"github.com/cespare/xxhash"
 	"github.com/dgryski/go-jump"
 	"github.com/pkg/errors"
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
+type HostStatus struct {
+	Host   *Host
+	Status bool
+}
+
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
 type Cluster struct {
 	Name string
 	// Are ordered by index
-	Hosts []*Host
-	Type  string
+	Hosts                  []*Host
+	AvailableHosts         []*Host
+	Hm                     sync.Mutex
+	Type                   string
+	UpdateHostHealthStatus chan *HostStatus
 }
 
 // Push sends single record to cluster. Routing happens based on cluster type.
@@ -47,6 +56,15 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 		return []*Host{
 			cl.Hosts[jumpHash(path, len(cl.Hosts))],
 		}, nil
+	case conf.LB:
+		cl.Hm.Lock()
+		defer cl.Hm.Unlock()
+		if len(cl.AvailableHosts) == 0 {
+			return nil, fmt.Errorf("no available hosts left")
+		}
+		return []*Host{
+			cl.AvailableHosts[int(xxhash.Sum64([]byte(path)))%len(cl.AvailableHosts)],
+		}, nil
 	case conf.ToallCluster:
 		return cl.Hosts, nil
 	case conf.BlackholeCluster:
@@ -59,14 +77,16 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 // Send starts continuous process of sending data to hosts in the cluster.
 // The sending is stopped on demand.
 func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
+	go cl.keepAvailableHostsUpdated()
 	// launch streaming on all hosts and wait until it's finished
 	go func() {
 		defer cwg.Done()
 
 		var wg sync.WaitGroup
 		wg.Add(len(cl.Hosts))
+
 		for _, h := range cl.Hosts {
-			go h.Stream(&wg)
+			go h.Stream(&wg, cl.UpdateHostHealthStatus)
 		}
 
 		wg.Wait()
@@ -78,6 +98,48 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 			close(h.Ch)
 		}
 	}()
+}
+
+func (cl *Cluster) removeAvailableHost(host *Host) {
+	for i, h := range cl.AvailableHosts {
+		if h.Name == host.Name {
+			cl.Hm.Lock()
+			defer cl.Hm.Unlock()
+			length := len(cl.AvailableHosts)
+
+			for j := i; j < length-2; j++ {
+				cl.AvailableHosts[i] = cl.AvailableHosts[i+1]
+			}
+			cl.AvailableHosts = cl.AvailableHosts[:length-1]
+
+			break
+		}
+	}
+}
+
+func (cl *Cluster) addAvailableHost(host *Host) {
+	cl.Hm.Lock()
+	defer cl.Hm.Unlock()
+	for _, h := range cl.AvailableHosts {
+		if h.Name == host.Name {
+			return
+		}
+	}
+	cl.AvailableHosts = append(cl.AvailableHosts, host)
+}
+
+func (cl *Cluster) keepAvailableHostsUpdated() {
+	for {
+		h := <-cl.UpdateHostHealthStatus
+		if cl.Type != conf.LB {
+			continue
+		}
+		if h.Status == false {
+			cl.removeAvailableHost(h.Host)
+		} else {
+			cl.addAvailableHost(h.Host)
+		}
+	}
 }
 
 // hashing for the rind of hosts in a cluster based on the record path

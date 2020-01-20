@@ -22,6 +22,7 @@ type Host struct {
 	// TODO (grzkv): Replace w/ circular buffer
 	Ch   chan *rec.Rec
 	Conn net.Conn
+	Cm   sync.RWMutex
 
 	W    *bufio.Writer
 	Wm   sync.Mutex
@@ -78,43 +79,24 @@ func (h *Host) Push(r *rec.Rec) {
 
 // Stream launches the the sending to target host.
 // Exits when queue is closed and sending is finished.
-func (h *Host) Stream(wg *sync.WaitGroup) {
+func (h *Host) Stream(wg *sync.WaitGroup, updateHostHealthStatus chan *HostStatus) {
 	// TODO (grzkv) Maybe move (re)connection to a separate goroutine and communicate via a chan
 
 	if h.TCPOutBufFlushPeriodSec != 0 {
-		go h.Flush(time.Second * time.Duration(h.TCPOutBufFlushPeriodSec))
+		go h.Flush(time.Second*time.Duration(h.TCPOutBufFlushPeriodSec), updateHostHealthStatus)
 	}
 	defer func() {
 		wg.Done()
 		close(h.stop)
 	}()
 
+	go h.maintainHostConnection(updateHostHealthStatus)
+
 	for r := range h.Ch {
 		// retry until successful
-		for {
-			const maxReconnectPeriodMs = 5000
-			const reconnectDeltaMs = 10
-			for reconnectWait := 0; h.Conn == nil; {
-				time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-				if reconnectWait < maxReconnectPeriodMs {
-					reconnectWait = reconnectWait*2 + reconnectDeltaMs
-				}
-				if reconnectWait >= maxReconnectPeriodMs {
-					reconnectWait = maxReconnectPeriodMs
-				}
-
-				h.Connect()
-			}
-
-			err := h.Conn.SetWriteDeadline(time.Now().Add(
-				time.Duration(h.SendTimeoutSec) * time.Second))
-			if err != nil {
-				h.Lg.Warn("error setting write deadline. Renewing the connection.",
-					zap.Error(err))
-			}
-
+		for h.getHostConnection() != nil {
 			// this may loose one record on disconnect
-			_, err = h.Write([]byte(*r.Serialize()))
+			_, err := h.Write([]byte(*r.Serialize()))
 
 			if err == nil {
 				h.outRecs.Inc()
@@ -134,7 +116,8 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 					zap.Error(err))
 			}
 
-			h.Conn = nil
+			h.updateHostConnection(nil)
+			h.updateHostHealthStatus(updateHostHealthStatus, false)
 		}
 	}
 }
@@ -145,7 +128,7 @@ func (h *Host) Write(b []byte) (nn int, err error) {
 	return h.W.Write(b)
 }
 
-func (h *Host) Flush(d time.Duration) {
+func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 	t := time.NewTicker(d)
 	defer t.Stop()
 
@@ -156,7 +139,10 @@ func (h *Host) Flush(d time.Duration) {
 		case <-t.C:
 			h.Wm.Lock()
 			if h.W != nil {
-				h.W.Flush()
+				err := h.W.Flush()
+				if err != nil && h.getHostConnection() == nil {
+					h.updateHostHealthStatus(updateHostHealthStatus, false)
+				}
 			}
 			h.Wm.Unlock()
 		}
@@ -164,21 +150,64 @@ func (h *Host) Flush(d time.Duration) {
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
-func (h *Host) Connect() {
+func (h *Host) Connect(updateHostHealthStatus chan *HostStatus) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port),
 		time.Duration(h.ConnTimeoutSec)*time.Second)
 	if err != nil {
 		h.Lg.Warn("connection to host failed",
 			zap.String("host", h.Name),
 			zap.Uint16("port", h.Port))
-		h.Conn = nil
+		h.updateHostConnection(nil)
+		h.updateHostHealthStatus(updateHostHealthStatus, false)
 
 		return
 	}
 
-	h.Conn = conn
+	h.updateHostConnection(conn)
+	h.updateHostHealthStatus(updateHostHealthStatus, true)
 
 	h.Wm.Lock()
 	defer h.Wm.Unlock()
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
+}
+
+func (h *Host) updateHostHealthStatus(updateHostHealthStatus chan *HostStatus, status bool) {
+	updateHostHealthStatus <- &HostStatus{Host: h, Status: status}
+}
+
+func (h *Host) updateHostConnection(conn net.Conn) {
+	h.Cm.Lock()
+	defer h.Cm.Unlock()
+	h.Conn = conn
+}
+
+func (h *Host) getHostConnection() net.Conn {
+	h.Cm.RLock()
+	defer h.Cm.RUnlock()
+	return h.Conn
+}
+
+func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
+	const maxReconnectPeriodMs = 5000
+	const reconnectDeltaMs = 10
+	for {
+		for reconnectWait := 0; h.getHostConnection() == nil; {
+			time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
+			if reconnectWait < maxReconnectPeriodMs {
+				reconnectWait = reconnectWait*2 + reconnectDeltaMs
+			}
+			if reconnectWait >= maxReconnectPeriodMs {
+				reconnectWait = maxReconnectPeriodMs
+			}
+
+			h.Connect(updateHostHealthStatus)
+		}
+
+		err := h.Conn.SetWriteDeadline(time.Now().Add(
+			time.Duration(h.SendTimeoutSec) * time.Second))
+		if err != nil {
+			h.Lg.Warn("error setting write deadline. Renewing the connection.",
+				zap.Error(err))
+		}
+	}
 }
