@@ -81,5 +81,5 @@ func proc(s *string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormal
 		routeRec(rec, rules, lg, metrics)
 	}
 
-	// TO DO: counter for dropped metrics
+	// TODO: counter for dropped metrics
 }
