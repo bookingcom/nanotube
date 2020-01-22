@@ -61,22 +61,20 @@ func (rw Rewrites) RewriteMetric(record *rec.Rec) ([]*rec.Rec, error) {
 	result := []*rec.Rec{record}
 
 	for _, r := range rw {
-		newPath := r.CompiledFrom.ReplaceAllString(record.Path, r.To)
-		if newPath == record.Path {
-			// no replacement made, move along
-			continue
-		}
+		if r.CompiledFrom.MatchString(record.Path) {
+			newPath := r.CompiledFrom.ReplaceAllString(record.Path, r.To)
+			if r.Copy {
+				// keep both old and new value
+				copy := record.Copy()
+				copy.Path = newPath
 
-		if r.Copy {
-			// keep both old and new value
-			copy := record.Copy()
-			copy.Path = newPath
-
-			result = append(result, copy)
-		} else {
-			// no copy, rewrite
-			record.Path = newPath
+				result = append(result, copy)
+			} else {
+				// no copy, rewrite
+				record.Path = newPath
+			}
 		}
 	}
 	return result, nil
+
 }
