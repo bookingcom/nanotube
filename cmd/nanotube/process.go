@@ -36,7 +36,7 @@ func worker(wg *sync.WaitGroup, queue <-chan string, rules rules.Rules, rewrites
 	}
 }
 
-func pushRec(rec *rec.Rec, rules rules.Rules, lg *zap.Logger, metrics *metrics.Prom) {
+func routeRec(rec *rec.Rec, rules rules.Rules, lg *zap.Logger, metrics *metrics.Prom) {
 	pushedTo := make(map[*target.Cluster]struct{})
 
 	for _, rl := range rules {
@@ -78,7 +78,7 @@ func proc(s *string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormal
 	}
 
 	for _, rec := range recs {
-		pushRec(rec, rules, lg, metrics)
+		routeRec(rec, rules, lg, metrics)
 	}
 
 	// TO DO: counter for dropped metrics
