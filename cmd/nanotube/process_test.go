@@ -3,6 +3,7 @@ package main
 import (
 	"nanotube/pkg/conf"
 	"nanotube/pkg/metrics"
+	"nanotube/pkg/rewrites"
 	"nanotube/pkg/rules"
 	"nanotube/pkg/target"
 	"testing"
@@ -77,18 +78,19 @@ func BenchmarkProcess(b *testing.B) {
 		},
 	}
 
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	err := rules.Compile()
 	if err != nil {
 		b.Fatalf("rules compilation failed: %v", err)
 	}
-
-	lg := zap.NewNop()
-
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	var emptyRewrites rewrites.Rewrites
 	for i := 0; i < b.N; i++ {
 		s := "abc 123 123"
-		proc(&s, rules, true, true, lg, ms)
+		proc(&s, rules, emptyRewrites, true, false, lg, ms)
 	}
 }
 
@@ -136,17 +138,19 @@ func TestContinueRuleProcessing(t *testing.T) {
 		},
 	}
 
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	err := rules.Compile()
 	if err != nil {
 		t.Fatalf("rules compilation failed: %v", err)
 	}
-
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
 	queue <- testMetric
-	done := Process(queue, rules, 1, true, true, lg, ms)
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 2 {
@@ -197,20 +201,119 @@ func TestStopRuleProcessing(t *testing.T) {
 		},
 	}
 
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	err := rules.Compile()
 	if err != nil {
 		t.Fatalf("rules compilation failed: %v", err)
 	}
-
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
 	queue <- testMetric
-	done := Process(queue, rules, 1, true, true, lg, ms)
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 1 {
+		t.Fatal("Error processing rules")
+	}
+}
+
+func TestRewriteNoCopy(t *testing.T) {
+	testMetric := "ab.c 123 123"
+	cls := target.Clusters{
+		"1": &target.Cluster{
+			Name: "1",
+			Type: conf.BlackholeCluster,
+		},
+	}
+
+	rules := rules.Rules{
+		rules.Rule{
+			Regexs: []string{
+				"de",
+			},
+			Targets: []*target.Cluster{cls["1"]}},
+	}
+
+	rewrites := rewrites.Rewrites{
+		rewrites.Rewrite{
+			From: "ab.c",
+			To:   "de",
+			Copy: false,
+		},
+	}
+
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
+	err := rules.Compile()
+	if err != nil {
+		t.Fatalf("rules compilation failed: %v", err)
+	}
+	err = rewrites.Compile()
+	if err != nil {
+		t.Fatalf("rewrite rules compilation failed: %v", err)
+	}
+	queue := make(chan string, 1)
+	queue <- testMetric
+	done := Process(queue, rules, rewrites, 1, true, true, lg, ms)
+	close(queue)
+	<-done
+	if testutil.ToFloat64(ms.BlackholedRecs) != 1 {
+		t.Fatal("Error processing rules")
+	}
+}
+
+func TestRewriteCopy(t *testing.T) {
+	testMetric := "ab.c 123 123"
+	cls := target.Clusters{
+		"1": &target.Cluster{
+			Name: "1",
+			Type: conf.BlackholeCluster,
+		},
+	}
+
+	rules := rules.Rules{
+		rules.Rule{
+			Regexs: []string{
+				"de",
+				"ab.c",
+			},
+			Targets: []*target.Cluster{cls["1"]}},
+	}
+
+	rewrites := rewrites.Rewrites{
+		rewrites.Rewrite{
+			From: "ab.c",
+			To:   "de",
+			Copy: true,
+		},
+	}
+
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
+	err := rules.Compile()
+	if err != nil {
+		t.Fatalf("rules compilation failed: %v", err)
+	}
+	err = rewrites.Compile()
+	if err != nil {
+		t.Fatalf("rewrite rules compilation failed: %v", err)
+	}
+	queue := make(chan string, 1)
+	queue <- testMetric
+	done := Process(queue, rules, rewrites, 1, true, true, lg, ms)
+	close(queue)
+	<-done
+	if testutil.ToFloat64(ms.BlackholedRecs) != 2 {
 		t.Fatal("Error processing rules")
 	}
 }

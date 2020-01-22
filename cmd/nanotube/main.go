@@ -8,6 +8,7 @@ import (
 	"log"
 	"nanotube/pkg/conf"
 	"nanotube/pkg/metrics"
+	"nanotube/pkg/rewrites"
 	"nanotube/pkg/rules"
 	"nanotube/pkg/target"
 	"os"
@@ -38,14 +39,14 @@ func main() {
 		}
 	}()
 
-	cfgPath, clPath, rulesPath, validateConfig, versionInfo := parseFlags()
+	cfgPath, clPath, rulesPath, rewritesPath, validateConfig, versionInfo := parseFlags()
 
 	if versionInfo {
 		fmt.Println(version)
 		return
 	}
 
-	cfg, clusters, rules, ms := loadBuildRegister(cfgPath, clPath, rulesPath, lg)
+	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath, lg)
 
 	if validateConfig {
 		return
@@ -74,7 +75,7 @@ func main() {
 	}
 
 	gaugeQueues(queue, clusters, ms)
-	procDone := Process(queue, rules, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
+	procDone := Process(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
 	done := clusters.Send(procDone)
 
 	// SIGTERM gracefully terminates with timeout
@@ -98,10 +99,11 @@ func main() {
 	}
 }
 
-func parseFlags() (string, string, string, bool, bool) {
+func parseFlags() (string, string, string, string, bool, bool) {
 	cfgPath := flag.String("config", "", "Path to config file.")
 	clPath := flag.String("clusters", "", "Path to clusters file.")
 	rulesPath := flag.String("rules", "", "Path to rules file.")
+	rewritesPath := flag.String("rewrites", "", "Path to rewrites file.")
 	testConfig := flag.Bool("validate", false, "Validate configuration files.")
 	versionInfo := flag.Bool("version", false, "Print version info.")
 
@@ -109,7 +111,7 @@ func parseFlags() (string, string, string, bool, bool) {
 
 	// if --version is specified, only print the version, nothing else matters
 	if *versionInfo {
-		return *cfgPath, *clPath, *rulesPath, *testConfig, true
+		return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, true
 	}
 
 	if cfgPath == nil || *cfgPath == "" {
@@ -122,11 +124,11 @@ func parseFlags() (string, string, string, bool, bool) {
 		log.Fatal("rules file not specified")
 	}
 
-	return *cfgPath, *clPath, *rulesPath, *testConfig, false
+	return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, false
 }
 
-func loadBuildRegister(cfgPath, clPath, rulesPath string,
-	lg *zap.Logger) (conf.Main, target.Clusters, rules.Rules, *metrics.Prom) {
+func loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath string,
+	lg *zap.Logger) (conf.Main, target.Clusters, rules.Rules, rewrites.Rewrites, *metrics.Prom) {
 
 	bs, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
@@ -167,7 +169,23 @@ func loadBuildRegister(cfgPath, clPath, rulesPath string,
 		log.Fatalf("error while compiling rules: %v", err)
 	}
 
-	return cfg, clusters, rules, ms
+	var rewriteRules rewrites.Rewrites
+	if rewritesPath != "" {
+		bs, err := ioutil.ReadFile(rewritesPath)
+		if err != nil {
+			log.Fatalf("error reading rewrites config: %v", err)
+		}
+		rewritesConf, err := conf.ReadRewrites(bytes.NewReader(bs))
+		if err != nil {
+			log.Fatalf("error reading rewrites config: %v", err)
+		}
+		rewriteRules, err = rewrites.Build(rewritesConf)
+		if err != nil {
+			log.Fatalf("error while building rewrites: %v", err)
+		}
+	}
+
+	return cfg, clusters, rules, rewriteRules, ms
 }
 
 // gaugeQueue starts and maintains a goroutine to measure the main queue size.

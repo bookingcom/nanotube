@@ -4,7 +4,9 @@ package rules
 import (
 	"fmt"
 	"nanotube/pkg/conf"
+	"nanotube/pkg/rec"
 	"nanotube/pkg/target"
+
 	"regexp"
 
 	"github.com/pkg/errors"
@@ -26,7 +28,8 @@ func Build(crs conf.Rules, clusters target.Clusters) (Rules, error) {
 	var rs Rules
 	for _, cr := range crs.Rule {
 		r := Rule{
-			Regexs: cr.Regexs,
+			Regexs:   cr.Regexs,
+			Continue: cr.Continue,
 		}
 		for _, clName := range cr.Clusters {
 			cl, ok := clusters[clName]
@@ -37,7 +40,6 @@ func Build(crs conf.Rules, clusters target.Clusters) (Rules, error) {
 			}
 			r.Targets = append(r.Targets, cl)
 		}
-		r.Continue = cr.Continue
 
 		rs = append(rs, r)
 	}
@@ -64,4 +66,14 @@ func (rs Rules) Compile() error {
 	}
 
 	return nil
+}
+
+// Match a record with any of the rule regexps
+func (rl Rule) Match(r *rec.Rec) bool {
+	for _, re := range rl.CompiledRE {
+		if re.MatchString(r.Path) {
+			return true
+		}
+	}
+	return false
 }

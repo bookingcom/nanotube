@@ -77,6 +77,12 @@ func (r *Rec) Serialize() *string {
 	return &s
 }
 
+// Copy record
+func (r *Rec) Copy() *Rec {
+	ret := *r
+	return &ret
+}
+
 // normalizePath does path normalization as described in the docs.
 // It happens in one linear pass along the string. Pointers are used for input and output to save time on data copying.
 func normalizePath(s *string) *string {

@@ -45,15 +45,16 @@ func setup(t *testing.T) {
 	cfgPath := filepath.Join(fixturesPath, "config.toml")
 	clPath := filepath.Join(fixturesPath, "clusters.toml")
 	rulesPath := filepath.Join(fixturesPath, "rules.toml")
+	rewritesPath := filepath.Join(fixturesPath, "rewrites.toml")
 
-	cfg, clusters, rules, ms := loadBuildRegister(cfgPath, clPath, rulesPath, lg)
+	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath, lg)
 
 	term := make(chan struct{})
 	pipe, err := Listen(&cfg, term, lg, ms)
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}
-	done := Process(pipe, rules, cfg.WorkerPoolSize, true, true, lg, ms)
+	done := Process(pipe, rules, rewrites, cfg.WorkerPoolSize, true, true, lg, ms)
 	_ = clusters.Send(done)
 }
 
