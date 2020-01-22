@@ -58,8 +58,7 @@ func (rw Rewrites) Compile() error {
 // RewriteMetric executes all rewrite rules on a record
 // If copy is true and rule matches, we generate new record
 func (rw Rewrites) RewriteMetric(record *rec.Rec) ([]*rec.Rec, error) {
-	result := make([]*rec.Rec, 1)
-	result[0] = record
+	result := []*rec.Rec{record}
 
 	for _, r := range rw {
 		newPath := r.CompiledFrom.ReplaceAllString(record.Path, r.To)
