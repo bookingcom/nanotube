@@ -71,11 +71,7 @@ func proc(s *string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormal
 		return
 	}
 
-	recs, err := rewrites.RewriteMetric(r)
-	if err != nil {
-		//even if we get error here, we should still receive back original record
-		lg.Info("Error rewriting metric", zap.String("record", *s), zap.Error(err))
-	}
+	recs := rewrites.RewriteMetric(r)
 
 	for _, rec := range recs {
 		routeRec(rec, rules, lg, metrics)

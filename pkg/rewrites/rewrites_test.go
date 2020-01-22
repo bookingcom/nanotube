@@ -52,10 +52,7 @@ func TestRewrites(t *testing.T) {
 		record := &rec.Rec{
 			Path: test.in,
 		}
-		resultRecords, err := rewrites.RewriteMetric(record)
-		if err != nil {
-			t.Error(err)
-		}
+		resultRecords := rewrites.RewriteMetric(record)
 		result := make([]string, 0)
 		for _, rec := range resultRecords {
 			result = append(result, rec.Path)

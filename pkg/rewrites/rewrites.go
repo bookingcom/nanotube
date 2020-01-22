@@ -57,7 +57,7 @@ func (rw Rewrites) Compile() error {
 
 // RewriteMetric executes all rewrite rules on a record
 // If copy is true and rule matches, we generate new record
-func (rw Rewrites) RewriteMetric(record *rec.Rec) ([]*rec.Rec, error) {
+func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
 	result := []*rec.Rec{record}
 
 	for _, r := range rw {
@@ -75,6 +75,6 @@ func (rw Rewrites) RewriteMetric(record *rec.Rec) ([]*rec.Rec, error) {
 			}
 		}
 	}
-	return result, nil
+	return result
 
 }
