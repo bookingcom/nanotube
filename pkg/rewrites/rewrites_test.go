@@ -23,6 +23,11 @@ func TestRewrites(t *testing.T) {
 					To:   "acd",
 					Copy: true,
 				},
+				{
+					From: "gh([A-Za-z0-9_-]+)",
+					To:   "[[$1]]",
+					Copy: false,
+				},
 			},
 		},
 	}
@@ -41,6 +46,11 @@ func TestRewrites(t *testing.T) {
 			rewrites: "first",
 			in:       "def",
 			out:      []string{"def", "acd"},
+		},
+		{
+			rewrites: "first",
+			in:       "ghtesttesttest",
+			out:      []string{"[[testtesttest]]"},
 		},
 	}
 
