@@ -1,11 +1,11 @@
 package main
 
 import (
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
-	"nanotube/pkg/rewrites"
-	"nanotube/pkg/rules"
-	"nanotube/pkg/target"
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rewrites"
+	"github.com/bookingcom/nanotube/pkg/rules"
+	"github.com/bookingcom/nanotube/pkg/target"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"

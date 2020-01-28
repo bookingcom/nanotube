@@ -6,11 +6,11 @@ import (
 
 	"go.uber.org/zap"
 
-	"nanotube/pkg/metrics"
-	"nanotube/pkg/rec"
-	"nanotube/pkg/rewrites"
-	"nanotube/pkg/rules"
-	"nanotube/pkg/target"
+	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rec"
+	"github.com/bookingcom/nanotube/pkg/rewrites"
+	"github.com/bookingcom/nanotube/pkg/rules"
+	"github.com/bookingcom/nanotube/pkg/target"
 )
 
 // Process contains all the CPU-intensive processing operations

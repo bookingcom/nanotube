@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
-	"nanotube/pkg/rec"
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rec"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
