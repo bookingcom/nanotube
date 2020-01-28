@@ -1,7 +1,12 @@
 version: "3"
 
 services:
-  go-carbon:
+  go-carbon-0:
+    build:
+      dockerfile: docker/go-carbon/Dockerfile
+      context: .
+
+  go-carbon-1:
     build:
       dockerfile: docker/go-carbon/Dockerfile
       context: .
@@ -23,7 +28,8 @@ services:
       - "7000:7000"
       - "8000:8000"
     links:
-      - go-carbon
+      - go-carbon-0
+      - go-carbon-1
 
   nanotube:
     build:

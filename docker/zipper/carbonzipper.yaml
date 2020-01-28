@@ -44,7 +44,8 @@ expireDelaySec: 120
 backendsByCluster:
     - name: "sys"
       backends:
-      - "http://go-carbon:8080"
+      - "http://go-carbon-0:8080"
+      - "http://go-carbon-1:8080"
 
 #backends:
 #    - "http://go-carbon:8080"

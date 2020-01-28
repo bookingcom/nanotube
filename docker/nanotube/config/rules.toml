@@ -9,9 +9,17 @@
 
 [[rule]]
     regexs = [
+        ".*test.*"
+    ]
+    clusters = [
+        "carbon0"
+    ]
+    continue = true
+
+[[rule]]
+    regexs = [
         ".*"
     ]
     clusters = [
-        "a34000"
+        "carbon1"
     ]
-    continue = true
