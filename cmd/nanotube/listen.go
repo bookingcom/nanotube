@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
 	"net"
 	"sync"
 	"time"

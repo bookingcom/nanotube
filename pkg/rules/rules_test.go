@@ -3,9 +3,9 @@ package rules
 import (
 	"testing"
 
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
-	"nanotube/pkg/target"
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/target"
 
 	"go.uber.org/zap"
 )
