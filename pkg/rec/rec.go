@@ -72,8 +72,21 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 // Serialize makes record into a string ready to be sent via TCP w/ line protocol.
 func (r *Rec) Serialize() *string {
 	// TODO (grzkv): serialization can be avoided in case there is no normalization
-	// TODO (grzkv): this may not be the fastest way to concatenate
-	s := fmt.Sprintf("%s %s %s\n", r.Path, r.RawVal, r.RawTime)
+
+	var b strings.Builder
+	l := 3 // two spaces, one newline
+	l += len(r.Path) + len(r.RawVal) + len(r.RawTime)
+	b.Grow(l)
+
+	// ```<path> <val> <time>\n```
+	b.WriteString(r.Path)
+	b.WriteRune(' ')
+	b.WriteString(r.RawVal)
+	b.WriteRune(' ')
+	b.WriteString(r.RawTime)
+	b.WriteRune('\n')
+	s := b.String()
+
 	return &s
 }
 
