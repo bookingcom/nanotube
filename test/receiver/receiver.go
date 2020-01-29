@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"nanotube/test/stats"
+	"github.com/bookingcom/nanotube/test/stats"
 )
 
 func parsePorts(portsStr string) []int {

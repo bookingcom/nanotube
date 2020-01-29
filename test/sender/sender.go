@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"nanotube/test/stats"
+	"github.com/bookingcom/nanotube/test/stats"
 
 	"go.uber.org/ratelimit"
 )
