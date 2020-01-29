@@ -61,7 +61,7 @@ As many netcat implementations exist, a parameter may be needed to instruct nc t
 get it back with:
 
 ```
-seq 8080 8081 | xargs -I {port} curl "localhost:{port}/render/?target=test1.test&format=json&from=$(expr $(date +%s) - 300)&until=$(date +%s)"
+seq 8080 8081 | xargs -I {port} curl "localhost:{port}/render/?target=test1.test&format=json&from=$(( $(date +%s) - 300 ))&until=$(date +%s)"
 ```
 
 To test the second store (alone or in conjunction) change the metric path to test2.test or test1.test2
