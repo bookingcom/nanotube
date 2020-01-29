@@ -3,11 +3,11 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
+
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/rec"
 	"github.com/bookingcom/nanotube/pkg/target"
-
-	"regexp"
 
 	"github.com/pkg/errors"
 )

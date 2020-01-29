@@ -1,4 +1,4 @@
-module nanotube
+module github.com/bookingcom/nanotube
 
 go 1.12
 
