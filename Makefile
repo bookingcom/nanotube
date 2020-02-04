@@ -1,7 +1,7 @@
 export GO111MODULE=on
 
 all:
-	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" nanotube/cmd/nanotube
+	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
 .PHONY: test
 test:
