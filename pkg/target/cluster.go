@@ -17,6 +17,7 @@ import (
 type HostStatus struct {
 	Host   *Host
 	Status bool
+	sigCh  chan struct{}
 }
 
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
@@ -77,7 +78,6 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 // Send starts continuous process of sending data to hosts in the cluster.
 // The sending is stopped on demand.
 func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
-	go cl.keepAvailableHostsUpdated()
 	// launch streaming on all hosts and wait until it's finished
 	go func() {
 		defer cwg.Done()
@@ -134,11 +134,16 @@ func (cl *Cluster) keepAvailableHostsUpdated() {
 		if cl.Type != conf.LB {
 			continue
 		}
-		if h.Status == false {
-			cl.removeAvailableHost(h.Host)
-		} else {
-			cl.addAvailableHost(h.Host)
-		}
+		cl.updateHostAvailability(*h)
+	}
+}
+
+func (cl *Cluster) updateHostAvailability(h HostStatus) {
+	defer close(h.sigCh)
+	if h.Status == false {
+		cl.removeAvailableHost(h.Host)
+	} else {
+		cl.addAvailableHost(h.Host)
 	}
 }
 

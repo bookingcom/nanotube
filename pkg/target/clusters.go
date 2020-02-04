@@ -46,6 +46,7 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 			Name:                   cc.Name,
 			UpdateHostHealthStatus: make(chan *HostStatus),
 		}
+		go cl.keepAvailableHostsUpdated()
 		switch cc.Type {
 		case conf.JumpCluster:
 			cl, err = getJumpCluster(cl, cc, mainCfg, lg, ms)
