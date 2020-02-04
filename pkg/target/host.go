@@ -172,7 +172,7 @@ func (h *Host) Connect(updateHostHealthStatus chan *HostStatus) {
 }
 
 func (h *Host) updateHostHealthStatus(updateHostHealthStatus chan *HostStatus, status bool) {
-	updateHostHealthStatus <- &HostStatus{Host: h, Status: status}
+	updateHostHealthStatus <- &HostStatus{Host: h, Status: status, sigCh: make(chan struct{})}
 }
 
 func (h *Host) updateHostConnection(conn net.Conn) {
