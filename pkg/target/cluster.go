@@ -121,7 +121,7 @@ func (cl *Cluster) addAvailableHost(host *Host) {
 	cl.Hm.Lock()
 	defer cl.Hm.Unlock()
 	for _, h := range cl.AvailableHosts {
-		if h.Name == host.Name {
+		if h.Name == host.Name && host.Port == h.Port {
 			return
 		}
 	}
