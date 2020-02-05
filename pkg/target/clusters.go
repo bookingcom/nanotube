@@ -55,7 +55,7 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 			for _, h := range cc.Hosts {
 				host := NewHost(cc.Name, mainCfg, h, lg, ms)
 				cl.Hosts = append(cl.Hosts, host)
-				host.Connect(cl.UpdateHostHealthStatus)
+				host.Connect(cl.UpdateHostHealthStatus, 1)
 			}
 		case conf.BlackholeCluster, conf.ToallCluster:
 			for _, h := range cc.Hosts {
