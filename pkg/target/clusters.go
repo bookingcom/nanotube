@@ -45,6 +45,7 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 		cl := Cluster{
 			Name:                   cc.Name,
 			UpdateHostHealthStatus: make(chan *HostStatus),
+			Type:                   cc.Type,
 		}
 		go cl.keepAvailableHostsUpdated()
 		switch cc.Type {
@@ -64,7 +65,6 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 			return cls, fmt.Errorf("incorrect cluster type %s for cluster %s",
 				cl.Type, cl.Name)
 		}
-		cl.Type = cc.Type
 
 		cls[cl.Name] = &cl
 	}
