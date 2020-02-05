@@ -151,7 +151,7 @@ func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
-func (h *Host) Connect(updateHostHealthStatus chan *HostStatus) {
+func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port),
 		time.Duration(h.ConnTimeoutSec)*time.Second)
 	if err != nil {
@@ -159,8 +159,18 @@ func (h *Host) Connect(updateHostHealthStatus chan *HostStatus) {
 			zap.String("host", h.Name),
 			zap.Uint16("port", h.Port))
 		h.updateHostConnection(nil)
-		h.updateHostHealthStatus(updateHostHealthStatus, false)
+		if attemptCount == 1 {
+			h.updateHostHealthStatus(updateHostHealthStatus, false)
+		}
 
+		return
+	}
+
+	err = conn.SetWriteDeadline(time.Now().Add(
+		time.Duration(h.SendTimeoutSec) * time.Second))
+	if err != nil {
+		h.Lg.Warn("error setting write deadline. Renewing the connection.",
+			zap.Error(err))
 		return
 	}
 
@@ -192,7 +202,7 @@ func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
 	const maxReconnectPeriodMs = 5000
 	const reconnectDeltaMs = 10
 	for {
-		for reconnectWait := 0; h.getHostConnection() == nil; {
+		for reconnectWait, attemptCount := 0, 1; h.getHostConnection() == nil; {
 			time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
 			if reconnectWait < maxReconnectPeriodMs {
 				reconnectWait = reconnectWait*2 + reconnectDeltaMs
@@ -200,15 +210,8 @@ func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
 			if reconnectWait >= maxReconnectPeriodMs {
 				reconnectWait = maxReconnectPeriodMs
 			}
-
-			h.Connect(updateHostHealthStatus)
-		}
-
-		err := h.Conn.SetWriteDeadline(time.Now().Add(
-			time.Duration(h.SendTimeoutSec) * time.Second))
-		if err != nil {
-			h.Lg.Warn("error setting write deadline. Renewing the connection.",
-				zap.Error(err))
+			h.Connect(updateHostHealthStatus, attemptCount)
+			attemptCount += 1
 		}
 	}
 }
