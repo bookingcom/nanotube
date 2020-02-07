@@ -47,7 +47,6 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 			UpdateHostHealthStatus: make(chan *HostStatus),
 			Type:                   cc.Type,
 		}
-		go cl.keepAvailableHostsUpdated()
 		switch cc.Type {
 		case conf.JumpCluster:
 			cl, err = getJumpCluster(cl, cc, mainCfg, lg, ms)
@@ -55,7 +54,6 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 			for _, h := range cc.Hosts {
 				host := NewHost(cc.Name, mainCfg, h, lg, ms)
 				cl.Hosts = append(cl.Hosts, host)
-				host.Connect(cl.UpdateHostHealthStatus, 1)
 			}
 		case conf.BlackholeCluster, conf.ToallCluster:
 			for _, h := range cc.Hosts {
@@ -69,6 +67,14 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 		cls[cl.Name] = &cl
 	}
 
+	for _, cl := range cls {
+		go cl.keepAvailableHostsUpdated()
+		if cl.Type == conf.LB {
+			for _, h := range cl.Hosts {
+				h.Connect(cl.UpdateHostHealthStatus, 1)
+			}
+		}
+	}
 	return cls, err
 }
 
