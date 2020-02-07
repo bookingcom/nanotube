@@ -1,11 +1,11 @@
 package target
 
 import (
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
 	"strings"
 	"testing"
 
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -25,7 +25,6 @@ func TestClustersWithNoAvailableHosts(t *testing.T) {
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
-	metrics.Register(ms)
 
 	logger, _ := zap.NewProductionConfig().Build()
 
