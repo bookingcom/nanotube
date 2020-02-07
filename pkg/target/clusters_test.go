@@ -52,7 +52,6 @@ func TestClustersWithAllAvailableHosts(t *testing.T) {
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
-	metrics.Register(ms)
 
 	logger, _ := zap.NewProductionConfig().Build()
 
@@ -78,4 +77,53 @@ func TestClustersWithAllAvailableHosts(t *testing.T) {
 		}
 	}
 
+}
+
+func TestClustersWithFlappingHosts(t *testing.T) {
+	clsConfig :=
+		`[[cluster]]
+		name = "aaa"
+		type = "lb"
+			[[cluster.hosts]]
+			name = "host1"
+			port = 123
+			[[cluster.hosts]]
+			name = "host2"
+			port = 456`
+
+	cfg := conf.MakeDefault()
+	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
+
+	ms := metrics.New(&cfg)
+
+	logger, _ := zap.NewProductionConfig().Build()
+
+	clusters, _ := NewClusters(cfg, cls, logger, ms)
+	for _, cluster := range clusters {
+		if len(cluster.AvailableHosts) != 0 {
+			t.Fatalf("expected 0 available hosts")
+		}
+	}
+
+	var host *Host
+	cluster := clusters["aaa"]
+	for _, h := range cluster.Hosts {
+		if h.Name == "host1" {
+			host = h
+		}
+	}
+
+	ch := make(chan struct{})
+	cluster.UpdateHostHealthStatus <- &HostStatus{host, true, ch}
+	<-ch
+	if len(cluster.AvailableHosts) != 1 {
+		t.Fatalf("expected 1 available hosts, found %d", len(cluster.AvailableHosts))
+	}
+
+	ch = make(chan struct{})
+	cluster.UpdateHostHealthStatus <- &HostStatus{host, false, ch}
+	<-ch
+	if len(cluster.AvailableHosts) != 0 {
+		t.Fatalf("expected 0 available hosts, found %d", len(cluster.AvailableHosts))
+	}
 }
