@@ -60,11 +60,12 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 	case conf.LB:
 		cl.Hm.Lock()
 		defer cl.Hm.Unlock()
-		if len(cl.AvailableHosts) == 0 {
+		availableHostCount := len(cl.AvailableHosts)
+		if availableHostCount == 0 {
 			return nil, fmt.Errorf("no available hosts left")
 		}
 		return []*Host{
-			cl.AvailableHosts[int(xxhash.Sum64([]byte(path)))%len(cl.AvailableHosts)],
+			cl.AvailableHosts[int(xxhash.Sum64([]byte(path)))%availableHostCount],
 		}, nil
 	case conf.ToallCluster:
 		return cl.Hosts, nil
@@ -140,6 +141,8 @@ func (cl *Cluster) keepAvailableHostsUpdated() {
 
 func (cl *Cluster) updateHostAvailability(h HostStatus) {
 	defer close(h.sigCh)
+	h.Host.stateChanges.Inc()
+
 	if h.Status == false {
 		cl.removeAvailableHost(h.Host)
 	} else {

@@ -17,6 +17,11 @@ type Clusters struct {
 // JumpCluster distributes the incoming datapoints between hosts according to
 // fnv1a hasing following by the jump one. Every record is sent to only one host.
 const JumpCluster string = "jump"
+
+// LB cluster type distributes incoming datapoints using xxHash modulo N, where
+// N  equal no. of available hosts
+// As such, this cluster type keeps the list of available hosts and send traffic
+// only to these
 const LB string = "lb"
 
 // ToallCluster broadcasts records to all hosts in the cluster.

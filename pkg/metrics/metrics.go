@@ -14,6 +14,7 @@ type Prom struct {
 	OutRecs            *prometheus.CounterVec
 	ThrottledRecs      prometheus.Counter
 	ThrottledHosts     *prometheus.CounterVec
+	StateChangeHosts   *prometheus.CounterVec
 	BlackholedRecs     prometheus.Counter
 	ErrorRecs          prometheus.Counter
 	MainQueueLength    prometheus.Gauge
@@ -47,6 +48,11 @@ func New(conf *conf.Main) *Prom {
 			Namespace: "nanotube",
 			Name:      "throttled_host_records_total",
 			Help:      "Records dropped from the host queue because it's full.",
+		}, []string{"cluster", "upstream_host"}),
+		StateChangeHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "state_change_hosts_total",
+			Help:      "Total availability state change for hosts",
 		}, []string{"cluster", "upstream_host"}),
 		BlackholedRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
@@ -114,6 +120,11 @@ func Register(m *Prom) {
 	err = prometheus.Register(m.ThrottledHosts)
 	if err != nil {
 		log.Fatalf("error registering the throttled_host_records_total metrics: %v", err)
+	}
+
+	err = prometheus.Register(m.StateChangeHosts)
+	if err != nil {
+		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
 	}
 
 	err = prometheus.Register(m.BlackholedRecs)

@@ -13,6 +13,7 @@ func TestConfSimple(t *testing.T) {
 	TargetPort = 2008
 	SendTimeoutSec = 7
 	OutConnTimeoutSec = 9
+	KeepAliveSec = 1
 	TermTimeoutSec = 11
 	IncomingConnIdleTimeoutSec = 13
 	MainQueueSize = 100
@@ -33,6 +34,7 @@ func TestConfSimple(t *testing.T) {
 		IncomingConnIdleTimeoutSec: 13,
 		SendTimeoutSec:             7,
 		OutConnTimeoutSec:          9,
+		KeepAliveSec:               1,
 		TermTimeoutSec:             11,
 		TCPOutBufSize:              11,
 		TCPOutBufFlushPeriodSec:    3,
