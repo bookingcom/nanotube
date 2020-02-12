@@ -104,6 +104,7 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 func (cl *Cluster) removeAvailableHost(host *Host) {
 	for i, h := range cl.AvailableHosts {
 		if h.Name == host.Name {
+			host.stateChanges.Inc()
 			cl.Hm.Lock()
 			defer cl.Hm.Unlock()
 			length := len(cl.AvailableHosts)
@@ -126,6 +127,7 @@ func (cl *Cluster) addAvailableHost(host *Host) {
 			return
 		}
 	}
+	host.stateChanges.Inc()
 	cl.AvailableHosts = append(cl.AvailableHosts, host)
 }
 
@@ -141,8 +143,6 @@ func (cl *Cluster) keepAvailableHostsUpdated() {
 
 func (cl *Cluster) updateHostAvailability(h HostStatus) {
 	defer close(h.sigCh)
-	h.Host.stateChanges.Inc()
-
 	if h.Status == false {
 		cl.removeAvailableHost(h.Host)
 	} else {
