@@ -32,10 +32,12 @@ type Host struct {
 	Ms                      *metrics.Prom
 	SendTimeoutSec          uint32
 	ConnTimeoutSec          uint32
+	KeepAliveSec            uint32
 	TCPOutBufFlushPeriodSec uint32
 
 	outRecs            prometheus.Counter
 	throttled          prometheus.Counter
+	stateChanges       prometheus.Counter
 	processingDuration prometheus.Histogram
 	bufSize            int
 }
@@ -61,9 +63,11 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		SendTimeoutSec:          mainCfg.SendTimeoutSec,
 		ConnTimeoutSec:          mainCfg.OutConnTimeoutSec,
 		TCPOutBufFlushPeriodSec: mainCfg.TCPOutBufFlushPeriodSec,
+		KeepAliveSec:            mainCfg.KeepAliveSec,
 		outRecs:                 ms.OutRecs.With(promLabels),
 		throttled:               ms.ThrottledHosts.With(promLabels),
 		processingDuration:      ms.ProcessingDuration,
+		stateChanges:            ms.StateChangeHosts.With(promLabels),
 		bufSize:                 mainCfg.TCPOutBufSize,
 	}
 }
@@ -93,8 +97,7 @@ func (h *Host) Stream(wg *sync.WaitGroup, updateHostHealthStatus chan *HostStatu
 	go h.maintainHostConnection(updateHostHealthStatus)
 
 	for r := range h.Ch {
-		// retry until successful
-		for h.getHostConnection() != nil {
+		for h.updateHostConnWriteDeadline(updateHostHealthStatus) {
 			// this may loose one record on disconnect
 			_, err := h.Write([]byte(*r.Serialize()))
 
@@ -109,17 +112,20 @@ func (h *Host) Stream(wg *sync.WaitGroup, updateHostHealthStatus chan *HostStatu
 				zap.Uint16("port", h.Port),
 				zap.Error(err),
 			)
-			err = h.Conn.Close()
-			if err != nil {
-				// not retrying here, file descriptor may be lost
-				h.Lg.Error("error closing the connection",
-					zap.Error(err))
-			}
-
-			h.updateHostConnection(nil)
-			h.updateHostHealthStatus(updateHostHealthStatus, false)
+			h.closeUpdateHostConnection(updateHostHealthStatus)
 		}
 	}
+}
+
+func (h *Host) closeUpdateHostConnection(updateHostHealthStatus chan *HostStatus) {
+	err := h.closeConnection()
+	if err != nil {
+		// not retrying here, file descriptor may be lost
+		h.Lg.Error("error closing the connection",
+			zap.Error(err))
+	}
+	h.updateHostConnection(nil)
+	h.updateHostHealthStatus(updateHostHealthStatus, false)
 }
 
 // Write does the remote write, i.e. sends the data
@@ -141,8 +147,8 @@ func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 			h.Wm.Lock()
 			if h.W != nil {
 				err := h.W.Flush()
-				if err != nil && h.getHostConnection() == nil {
-					h.updateHostHealthStatus(updateHostHealthStatus, false)
+				if err != nil {
+					h.closeUpdateHostConnection(updateHostHealthStatus)
 				}
 			}
 			h.Wm.Unlock()
@@ -152,8 +158,11 @@ func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
 func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int) {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port),
-		time.Duration(h.ConnTimeoutSec)*time.Second)
+	dialer := net.Dialer{
+		Timeout:   time.Duration(h.ConnTimeoutSec) * time.Second,
+		KeepAlive: time.Duration(h.KeepAliveSec) * time.Second,
+	}
+	conn, err := dialer.Dial("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port))
 	if err != nil {
 		h.Lg.Warn("connection to host failed",
 			zap.String("host", h.Name),
@@ -163,14 +172,6 @@ func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int
 			h.updateHostHealthStatus(updateHostHealthStatus, false)
 		}
 
-		return
-	}
-
-	err = conn.SetWriteDeadline(time.Now().Add(
-		time.Duration(h.SendTimeoutSec) * time.Second))
-	if err != nil {
-		h.Lg.Warn("error setting write deadline. Renewing the connection.",
-			zap.Error(err))
 		return
 	}
 
@@ -196,6 +197,32 @@ func (h *Host) getHostConnection() net.Conn {
 	h.Cm.RLock()
 	defer h.Cm.RUnlock()
 	return h.Conn
+}
+
+func (h *Host) updateHostConnWriteDeadline(updateHostHealthStatus chan *HostStatus) bool {
+	h.Cm.Lock()
+	defer h.Cm.Unlock()
+	if h.Conn == nil {
+		return false
+	}
+	err := h.Conn.SetWriteDeadline(time.Now().Add(
+		time.Duration(h.SendTimeoutSec) * time.Second))
+	if err != nil {
+		h.Lg.Warn("error setting write deadline. Renewing the connection.",
+			zap.Error(err))
+		h.closeUpdateHostConnection(updateHostHealthStatus)
+		return false
+	}
+	return true
+}
+
+func (h *Host) closeConnection() error {
+	h.Cm.Lock()
+	defer h.Cm.Unlock()
+	if h.Conn != nil {
+		return h.Conn.Close()
+	}
+	return nil
 }
 
 func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {

@@ -77,6 +77,7 @@ func MakeDefault() Main {
 		IncomingConnIdleTimeoutSec: 90,
 		SendTimeoutSec:             5,
 		OutConnTimeoutSec:          5,
+		KeepAliveSec:               1,
 		TermTimeoutSec:             10,
 		TCPOutBufSize:              0,
 		TCPOutBufFlushPeriodSec:    2,
