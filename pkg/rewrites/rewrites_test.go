@@ -11,7 +11,7 @@ import (
 
 func TestRewrites(t *testing.T) {
 	rewrites := map[string]conf.Rewrites{
-		"first": conf.Rewrites{
+		"first": {
 			Rewrite: []conf.Rewrite{
 				{
 					From: "a.*bc",
