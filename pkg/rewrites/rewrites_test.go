@@ -3,15 +3,15 @@ package rewrites
 import (
 	"testing"
 
-	"nanotube/pkg/conf"
-	"nanotube/pkg/rec"
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/rec"
 
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestRewrites(t *testing.T) {
 	rewrites := map[string]conf.Rewrites{
-		"first": conf.Rewrites{
+		"first": {
 			Rewrite: []conf.Rewrite{
 				{
 					From: "a.*bc",

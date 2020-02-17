@@ -1,3 +1,6 @@
+![CI](https://github.com/bookingcom/nanotube/workflows/CI/badge.svg)
+
+
 Nanotube: data router for Graphite
 =================================
 

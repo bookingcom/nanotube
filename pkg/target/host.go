@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
-	"nanotube/pkg/rec"
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rec"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -139,12 +139,14 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	}
 }
 
+// Write does the remote write, i.e. sends the data
 func (h *Host) Write(b []byte) (nn int, err error) {
 	h.Wm.Lock()
 	defer h.Wm.Unlock()
 	return h.W.Write(b)
 }
 
+// Flush immediately flushes the buffer and performs a write
 func (h *Host) Flush(d time.Duration) {
 	t := time.NewTicker(d)
 	defer t.Stop()
@@ -156,7 +158,10 @@ func (h *Host) Flush(d time.Duration) {
 		case <-t.C:
 			h.Wm.Lock()
 			if h.W != nil {
-				h.W.Flush()
+				err := h.W.Flush()
+				if err != nil {
+					h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+				}
 			}
 			h.Wm.Unlock()
 		}

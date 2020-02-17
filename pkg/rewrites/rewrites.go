@@ -2,9 +2,10 @@
 package rewrites
 
 import (
-	"nanotube/pkg/conf"
-	"nanotube/pkg/rec"
 	"regexp"
+
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/rec"
 
 	"github.com/pkg/errors"
 )

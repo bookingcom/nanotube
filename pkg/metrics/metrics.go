@@ -3,7 +3,7 @@ package metrics
 import (
 	"log"
 
-	"nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/conf"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

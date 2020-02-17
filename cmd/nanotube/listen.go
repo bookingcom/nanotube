@@ -3,11 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"

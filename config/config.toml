@@ -45,9 +45,10 @@ PprofPort = 6000
 PromPort = 9090
 
 # Histogram parameters for the host queue size
-HostQueueLengthBucketFactor = 3
+HostQueueLengthBucketFactor = 3.0
 HostQueueLengthBuckets = 10
 
 # Histogram parameters for the processing duration
-ProcessingDurationBucketFactor = 2
+ProcessingDurationBucketFactor = 2.0
 ProcessingDurationBuckets = 10
+

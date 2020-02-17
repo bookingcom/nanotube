@@ -1,7 +1,5 @@
-export GO111MODULE=on
-
 all:
-	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" nanotube/cmd/nanotube
+	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
 .PHONY: test
 test:
@@ -13,7 +11,7 @@ lint:
 
 .PHONY: fmt
 fmt:
-	go fmt -s ./...
+	gofmt -d -s . #this will currently try to work on /vendor. It will be ok after vendor cleanup.
 
 .PHONY: clean
 clean:

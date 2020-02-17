@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sync"
 
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
-	"nanotube/pkg/rec"
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rec"
 
 	"github.com/dgryski/go-jump"
 	"github.com/pkg/errors"

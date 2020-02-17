@@ -2,9 +2,10 @@ package target
 
 import (
 	"fmt"
-	"nanotube/pkg/conf"
-	"nanotube/pkg/metrics"
 	"sync"
+
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/metrics"
 
 	"go.uber.org/zap"
 )
