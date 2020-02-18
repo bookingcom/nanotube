@@ -24,7 +24,7 @@ type Host struct {
 	Conn net.Conn
 
 	W    *bufio.Writer
-	Wm   sync.Mutex
+	CWm  sync.Mutex // this is the mutex to lock connection and writer
 	stop chan int
 
 	Lg                      *zap.Logger
@@ -106,8 +106,10 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 				h.Connect()
 			}
 
+			h.CWm.Lock()
 			err := h.Conn.SetWriteDeadline(time.Now().Add(
 				time.Duration(h.SendTimeoutSec) * time.Second))
+			h.CWm.Unlock()
 			if err != nil {
 				h.Lg.Warn("error setting write deadline. Renewing the connection.",
 					zap.Error(err))
@@ -127,22 +129,26 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 				zap.Uint16("port", h.Port),
 				zap.Error(err),
 			)
+			h.CWm.Lock()
 			err = h.Conn.Close()
+			h.CWm.Unlock()
 			if err != nil {
 				// not retrying here, file descriptor may be lost
 				h.Lg.Error("error closing the connection",
 					zap.Error(err))
 			}
 
+			h.CWm.Lock()
 			h.Conn = nil
+			h.CWm.Unlock()
 		}
 	}
 }
 
 // Write does the remote write, i.e. sends the data
 func (h *Host) Write(b []byte) (nn int, err error) {
-	h.Wm.Lock()
-	defer h.Wm.Unlock()
+	h.CWm.Lock()
+	defer h.CWm.Unlock()
 	return h.W.Write(b)
 }
 
@@ -156,7 +162,7 @@ func (h *Host) Flush(d time.Duration) {
 		case <-h.stop:
 			return
 		case <-t.C:
-			h.Wm.Lock()
+			h.CWm.Lock()
 			if h.W != nil {
 				if h.W.Buffered() != 0 {
 					err := h.W.Flush()
@@ -168,7 +174,7 @@ func (h *Host) Flush(d time.Duration) {
 					}
 				}
 			}
-			h.Wm.Unlock()
+			h.CWm.Unlock()
 		}
 	}
 }
@@ -177,6 +183,9 @@ func (h *Host) Flush(d time.Duration) {
 func (h *Host) Connect() {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port),
 		time.Duration(h.ConnTimeoutSec)*time.Second)
+	h.CWm.Lock()
+	defer h.CWm.Unlock()
+
 	if err != nil {
 		h.Lg.Warn("connection to host failed",
 			zap.String("host", h.Name),
@@ -189,7 +198,5 @@ func (h *Host) Connect() {
 
 	h.Conn = conn
 
-	h.Wm.Lock()
-	defer h.Wm.Unlock()
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
 }
