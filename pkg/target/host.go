@@ -158,13 +158,13 @@ func (h *Host) Flush(d time.Duration) {
 		case <-t.C:
 			h.Wm.Lock()
 			if h.W != nil {
-				h.Lg.Info(fmt.Sprintf("buffered %d", h.W.Buffered()))
 				if h.W.Buffered() != 0 {
 					err := h.W.Flush()
 					if err != nil {
 						h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
 						// if flushing fails, the connection has to be re-established
-						h.Connect()
+						h.Conn = nil
+						h.W = nil
 					}
 				}
 			}
