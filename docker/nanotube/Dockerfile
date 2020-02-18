@@ -1,10 +1,10 @@
-FROM golang:1.12
+FROM golang:1.13
 
 WORKDIR /go/src/github.com/bookingcom/nanotube
 COPY . .
-COPY ./docker/nanotube/config/ /etc/nanotube/config
-
 RUN make
+COPY config/ /etc/nanotube/config
+COPY docker/nanotube/config/ /etc/nanotube/config
 
 EXPOSE 2003
 
