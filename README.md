@@ -43,6 +43,33 @@ Normalizations performed are mainly for backward compatibility with `carbon-c-re
 - Spaces in record are normalized to a single space character. E.g. _a.b.c␣␣␣1.23<tab>1234567_ -> _a.b.c␣1.23␣1234567_
 - Chars not in `[0-9a-zA-Z-_:#]` are replaced with `_`. Tags have their own allowed chars and are not supported for now.
 
+
+Running with docker-compose
+-----------------------------------
+
+Run the input stack `nanotube` -> `go-carbon-*` and the query stack to check on those inputs `carbonapi` -> `zipper` -> `go-carbon`
+with:
+
+```
+docker-compose up
+```
+
+You can feed in sample data with:
+
+```
+echo "test1.test 5 $(date +%s)" | nc -c localhost 2003
+```
+As many netcat implementations exist, a parameter may be needed to instruct nc to close the socket once data is sent. Such param will usually be -q0, -c or -N. Refer to your nc implementation man page to determine it.
+
+get it back with:
+
+```
+seq 8080 8081 | xargs -I {port} curl "localhost:{port}/render/?target=test1.test&format=json&from=$(( $(date +%s) - 300 ))&until=$(date +%s)"
+```
+
+To test the second store (alone or in conjunction) change the metric path to test2.test or test1.test2
+
+
 Acknowledgement
 ---------------------------
 
