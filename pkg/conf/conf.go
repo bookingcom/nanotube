@@ -10,6 +10,7 @@ import (
 // Main is the main and generic nanotube config.
 type Main struct {
 	ListeningPort uint32
+	EnableUDP     bool
 	TargetPort    uint16
 
 	MainQueueSize uint64
