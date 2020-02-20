@@ -85,6 +85,7 @@ type OptionalTicker struct {
 	t *time.Ticker
 }
 
+// NewOptionalTicker makes a new ticker that only runs if duration supplied is non-zero
 func NewOptionalTicker(d time.Duration) *OptionalTicker {
 	var ticker OptionalTicker
 	if d != 0 {
@@ -95,6 +96,7 @@ func NewOptionalTicker(d time.Duration) *OptionalTicker {
 	return &ticker
 }
 
+// Stop halts the ticker if it was ever started
 func (t *OptionalTicker) Stop() {
 	if t != nil {
 		t.Stop()
