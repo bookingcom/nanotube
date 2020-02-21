@@ -184,15 +184,13 @@ func (h *Host) Write(b []byte) (nn int, err error) {
 
 // Flush immediately flushes the buffer and performs a write
 func (h *Host) Flush(d time.Duration) {
-	if h.W != nil {
-		if h.W.Buffered() != 0 {
-			err := h.W.Flush()
-			if err != nil {
-				h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
-				// if flushing fails, the connection has to be re-established
-				h.Conn = nil
-				h.W = nil
-			}
+	if h.W == nil || h.W.Buffered() == 0 {
+		err := h.W.Flush()
+		if err != nil {
+			h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+			// if flushing fails, the connection has to be re-established
+			h.Conn = nil
+			h.W = nil
 		}
 	}
 }
