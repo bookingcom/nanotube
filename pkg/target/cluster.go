@@ -65,7 +65,7 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 			return nil, fmt.Errorf("no available hosts left")
 		}
 		return []*Host{
-			cl.AvailableHosts[int(xxhash.Sum64([]byte(path)))%availableHostCount],
+			cl.AvailableHosts[int(xxhash.Sum64String(path))%availableHostCount],
 		}, nil
 	case conf.ToallCluster:
 		return cl.Hosts, nil
