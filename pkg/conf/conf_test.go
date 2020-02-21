@@ -19,15 +19,16 @@ func TestConfSimple(t *testing.T) {
 	HostQueueSize = 10
 	WorkerPoolSize = 10
 	TCPOutBufSize = 11
-	TCPOutBufFlushPeriodSec = 3`
+	TCPOutBufFlushPeriodSec = 3
+	MaxHostReconnectPeriodMs = 777
+	HostReconnectPeriodDeltaMs = 13`
 
 	expected := Main{
 		ListeningPort: 2003,
 		TargetPort:    2008,
 
-		MainQueueSize: 100,
-		HostQueueSize: 10,
-
+		MainQueueSize:  100,
+		HostQueueSize:  10,
 		WorkerPoolSize: 10,
 
 		IncomingConnIdleTimeoutSec: 13,
@@ -36,6 +37,8 @@ func TestConfSimple(t *testing.T) {
 		TermTimeoutSec:             11,
 		TCPOutBufSize:              11,
 		TCPOutBufFlushPeriodSec:    3,
+		MaxHostReconnectPeriodMs:   777,
+		HostReconnectPeriodDeltaMs: 13,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,
