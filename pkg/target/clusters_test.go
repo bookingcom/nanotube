@@ -201,10 +201,10 @@ func TestRemoveAvailableHosts(t *testing.T) {
 
 func shuffle(hosts []*Host) []*Host {
 	r := rand.New(rand.NewSource(time.Now().Unix()))
-	ret := make([]*Host, len(hosts))
+	shuffledHosts := make([]*Host, len(hosts))
 	perm := r.Perm(len(hosts))
 	for i, randIndex := range perm {
-		ret[i] = hosts[randIndex]
+		shuffledHosts[i] = hosts[randIndex]
 	}
-	return hosts
+	return shuffledHosts
 }

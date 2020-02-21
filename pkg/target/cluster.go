@@ -103,7 +103,7 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 
 func (cl *Cluster) removeAvailableHost(host *Host) {
 	for i, h := range cl.AvailableHosts {
-		if h.Name == host.Name {
+		if h == host {
 			host.stateChanges.Inc()
 			cl.Hm.Lock()
 			defer cl.Hm.Unlock()
