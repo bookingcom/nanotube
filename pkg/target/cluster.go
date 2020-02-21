@@ -109,8 +109,8 @@ func (cl *Cluster) removeAvailableHost(host *Host) {
 			defer cl.Hm.Unlock()
 			length := len(cl.AvailableHosts)
 
-			for j := i; j < length-2; j++ {
-				cl.AvailableHosts[i] = cl.AvailableHosts[i+1]
+			for j := i; j < length-1; j++ {
+				cl.AvailableHosts[j] = cl.AvailableHosts[j+1]
 			}
 			cl.AvailableHosts = cl.AvailableHosts[:length-1]
 
