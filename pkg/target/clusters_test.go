@@ -1,8 +1,10 @@
 package target
 
 import (
+	"math/rand"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
@@ -126,4 +128,83 @@ func TestClustersWithFlappingHosts(t *testing.T) {
 	if len(cluster.AvailableHosts) != 0 {
 		t.Fatalf("expected 0 available hosts, found %d", len(cluster.AvailableHosts))
 	}
+}
+
+func TestRemoveAvailableHosts(t *testing.T) {
+	clsConfig :=
+		`[[cluster]]
+		name = "aaa"
+		type = "lb"
+			[[cluster.hosts]]
+			name = "host1"
+			port = 123
+			[[cluster.hosts]]
+			name = "host2"
+			port = 456
+			[[cluster.hosts]]
+			name = "host3"
+			port = 456
+			[[cluster.hosts]]
+			name = "host4"
+			port = 456
+			[[cluster.hosts]]
+			name = "host5"
+			port = 456
+			[[cluster.hosts]]
+			name = "host6"
+			port = 456`
+
+	cfg := conf.MakeDefault()
+	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
+
+	ms := metrics.New(&cfg)
+
+	logger, _ := zap.NewProductionConfig().Build()
+
+	clusters, _ := NewClusters(cfg, cls, logger, ms)
+	for _, cluster := range clusters {
+		if len(cluster.AvailableHosts) != 0 {
+			t.Fatalf("expected 0 available hosts")
+		}
+	}
+
+	cluster := clusters["aaa"]
+	hosts := cluster.Hosts
+	shuffledHosts := shuffle(hosts)
+
+	n := len(hosts)
+	sigChs := make([]chan struct{}, 0)
+	for _, cluster := range clusters {
+		for _, h := range cluster.Hosts {
+			ch := make(chan struct{})
+			sigChs = append(sigChs, ch)
+			cluster.UpdateHostHealthStatus <- &HostStatus{h, true, ch}
+		}
+		for _, sigCh := range sigChs {
+			<-sigCh
+		}
+		if len(cluster.AvailableHosts) != n {
+			t.Fatalf("expected 6 available hosts, found %d", len(cluster.AvailableHosts))
+		}
+	}
+
+	for _, host := range shuffledHosts {
+		ch := make(chan struct{})
+		cluster.UpdateHostHealthStatus <- &HostStatus{host, false, ch}
+		<-ch
+		n -= 1
+		if len(cluster.AvailableHosts) != n {
+			t.Fatalf("expected %d available hosts", n)
+		}
+	}
+}
+
+func shuffle(hosts []*Host) []*Host {
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	ret := make([]*Host, len(hosts))
+	perm := r.Perm(len(hosts))
+	for i, randIndex := range perm {
+		ret[i] = hosts[randIndex]
+	}
+	return hosts
 }
