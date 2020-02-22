@@ -16,10 +16,3 @@
     ]
     continue = true
 
-[[rule]]
-    regexs = [
-        ".*b.*"
-    ]
-    clusters = [
-        "local1"
-    ]

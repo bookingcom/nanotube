@@ -87,7 +87,7 @@ func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.
 		// TODO (grzkv): Add connection counting
 	}()
 
-	scanFromConnection(conn, queue, stop, ms, lg)
+	scanForRecords(conn, queue, stop, ms)
 }
 
 func readFromConnection(wg *sync.WaitGroup, conn net.Conn, queue chan string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
@@ -109,11 +109,11 @@ func readFromConnection(wg *sync.WaitGroup, conn net.Conn, queue chan string, st
 			zap.String("sender", conn.RemoteAddr().String()))
 	}
 
-	scanFromConnection(conn, queue, stop, ms, lg)
+	scanForRecords(conn, queue, stop, ms)
 }
 
-func scanFromConnection(conn io.Reader, queue chan string, stop <-chan struct{}, ms *metrics.Prom, lg *zap.Logger) {
-	sc := bufio.NewScanner(conn)
+func scanForRecords(r io.Reader, queue chan string, stop <-chan struct{}, ms *metrics.Prom) {
+	sc := bufio.NewScanner(r)
 	scanin := make(chan string)
 	go func() {
 		for sc.Scan() {

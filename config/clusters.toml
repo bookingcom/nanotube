@@ -10,18 +10,3 @@ type = "jump" # cluster type defines routing inside a cluster
     port = 8002
     index = 1
 
-[[cluster]]
-name = "local1"
-type = "jump"
-    [[cluster.hosts]]
-    name = "localhost"
-    port = 8101
-    index = 0
-    [[cluster.hosts]]
-    name = "localhost"
-    port = 8102
-    index = 1
-    [[cluster.hosts]]
-    name = "localhost"
-    port = 8103
-    index = 2

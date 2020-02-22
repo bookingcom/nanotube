@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -83,9 +84,14 @@ func listen(port int, sample string, listening chan<- bool) (e error) {
 		}
 	}()
 
+	// data is sent twice: once via TCP and once via UDP
 	sc := bufio.NewScanner(conn)
 	sc.Scan()
+	if sample != sc.Text() {
+		return errors.Errorf("got *%v*, expected *%v*", sc.Text(), sample)
+	}
 
+	sc.Scan()
 	if sample != sc.Text() {
 		return errors.Errorf("got *%v*, expected *%v*", sc.Text(), sample)
 	}
@@ -94,20 +100,37 @@ func listen(port int, sample string, listening chan<- bool) (e error) {
 }
 
 func send(port int, sample string) (e error) {
-	conn, err := net.Dial("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+	connTCP, err := net.Dial("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
 	if err != nil {
 		return errors.Wrap(err, "connection failed")
 	}
 	defer func() {
-		cerr := conn.Close()
+		cerr := connTCP.Close()
 		if e == nil {
 			e = errors.Wrap(cerr, "error closing connection")
 		}
 	}()
 
-	_, err = conn.Write([]byte(sample + "\n"))
+	_, err = fmt.Fprintln(connTCP, sample)
 	if err != nil {
 		return errors.Wrap(err, "error sending data via TCP")
+	}
+
+	connUDP, err := net.Dial("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+	if err != nil {
+		return errors.Wrap(err, "dialing to UDP failed")
+
+	}
+	defer func() {
+		cerr := connUDP.Close()
+		if e == nil {
+			e = errors.Wrap(cerr, "error closing connection")
+		}
+	}()
+
+	_, err = fmt.Fprintln(connUDP, sample)
+	if err != nil {
+		return errors.Wrap(err, "error sending data via UDP")
 	}
 
 	return nil
