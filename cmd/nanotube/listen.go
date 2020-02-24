@@ -79,6 +79,13 @@ func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.
 		lg.Error("error while opening UDP port for listening", zap.Error(err))
 	}
 
+	if cfg.UDPReadBufferSize != 0 {
+		err = conn.SetReadBuffer(int(cfg.UDPReadBufferSize))
+		if err != nil {
+			lg.Error("error setting UDP reader buffer size", zap.Error(err))
+		}
+	}
+
 	defer func() {
 		err := conn.Close()
 		if err != nil {
