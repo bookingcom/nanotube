@@ -12,6 +12,7 @@ type Main struct {
 	ListeningPort uint32
 	TargetPort    uint16
 
+	EnableTCP bool
 	EnableUDP bool
 	// 0 value turns off buffer size setting
 	UDPReadBufferSize uint32
@@ -56,6 +57,9 @@ func ReadMain(r io.Reader) (Main, error) {
 	if cfg.PprofPort == cfg.PromPort {
 		return cfg, errors.New("PromPort and PprofPort can't have the same value")
 	}
+	if !cfg.EnableTCP && !cfg.EnableUDP {
+		return cfg, errors.New("we don't listen neither on TCP nor on UDP")
+	}
 	return cfg, nil
 }
 
@@ -64,6 +68,8 @@ func MakeDefault() Main {
 	return Main{
 		ListeningPort: 2003,
 		TargetPort:    2004,
+
+		EnableTCP: true,
 
 		MainQueueSize:  1000,
 		HostQueueSize:  1000,

@@ -19,12 +19,14 @@ import (
 func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan string, error) {
 	queue := make(chan string, cfg.MainQueueSize)
 
-	l, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.ListeningPort))
-	if err != nil {
-		return nil, errors.Wrap(err,
-			"error while opening TCP port for listening")
+	if cfg.EnableTCP {
+		l, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.ListeningPort))
+		if err != nil {
+			return nil, errors.Wrap(err,
+				"error while opening TCP port for listening")
+		}
+		go acceptAndListenTCP(l, queue, stop, cfg, ms, lg)
 	}
-	go acceptAndListenTCP(l, queue, stop, cfg, ms, lg)
 
 	if cfg.EnableUDP {
 		go listenUDP(cfg, queue, stop, lg, ms)

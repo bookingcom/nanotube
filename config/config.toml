@@ -7,8 +7,10 @@ ListeningPort = 2003
 # The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 2004
 
+# Setting this to true will enable TCP listening on ListeningPort
+EnableTCP = true
 # Setting this to true will enable UDP listening on ListeningPort
-EnableUDP = true
+EnableUDP = false
 # Size of OS buffer for reading from UDP connction. Buffer not set if zero.
 UDPReadBufferSize = 0
 
