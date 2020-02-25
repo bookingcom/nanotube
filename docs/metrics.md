@@ -14,3 +14,5 @@ Metrics are exposed on the `/` endpoint on the port defined in the config as `Pr
 8. `processing_duration_seconds_bucket` Histogram with time to process each record.
 9. `active_connections` number of current connections to nanotube. Updated every time someone connects and disconnects to the Nanotube.
 10. `open_in_connections_total` number of incoming connections to nanotube. Updated every time someone connects to Nanotube.
+
+TODO (grzkv): Move this closer to the code to make sure it stays updated.

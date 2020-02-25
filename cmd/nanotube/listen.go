@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"sync"
@@ -46,8 +45,8 @@ loop:
 		go func() {
 			conn, err := l.Accept()
 
-			ms.ActiveConnections.Inc()
-			ms.InConnectionsTotal.Inc()
+			ms.ActiveTCPConnections.Inc()
+			ms.InConnectionsTotalTCP.Inc()
 
 			if err != nil {
 				errCh <- err
@@ -64,7 +63,7 @@ loop:
 			lg.Error("accpeting connection failed", zap.Error(err))
 		case conn := <-connCh:
 			wg.Add(1)
-			go readFromConnection(&wg, conn, queue, term, cfg, ms, lg)
+			go readFromConnectionTCP(&wg, conn, queue, term, cfg, ms, lg)
 		}
 	}
 	lg.Info("Termination: stopped accepting new connections. Starting to close incoming connections...")
@@ -74,12 +73,14 @@ loop:
 }
 
 func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
+	// TODO (grzkv) What should we do if connection drops?
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{
 		IP:   nil,
 		Port: int(cfg.ListeningPort),
 		Zone: ""})
 	if err != nil {
 		lg.Error("error while opening UDP port for listening", zap.Error(err))
+		return
 	}
 
 	err = conn.SetReadBuffer(64 * 1024)
@@ -92,18 +93,16 @@ func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.
 		if err != nil {
 			lg.Error("closing the incoming connection", zap.Error(err))
 		}
-		// TODO (grzkv): Add connection counting
 	}()
 
 	buf := make([]byte, 64*1024)
 
-	residue := ""
 	in := make(chan struct{})
 	errCh := make(chan error)
 loop:
 	for {
 		go func() {
-			// TODO (grzkv) Mutex should not be needed
+			// TODO (grzkv) Mutex should not be needed. Investigate
 			_, cerr := conn.Read(buf)
 			if cerr != nil {
 				// TODO (grzkv) gather info
@@ -112,7 +111,7 @@ loop:
 				// if strings.HasSuffix(err.Error(), "use of closed network connection") {
 				// 	return
 				// }
-				lg.Error("could not read incoming data via UDP", zap.Error(cerr))
+				ms.UDPReadFailures.Inc()
 				errCh <- cerr
 				return
 			}
@@ -122,18 +121,9 @@ loop:
 
 		select {
 		case <-in:
-			// (grzkv) A simpler algorithm with just attaching the residue on the front will do a lot of copying
-			// that is why we do things a bit more complex way.
 			lines := strings.Split(string(buf), "\n")
-			if len(lines) > 1 {
-				// attach residue from the previous packet to the first record
-				sendToMainQ(residue+lines[0], queue, ms)
-				for i := 1; i < len(lines)-1; i++ {
-					sendToMainQ(lines[i], queue, ms)
-				}
-				residue = lines[len(lines)-1]
-			} else {
-				residue = residue + lines[len(lines)-1]
+			for _, l := range lines {
+				sendToMainQ(l, queue, ms)
 			}
 		case <-errCh:
 			continue
@@ -152,14 +142,14 @@ func sendToMainQ(rec string, q chan<- string, ms *metrics.Prom) {
 	}
 }
 
-func readFromConnection(wg *sync.WaitGroup, conn net.Conn, queue chan string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	defer wg.Done() // executed after the connection is closed
 	defer func() {
 		err := conn.Close()
 		if err != nil {
 			lg.Error("closing the incoming connection", zap.Error(err))
 		}
-		ms.ActiveConnections.Dec()
+		ms.ActiveTCPConnections.Dec()
 	}()
 
 	// what if client connects and does nothing? protect!
@@ -171,11 +161,11 @@ func readFromConnection(wg *sync.WaitGroup, conn net.Conn, queue chan string, st
 			zap.String("sender", conn.RemoteAddr().String()))
 	}
 
-	scanForRecords(conn, queue, stop, ms)
+	scanForRecordsTCP(conn, queue, stop, cfg, ms, lg)
 }
 
-func scanForRecords(r io.Reader, queue chan string, stop <-chan struct{}, ms *metrics.Prom) {
-	sc := bufio.NewScanner(r)
+func scanForRecordsTCP(conn net.Conn, queue chan string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+	sc := bufio.NewScanner(conn)
 	scanin := make(chan string)
 	go func() {
 		for sc.Scan() {
@@ -191,7 +181,15 @@ loop:
 			if !open {
 				break loop
 			} else {
-				// TODO (grzkv) Add disconnection of idle clients
+				// what if client connects and does nothing? protect!
+				err := conn.SetReadDeadline(time.Now().Add(
+					time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second))
+				if err != nil {
+					lg.Error("error setting read deadline",
+						zap.Error(err),
+						zap.String("sender", conn.RemoteAddr().String()))
+				}
+
 				sendToMainQ(rec, queue, ms)
 			}
 		case <-stop:
