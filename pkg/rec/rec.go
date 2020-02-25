@@ -73,20 +73,12 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 func (r *Rec) Serialize() *string {
 	// TODO (grzkv): serialization can be avoided in case there is no normalization
 
-	var b strings.Builder
-
-	// <r.Path> <r.RawVal> <r.RawTime>\n
-	l := 3 // two spaces, one newline
-	l += len(r.Path) + len(r.RawVal) + len(r.RawTime)
-	b.Grow(l)
-
-	b.WriteString(r.Path)
-	b.WriteByte(' ')
-	b.WriteString(r.RawVal)
-	b.WriteByte(' ')
-	b.WriteString(r.RawTime)
-	b.WriteByte('\n')
-	s := b.String()
+	// out of printf, strings.Builder (with pre-grow) and simply
+	// concat of strings, the latter turns out to be the fastest.
+	// If you change anything in the next line, benchmark:  You
+	// may cause a switch from a fast path in the Go runtime to
+	// a slow path and strings.Builder might be faster then.
+	s := r.Path + " " + r.RawVal + " " + r.RawTime + "\n"
 
 	return &s
 }
