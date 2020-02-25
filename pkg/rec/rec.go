@@ -73,8 +73,13 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 func (r *Rec) Serialize() *string {
 	// TODO (grzkv): serialization can be avoided in case there is no normalization
 
-	// <r.Path> <r.RawVal> <r.RawTime>\n
 	var b strings.Builder
+
+	// <r.Path> <r.RawVal> <r.RawTime>\n
+	l := 3 // two spaces, one newline
+	l += len(r.Path) + len(r.RawVal) + len(r.RawTime)
+	b.Grow(l)
+
 	b.WriteString(r.Path)
 	b.WriteByte(' ')
 	b.WriteString(r.RawVal)
