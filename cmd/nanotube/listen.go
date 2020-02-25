@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,11 +82,9 @@ func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.
 		lg.Error("error while opening UDP port for listening", zap.Error(err))
 	}
 
-	if cfg.UDPReadBufferSize != 0 {
-		err = conn.SetReadBuffer(int(cfg.UDPReadBufferSize))
-		if err != nil {
-			lg.Error("error setting UDP reader buffer size", zap.Error(err))
-		}
+	err = conn.SetReadBuffer(64 * 1024)
+	if err != nil {
+		lg.Error("error setting UDP reader buffer size", zap.Error(err))
 	}
 
 	defer func() {
@@ -96,7 +95,61 @@ func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.
 		// TODO (grzkv): Add connection counting
 	}()
 
-	scanForRecords(conn, queue, stop, ms)
+	buf := make([]byte, 64*1024)
+
+	residue := ""
+	in := make(chan struct{})
+	errCh := make(chan error)
+loop:
+	for {
+		go func() {
+			// TODO (grzkv) Mutex should not be needed
+			_, cerr := conn.Read(buf)
+			if cerr != nil {
+				// TODO (grzkv) gather info
+				// https://github.com/golang/go/issues/4373
+				// ignore net: errClosing error as it will occur during shutdown
+				// if strings.HasSuffix(err.Error(), "use of closed network connection") {
+				// 	return
+				// }
+				lg.Error("could not read incoming data via UDP", zap.Error(cerr))
+				errCh <- cerr
+				return
+			}
+
+			in <- struct{}{}
+		}()
+
+		select {
+		case <-in:
+			// (grzkv) A simpler algorithm with just attaching the residue on the front will do a lot of copying
+			// that is why we do things a bit more complex way.
+			lines := strings.Split(string(buf), "\n")
+			if len(lines) > 1 {
+				// attach residue from the previous packet to the first record
+				sendToMainQ(residue+lines[0], queue, ms)
+				for i := 1; i < len(lines)-1; i++ {
+					sendToMainQ(lines[i], queue, ms)
+				}
+				residue = lines[len(lines)-1]
+			} else {
+				residue = residue + lines[len(lines)-1]
+			}
+		case <-errCh:
+			continue
+		case <-stop:
+			break loop
+		}
+	}
+}
+
+func sendToMainQ(rec string, q chan<- string, ms *metrics.Prom) {
+	select {
+	case q <- rec:
+		ms.InRecs.Inc()
+	default:
+		ms.ThrottledRecs.Inc()
+	}
 }
 
 func readFromConnection(wg *sync.WaitGroup, conn net.Conn, queue chan string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
@@ -139,12 +192,7 @@ loop:
 				break loop
 			} else {
 				// TODO (grzkv) Add disconnection of idle clients
-				select {
-				case queue <- rec:
-					ms.InRecs.Inc()
-				default:
-					ms.ThrottledRecs.Inc()
-				}
+				sendToMainQ(rec, queue, ms)
 			}
 		case <-stop:
 			// give the reader the ability to drain the queue and close afterwards

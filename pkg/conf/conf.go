@@ -14,6 +14,7 @@ type Main struct {
 
 	EnableTCP bool
 	EnableUDP bool
+	// TODO (grzkv) Remove if unused
 	// 0 value turns off buffer size setting
 	UDPReadBufferSize uint32
 
