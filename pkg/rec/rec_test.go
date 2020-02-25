@@ -218,7 +218,8 @@ func TestNormalization(t *testing.T) {
 	}
 }
 
-func TestSerialization(t *testing.T) {
+func TestSerialization(t *testing.T) { testSerialization(t) }
+func testSerialization(t testing.TB) {
 	tt := []struct {
 		in  Rec
 		out string
@@ -249,5 +250,12 @@ func TestSerialization(t *testing.T) {
 		if *test.in.Serialize() != test.out {
 			t.Errorf("expected serialization output %s, got %s for record %+v", test.out, *test.in.Serialize(), test.in)
 		}
+	}
+}
+
+func BenchmarkSerialization(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		// This also benches string comparison in the test, but let's keep it simple.
+		testSerialization(b)
 	}
 }
