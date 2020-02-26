@@ -20,7 +20,7 @@ Build and run
 Running with docker-compose
 -----------------------------------
 
-Run the input stack `nanotube` -> `go-carbon-*` and the query stack to check on those inputs `carbonapi` -> `zipper` -> `go-carbon` with:
+Run the full setup including input stack `nanotube` and `go-carbon` with:
 
 ```
 docker-compose up
