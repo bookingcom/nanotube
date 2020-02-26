@@ -12,7 +12,7 @@ EnableTCP = true
 # Setting this to true will enable UDP listening on ListeningPort
 EnableUDP = false
 # Size of OS buffer for reading from UDP connction. Buffer not set if zero.
-UDPReadBufferSize = 0
+UDPOSBufferSizeMB = 0
 
 # The size on main queue between listen and routing. Refer to docs for details.
 MainQueueSize = 100000

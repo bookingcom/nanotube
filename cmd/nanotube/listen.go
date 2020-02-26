@@ -29,7 +29,16 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 	}
 
 	if cfg.EnableUDP {
-		go listenUDP(cfg, queue, stop, lg, ms)
+		conn, err := net.ListenUDP("udp", &net.UDPAddr{
+			IP:   nil,
+			Port: int(cfg.ListeningPort),
+			Zone: ""})
+		if err != nil {
+			lg.Error("error while opening UDP port for listening", zap.Error(err))
+			return nil, errors.Wrap(err,
+				"error while opening UDP connection")
+		}
+		go listenUDP(conn, cfg, queue, stop, lg, ms)
 	}
 
 	return queue, nil
@@ -72,26 +81,19 @@ loop:
 	close(queue)
 }
 
-func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
-	// TODO (grzkv) What should we do if connection drops?
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   nil,
-		Port: int(cfg.ListeningPort),
-		Zone: ""})
-	if err != nil {
-		lg.Error("error while opening UDP port for listening", zap.Error(err))
-		return
-	}
+func listenUDP(conn *net.UDPConn, cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
 
-	err = conn.SetReadBuffer(64 * 1024)
-	if err != nil {
-		lg.Error("error setting UDP reader buffer size", zap.Error(err))
+	if cfg.UDPOSBufferSizeMB != 0 {
+		err := conn.SetReadBuffer(int(cfg.UDPOSBufferSizeMB) * 1024 * 1024)
+		if err != nil {
+			lg.Error("error setting UDP reader buffer size", zap.Error(err))
+		}
 	}
 
 	defer func() {
-		err := conn.Close()
-		if err != nil {
-			lg.Error("closing the incoming connection", zap.Error(err))
+		cerr := conn.Close()
+		if cerr != nil {
+			lg.Error("closing the incoming connection", zap.Error(cerr))
 		}
 	}()
 
