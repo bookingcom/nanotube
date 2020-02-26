@@ -96,14 +96,14 @@ func listenUDP(cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.
 	}()
 
 	buf := make([]byte, 64*1024)
-
+	var bufMux sync.Mutex
 	in := make(chan struct{})
-	errCh := make(chan error)
-loop:
-	for {
-		go func() {
-			// TODO (grzkv) Mutex should not be needed. Investigate
+
+	go func() {
+		for {
+			bufMux.Lock()
 			_, cerr := conn.Read(buf)
+			bufMux.Unlock()
 			if cerr != nil {
 				// TODO (grzkv) gather info
 				// https://github.com/golang/go/issues/4373
@@ -112,21 +112,22 @@ loop:
 				// 	return
 				// }
 				ms.UDPReadFailures.Inc()
-				errCh <- cerr
-				return
+			} else {
+				in <- struct{}{}
 			}
+		}
+	}()
 
-			in <- struct{}{}
-		}()
-
+loop:
+	for {
 		select {
 		case <-in:
+			bufMux.Lock()
 			lines := strings.Split(string(buf), "\n")
-			for _, l := range lines {
-				sendToMainQ(l, queue, ms)
+			bufMux.Unlock()
+			for i := 0; i < len(lines)-1; i++ {
+				sendToMainQ(lines[i], queue, ms)
 			}
-		case <-errCh:
-			continue
 		case <-stop:
 			break loop
 		}
