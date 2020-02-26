@@ -50,12 +50,7 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 		switch cc.Type {
 		case conf.JumpCluster:
 			cl, err = getJumpCluster(cl, cc, mainCfg, lg, ms)
-		case conf.LB:
-			for _, h := range cc.Hosts {
-				host := NewHost(cc.Name, mainCfg, h, lg, ms)
-				cl.Hosts = append(cl.Hosts, host)
-			}
-		case conf.BlackholeCluster, conf.ToallCluster:
+		case conf.BlackholeCluster, conf.ToallCluster, conf.LB:
 			for _, h := range cc.Hosts {
 				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, mainCfg, h, lg, ms))
 			}

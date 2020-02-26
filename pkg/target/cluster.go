@@ -8,7 +8,6 @@ import (
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
 
-	"github.com/cespare/xxhash"
 	"github.com/dgryski/go-jump"
 	"github.com/pkg/errors"
 	"github.com/segmentio/fasthash/fnv1a"
@@ -65,7 +64,7 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 			return nil, fmt.Errorf("no available hosts left")
 		}
 		return []*Host{
-			cl.AvailableHosts[int(xxhash.Sum64String(path))%availableHostCount],
+			cl.AvailableHosts[int(fnv1a.HashString64(path))%availableHostCount],
 		}, nil
 	case conf.ToallCluster:
 		return cl.Hosts, nil
