@@ -25,7 +25,9 @@ type Main struct {
 	// 0 value turns off buffering
 	TCPOutBufSize int
 	// 0 value turns off flushing
-	TCPOutBufFlushPeriodSec uint32
+	TCPOutBufFlushPeriodSec    uint32
+	MaxHostReconnectPeriodMs   uint32
+	HostReconnectPeriodDeltaMs uint32
 
 	NormalizeRecords  bool
 	LogSpecialRecords bool
@@ -71,6 +73,8 @@ func MakeDefault() Main {
 		TermTimeoutSec:             10,
 		TCPOutBufSize:              0,
 		TCPOutBufFlushPeriodSec:    2,
+		MaxHostReconnectPeriodMs:   5000,
+		HostReconnectPeriodDeltaMs: 10,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,

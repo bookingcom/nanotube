@@ -1,0 +1,16 @@
+[[rule]]
+    regexs = [
+        ".*test1.*"
+    ]
+    clusters = [
+        "carbon0"
+    ]
+    continue = true
+
+[[rule]]
+    regexs = [
+        ".*test2.*"
+    ]
+    clusters = [
+        "carbon1"
+    ]

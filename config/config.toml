@@ -34,6 +34,11 @@ TCPOutBufSize = 4096
 # The value of zero means no flushing.
 TCPOutBufFlushPeriodSec = 2
 
+# Maximum reconnection period to target host
+MaxHostReconnectPeriodMs = 5000
+# Parameter for exponential backoffs during reconnects
+HostReconnectPeriodDeltaMs = 10
+
 # Turns on and off the normalization of records path. Described in the docs in detail.
 NormalizeRecords = true
 # Turns on logging for special kinds of records. For now it's recrods with fractional timestamps.
@@ -45,9 +50,10 @@ PprofPort = 6000
 PromPort = 9090
 
 # Histogram parameters for the host queue size
-HostQueueLengthBucketFactor = 3
+HostQueueLengthBucketFactor = 3.0
 HostQueueLengthBuckets = 10
 
 # Histogram parameters for the processing duration
-ProcessingDurationBucketFactor = 2
+ProcessingDurationBucketFactor = 2.0
 ProcessingDurationBuckets = 10
+
