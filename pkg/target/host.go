@@ -241,7 +241,11 @@ func (h *Host) updateHostConnWriteDeadline(updateHostHealthStatus chan *HostStat
 	if err != nil {
 		h.Lg.Warn("error setting write deadline. Renewing the connection.",
 			zap.Error(err))
-		h.Conn.Close()
+		err = h.Conn.Close()
+		if err != nil {
+			h.Lg.Error("error closing the connection",
+				zap.Error(err))
+		}
 		h.Conn = nil
 		h.updateHostHealthStatus(updateHostHealthStatus, false)
 		return false
