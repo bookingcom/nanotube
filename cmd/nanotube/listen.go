@@ -83,8 +83,8 @@ loop:
 
 func listenUDP(conn *net.UDPConn, cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
 
-	if cfg.UDPOSBufferSizeMB != 0 {
-		err := conn.SetReadBuffer(int(cfg.UDPOSBufferSizeMB) * 1024 * 1024)
+	if cfg.UDPOSBufferSize != 0 {
+		err := conn.SetReadBuffer(int(cfg.UDPOSBufferSize))
 		if err != nil {
 			lg.Error("error setting UDP reader buffer size", zap.Error(err))
 		}

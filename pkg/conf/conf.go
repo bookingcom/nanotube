@@ -15,7 +15,7 @@ type Main struct {
 	EnableTCP bool
 	EnableUDP bool
 	// 0 does not set buffer size
-	UDPOSBufferSizeMB uint32
+	UDPOSBufferSize uint32
 
 	MainQueueSize uint64
 	HostQueueSize uint64
