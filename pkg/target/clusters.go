@@ -42,7 +42,7 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 	cls := make(map[string]*Cluster)
 	var err error
 	for _, cc := range cfg.Cluster {
-		cl := Cluster{
+		cl := &Cluster{
 			Name:                   cc.Name,
 			UpdateHostHealthStatus: make(chan *HostStatus),
 			Type:                   cc.Type,
@@ -59,7 +59,7 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 				cl.Type, cl.Name)
 		}
 
-		cls[cl.Name] = &cl
+		cls[cl.Name] = cl
 	}
 
 	for _, cl := range cls {
@@ -73,7 +73,7 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 	return cls, err
 }
 
-func getJumpCluster(cl Cluster, cc conf.Cluster, mainCfg conf.Main, lg *zap.Logger, ms *metrics.Prom) (Cluster, error) {
+func getJumpCluster(cl *Cluster, cc conf.Cluster, mainCfg conf.Main, lg *zap.Logger, ms *metrics.Prom) (*Cluster, error) {
 	cl.Hosts = make([]*Host, len(cc.Hosts))
 	for _, h := range cc.Hosts {
 		if cl.Hosts[h.Index] != nil {

@@ -148,7 +148,7 @@ func (h *Host) Stream(wg *sync.WaitGroup, updateHostHealthStatus chan *HostStatu
 				h.closeUpdateHostConnection(updateHostHealthStatus)
 			}
 		case <-ticker.C:
-			h.Flush(time.Second*time.Duration(h.TCPOutBufFlushPeriodSec), updateHostHealthStatus)
+			h.Flush(updateHostHealthStatus)
 		}
 	}
 }
@@ -172,7 +172,7 @@ func (h *Host) Write(b []byte) (nn int, err error) {
 }
 
 // Flush immediately flushes the buffer and performs a write
-func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
+func (h *Host) Flush(updateHostHealthStatus chan *HostStatus) {
 	h.Wm.Lock()
 	defer h.Wm.Unlock()
 	if h.W == nil || h.W.Buffered() == 0 {
@@ -180,6 +180,7 @@ func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 	}
 	err := h.W.Flush()
 	if err != nil {
+		h.W = nil
 		h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
 		// if flushing fails, the connection has to be re-established
 		h.closeUpdateHostConnection(updateHostHealthStatus)
@@ -256,16 +257,18 @@ func (h *Host) closeConnection() error {
 }
 
 func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
-	for reconnectWait, attemptCount := uint32(0), 1; h.getHostConnection() == nil; {
-		time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-		if reconnectWait < h.MaxReconnectPeriodMs {
-			reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
-		}
-		if reconnectWait >= h.MaxReconnectPeriodMs {
-			reconnectWait = h.MaxReconnectPeriodMs
-		}
+	for {
+		for reconnectWait, attemptCount := uint32(0), 1; h.getHostConnection() == nil; {
+			time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
+			if reconnectWait < h.MaxReconnectPeriodMs {
+				reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
+			}
+			if reconnectWait >= h.MaxReconnectPeriodMs {
+				reconnectWait = h.MaxReconnectPeriodMs
+			}
 
-		h.Connect(updateHostHealthStatus, attemptCount)
-		attemptCount += 1
+			h.Connect(updateHostHealthStatus, attemptCount)
+			attemptCount++
+		}
 	}
 }

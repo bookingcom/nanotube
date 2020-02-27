@@ -192,7 +192,7 @@ func TestRemoveAvailableHosts(t *testing.T) {
 		ch := make(chan struct{})
 		cluster.UpdateHostHealthStatus <- &HostStatus{host, false, ch}
 		<-ch
-		n -= 1
+		n--
 		if len(cluster.AvailableHosts) != n {
 			t.Fatalf("expected %d available hosts", n)
 		}
