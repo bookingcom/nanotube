@@ -40,31 +40,17 @@ func (cls Clusters) Send(finish chan struct{}) chan struct{} {
 func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metrics.Prom) (Clusters, error) {
 	// TODO (grzkv): Add duplicate defense
 	cls := make(map[string]*Cluster)
+	var err error
 	for _, cc := range cfg.Cluster {
-		cl := Cluster{
-			Name: cc.Name,
+		cl := &Cluster{
+			Name:                   cc.Name,
+			UpdateHostHealthStatus: make(chan *HostStatus),
+			Type:                   cc.Type,
 		}
 		switch cc.Type {
 		case conf.JumpCluster:
-			cl.Hosts = make([]*Host, len(cc.Hosts))
-			for _, h := range cc.Hosts {
-				if cl.Hosts[h.Index] != nil {
-					return cls, fmt.Errorf("duplicate index value, or index not set for a hashed cluster %s", cc.Name)
-				}
-
-				if h.Index >= len(cl.Hosts) {
-					return cls, fmt.Errorf("host %s index %d out of bounds in cluster %s (cluster size %d)", h.Name, h.Index, cl.Name, len(cl.Hosts))
-				}
-
-				cl.Hosts[h.Index] = NewHost(cc.Name, mainCfg, h, lg, ms)
-			}
-
-			for _, hst := range cl.Hosts {
-				if hst == nil {
-					return cls, fmt.Errorf("not all host indexes were set for cluster %v", cc.Name)
-				}
-			}
-		case conf.BlackholeCluster, conf.ToallCluster:
+			cl, err = getJumpCluster(cl, cc, mainCfg, lg, ms)
+		case conf.BlackholeCluster, conf.ToallCluster, conf.LB:
 			for _, h := range cc.Hosts {
 				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, mainCfg, h, lg, ms))
 			}
@@ -72,10 +58,39 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 			return cls, fmt.Errorf("incorrect cluster type %s for cluster %s",
 				cl.Type, cl.Name)
 		}
-		cl.Type = cc.Type
 
-		cls[cl.Name] = &cl
+		cls[cl.Name] = cl
 	}
 
-	return cls, nil
+	for _, cl := range cls {
+		go cl.keepAvailableHostsUpdated()
+		if cl.Type == conf.LB {
+			for _, h := range cl.Hosts {
+				h.Connect(cl.UpdateHostHealthStatus, 1)
+			}
+		}
+	}
+	return cls, err
+}
+
+func getJumpCluster(cl *Cluster, cc conf.Cluster, mainCfg conf.Main, lg *zap.Logger, ms *metrics.Prom) (*Cluster, error) {
+	cl.Hosts = make([]*Host, len(cc.Hosts))
+	for _, h := range cc.Hosts {
+		if cl.Hosts[h.Index] != nil {
+			return cl, fmt.Errorf("duplicate index value, or index not set for a hashed cluster %s", cc.Name)
+		}
+
+		if h.Index >= len(cl.Hosts) {
+			return cl, fmt.Errorf("host %s index %d out of bounds in cluster %s (cluster size %d)", h.Name, h.Index, cl.Name, len(cl.Hosts))
+		}
+
+		cl.Hosts[h.Index] = NewHost(cc.Name, mainCfg, h, lg, ms)
+	}
+
+	for _, hst := range cl.Hosts {
+		if hst == nil {
+			return cl, fmt.Errorf("not all host indexes were set for cluster %v", cc.Name)
+		}
+	}
+	return cl, nil
 }
