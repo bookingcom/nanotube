@@ -24,6 +24,7 @@ func TestClustersWithNoAvailableHosts(t *testing.T) {
 			port = 456`
 
 	cfg := conf.MakeDefault()
+	cfg.OutConnTimeoutSec = 1
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
@@ -31,6 +32,7 @@ func TestClustersWithNoAvailableHosts(t *testing.T) {
 	logger, _ := zap.NewProductionConfig().Build()
 
 	clusters, _ := NewClusters(cfg, cls, logger, ms)
+
 	for _, cluster := range clusters {
 		if len(cluster.AvailableHosts) != 0 {
 			t.Fatalf("expected 0 available hosts")
@@ -51,6 +53,7 @@ func TestClustersWithAllAvailableHosts(t *testing.T) {
 			port = 456`
 
 	cfg := conf.MakeDefault()
+	cfg.OutConnTimeoutSec = 1
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
@@ -94,6 +97,7 @@ func TestClustersWithFlappingHosts(t *testing.T) {
 			port = 456`
 
 	cfg := conf.MakeDefault()
+	cfg.OutConnTimeoutSec = 1
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
@@ -155,6 +159,7 @@ func TestRemoveAvailableHosts(t *testing.T) {
 			port = 456`
 
 	cfg := conf.MakeDefault()
+	cfg.OutConnTimeoutSec = 1
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
