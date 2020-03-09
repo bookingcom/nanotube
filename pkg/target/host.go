@@ -103,9 +103,9 @@ func NewOptionalTicker(d time.Duration) *OptionalTicker {
 }
 
 // Stop halts the ticker if it was ever started
-func (t *OptionalTicker) Stop() {
-	if t != nil {
-		t.Stop()
+func (ticker *OptionalTicker) Stop() {
+	if ticker.t != nil {
+		ticker.t.Stop()
 	}
 }
 
