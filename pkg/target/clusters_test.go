@@ -17,10 +17,10 @@ func TestClustersWithNoAvailableHosts(t *testing.T) {
 		name = "aaa"
 		type = "lb"
 			[[cluster.hosts]]
-			name = "host1"
+			name = "192.0.2.1"
 			port = 123
 			[[cluster.hosts]]
-			name = "host2"
+			name = "192.0.2.2"
 			port = 456`
 
 	cfg := conf.MakeDefault()
@@ -46,10 +46,10 @@ func TestClustersWithAllAvailableHosts(t *testing.T) {
 		name = "aaa"
 		type = "lb"
 			[[cluster.hosts]]
-			name = "host1"
+			name = "192.0.2.1"
 			port = 123
 			[[cluster.hosts]]
-			name = "host2"
+			name = "192.0.2.2"
 			port = 456`
 
 	cfg := conf.MakeDefault()
@@ -90,10 +90,10 @@ func TestClustersWithFlappingHosts(t *testing.T) {
 		name = "aaa"
 		type = "lb"
 			[[cluster.hosts]]
-			name = "host1"
+			name = "192.0.2.1"
 			port = 123
 			[[cluster.hosts]]
-			name = "host2"
+			name = "192.0.2.2"
 			port = 456`
 
 	cfg := conf.MakeDefault()
@@ -114,7 +114,7 @@ func TestClustersWithFlappingHosts(t *testing.T) {
 	var host *Host
 	cluster := clusters["aaa"]
 	for _, h := range cluster.Hosts {
-		if h.Name == "host1" {
+		if h.Name == "192.0.2.1" {
 			host = h
 		}
 	}
@@ -140,22 +140,22 @@ func TestRemoveAvailableHosts(t *testing.T) {
 		name = "aaa"
 		type = "lb"
 			[[cluster.hosts]]
-			name = "host1"
+			name = "192.0.2.1"
 			port = 123
 			[[cluster.hosts]]
-			name = "host2"
+			name = "192.0.2.2"
 			port = 456
 			[[cluster.hosts]]
-			name = "host3"
+			name = "192.0.2.3"
 			port = 456
 			[[cluster.hosts]]
-			name = "host4"
+			name = "192.0.2.4"
 			port = 456
 			[[cluster.hosts]]
-			name = "host5"
+			name = "192.0.2.5"
 			port = 456
 			[[cluster.hosts]]
-			name = "host6"
+			name = "192.0.2.6"
 			port = 456`
 
 	cfg := conf.MakeDefault()
