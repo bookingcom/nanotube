@@ -13,22 +13,12 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
-// HostStatus is used to signal connection status by Host to cluster
-type HostStatus struct {
-	Host   *Host
-	Status bool
-	sigCh  chan struct{}
-}
-
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
 type Cluster struct {
 	Name string
 	// Are ordered by index
-	Hosts                  []*Host
-	AvailableHosts         []*Host
-	Hm                     sync.Mutex
-	Type                   string
-	UpdateHostHealthStatus chan *HostStatus
+	Hosts []*Host
+	Type  string
 }
 
 // Push sends single record to cluster. Routing happens based on cluster type.
@@ -57,16 +47,6 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 		return []*Host{
 			cl.Hosts[jumpHash(path, len(cl.Hosts))],
 		}, nil
-	case conf.LB:
-		cl.Hm.Lock()
-		defer cl.Hm.Unlock()
-		availableHostCount := len(cl.AvailableHosts)
-		if availableHostCount == 0 {
-			return nil, fmt.Errorf("no available hosts left")
-		}
-		return []*Host{
-			cl.AvailableHosts[int(fnv1a.HashString64(path))%availableHostCount],
-		}, nil
 	case conf.ToallCluster:
 		return cl.Hosts, nil
 	case conf.BlackholeCluster:
@@ -85,9 +65,8 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 
 		var wg sync.WaitGroup
 		wg.Add(len(cl.Hosts))
-
 		for _, h := range cl.Hosts {
-			go h.Stream(&wg, cl.UpdateHostHealthStatus)
+			go h.Stream(&wg)
 		}
 
 		wg.Wait()
@@ -99,55 +78,6 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 			close(h.Ch)
 		}
 	}()
-}
-
-func (cl *Cluster) removeAvailableHost(host *Host) {
-	for i, h := range cl.AvailableHosts {
-		if h == host {
-			host.stateChanges.Inc()
-			cl.Hm.Lock()
-			defer cl.Hm.Unlock()
-			length := len(cl.AvailableHosts)
-
-			for j := i; j < length-1; j++ {
-				cl.AvailableHosts[j] = cl.AvailableHosts[j+1]
-			}
-			cl.AvailableHosts = cl.AvailableHosts[:length-1]
-
-			break
-		}
-	}
-}
-
-func (cl *Cluster) addAvailableHost(host *Host) {
-	cl.Hm.Lock()
-	defer cl.Hm.Unlock()
-	for _, h := range cl.AvailableHosts {
-		if h.Name == host.Name && host.Port == h.Port {
-			return
-		}
-	}
-	host.stateChanges.Inc()
-	cl.AvailableHosts = append(cl.AvailableHosts, host)
-}
-
-func (cl *Cluster) keepAvailableHostsUpdated() {
-	for {
-		h := <-cl.UpdateHostHealthStatus
-		if cl.Type != conf.LB {
-			continue
-		}
-		cl.updateHostAvailability(*h)
-	}
-}
-
-func (cl *Cluster) updateHostAvailability(h HostStatus) {
-	defer close(h.sigCh)
-	if h.Status {
-		cl.addAvailableHost(h.Host)
-	} else {
-		cl.removeAvailableHost(h.Host)
-	}
 }
 
 // hashing for the rind of hosts in a cluster based on the record path
