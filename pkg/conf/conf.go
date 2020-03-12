@@ -20,7 +20,6 @@ type Main struct {
 	IncomingConnIdleTimeoutSec uint32
 	SendTimeoutSec             uint32
 	OutConnTimeoutSec          uint32
-	KeepAliveSec               uint32
 	TermTimeoutSec             uint16
 	// 0 value turns off buffering
 	TCPOutBufSize int
@@ -69,7 +68,6 @@ func MakeDefault() Main {
 		IncomingConnIdleTimeoutSec: 90,
 		SendTimeoutSec:             5,
 		OutConnTimeoutSec:          5,
-		KeepAliveSec:               1,
 		TermTimeoutSec:             10,
 		TCPOutBufSize:              0,
 		TCPOutBufFlushPeriodSec:    2,
