@@ -24,6 +24,7 @@ type Host struct {
 	Conn net.Conn
 
 	W    *bufio.Writer
+	Wm   sync.Mutex
 	stop chan int
 
 	Lg                      *zap.Logger
@@ -31,8 +32,6 @@ type Host struct {
 	SendTimeoutSec          uint32
 	ConnTimeoutSec          uint32
 	TCPOutBufFlushPeriodSec uint32
-	MaxReconnectPeriodMs    uint32
-	ReconnectPeriodDeltaMs  uint32
 
 	outRecs            prometheus.Counter
 	throttled          prometheus.Counter
@@ -65,8 +64,6 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		throttled:               ms.ThrottledHosts.With(promLabels),
 		processingDuration:      ms.ProcessingDuration,
 		bufSize:                 mainCfg.TCPOutBufSize,
-		MaxReconnectPeriodMs:    mainCfg.MaxHostReconnectPeriodMs,
-		ReconnectPeriodDeltaMs:  mainCfg.MaxHostReconnectPeriodMs,
 	}
 }
 
@@ -79,120 +76,95 @@ func (h *Host) Push(r *rec.Rec) {
 	}
 }
 
-// OptionalTicker is a ticker that only starts if passed non-zero duration
-type OptionalTicker struct {
-	C <-chan time.Time
-	t *time.Ticker
-}
-
-// NewOptionalTicker makes a new ticker that only runs if duration supplied is non-zero
-func NewOptionalTicker(d time.Duration) *OptionalTicker {
-	var ticker OptionalTicker
-	if d != 0 {
-		ticker.t = time.NewTicker(d)
-		ticker.C = ticker.t.C
-	}
-
-	return &ticker
-}
-
-// Stop halts the ticker if it was ever started
-func (ticker *OptionalTicker) Stop() {
-	if ticker.t != nil {
-		ticker.t.Stop()
-	}
-}
-
 // Stream launches the the sending to target host.
 // Exits when queue is closed and sending is finished.
 func (h *Host) Stream(wg *sync.WaitGroup) {
 	// TODO (grzkv) Maybe move (re)connection to a separate goroutine and communicate via a chan
 
-	ticker := NewOptionalTicker(time.Duration(h.TCPOutBufFlushPeriodSec))
-	defer ticker.Stop()
-
+	if h.TCPOutBufFlushPeriodSec != 0 {
+		go h.Flush(time.Second * time.Duration(h.TCPOutBufFlushPeriodSec))
+	}
 	defer func() {
 		wg.Done()
 		close(h.stop)
 	}()
 
-	for {
-		select {
-		case r, ok := <-h.Ch:
-			if !ok {
-				return
+	for r := range h.Ch {
+		// retry until successful
+		for {
+			const maxReconnectPeriodMs = 5000
+			const reconnectDeltaMs = 10
+			for reconnectWait := 0; h.Conn == nil; {
+				time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
+				if reconnectWait < maxReconnectPeriodMs {
+					reconnectWait = reconnectWait*2 + reconnectDeltaMs
+				}
+				if reconnectWait >= maxReconnectPeriodMs {
+					reconnectWait = maxReconnectPeriodMs
+				}
+
+				h.Connect()
 			}
-			// retry until successful
-			for {
-				h.reconnectIfNecessary()
 
-				err := h.Conn.SetWriteDeadline(time.Now().Add(
-					time.Duration(h.SendTimeoutSec) * time.Second))
-				if err != nil {
-					h.Lg.Warn("error setting write deadline. Renewing the connection.",
-						zap.Error(err))
-				}
-
-				// this may loose one record on disconnect
-				_, err = h.Write([]byte(*r.Serialize()))
-
-				if err == nil {
-					h.outRecs.Inc()
-					h.processingDuration.Observe(time.Since(r.Received).Seconds())
-					break
-				}
-
-				h.Lg.Warn("error sending value to host. Reconnect and retry..",
-					zap.String("target", h.Name),
-					zap.Uint16("port", h.Port),
-					zap.Error(err),
-				)
-				err = h.Conn.Close()
-				if err != nil {
-					// not retrying here, file descriptor may be lost
-					h.Lg.Error("error closing the connection",
-						zap.Error(err))
-				}
-
-				h.Conn = nil
+			err := h.Conn.SetWriteDeadline(time.Now().Add(
+				time.Duration(h.SendTimeoutSec) * time.Second))
+			if err != nil {
+				h.Lg.Warn("error setting write deadline. Renewing the connection.",
+					zap.Error(err))
 			}
-		case <-ticker.C:
-			h.Flush(time.Second * time.Duration(h.TCPOutBufFlushPeriodSec))
-		}
-	}
-}
 
-// reconnect makes sure the host stays connected
-func (h *Host) reconnectIfNecessary() {
-	for reconnectWait := uint32(0); h.Conn == nil; {
-		time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-		if reconnectWait < h.MaxReconnectPeriodMs {
-			reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
-		}
-		if reconnectWait >= h.MaxReconnectPeriodMs {
-			reconnectWait = h.MaxReconnectPeriodMs
-		}
+			// this may loose one record on disconnect
+			_, err = h.Write([]byte(*r.Serialize()))
 
-		h.Connect()
+			if err == nil {
+				h.outRecs.Inc()
+				h.processingDuration.Observe(time.Since(r.Received).Seconds())
+				break
+			}
+
+			h.Lg.Warn("error sending value to host. Reconnect and retry..",
+				zap.String("target", h.Name),
+				zap.Uint16("port", h.Port),
+				zap.Error(err),
+			)
+			err = h.Conn.Close()
+			if err != nil {
+				// not retrying here, file descriptor may be lost
+				h.Lg.Error("error closing the connection",
+					zap.Error(err))
+			}
+
+			h.Conn = nil
+		}
 	}
 }
 
 // Write does the remote write, i.e. sends the data
 func (h *Host) Write(b []byte) (nn int, err error) {
+	h.Wm.Lock()
+	defer h.Wm.Unlock()
 	return h.W.Write(b)
 }
 
 // Flush immediately flushes the buffer and performs a write
 func (h *Host) Flush(d time.Duration) {
-	if h.W == nil || h.W.Buffered() == 0 {
-		return
-	}
-	err := h.W.Flush()
-	if err != nil {
-		h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
-		// if flushing fails, the connection has to be re-established
-		h.Conn = nil
-		h.W = nil
+	t := time.NewTicker(d)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-h.stop:
+			return
+		case <-t.C:
+			h.Wm.Lock()
+			if h.W != nil {
+				err := h.W.Flush()
+				if err != nil {
+					h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+				}
+			}
+			h.Wm.Unlock()
+		}
 	}
 }
 
@@ -200,18 +172,18 @@ func (h *Host) Flush(d time.Duration) {
 func (h *Host) Connect() {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port),
 		time.Duration(h.ConnTimeoutSec)*time.Second)
-
 	if err != nil {
 		h.Lg.Warn("connection to host failed",
 			zap.String("host", h.Name),
 			zap.Uint16("port", h.Port))
 		h.Conn = nil
-		h.W = nil
 
 		return
 	}
 
 	h.Conn = conn
 
+	h.Wm.Lock()
+	defer h.Wm.Unlock()
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
 }
