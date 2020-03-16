@@ -133,6 +133,17 @@ func TestRec(t *testing.T) {
 				RawTime: "123.45",
 			},
 		},
+		{
+			s: "fractional.time.test;tag1=val1;tag2=val2 3.3 123.45",
+			res: Rec{
+				Path:    "fractional.time.test",
+				Tag:     ";tag1=val1;tag2=val2",
+				Val:     3.3,
+				RawVal:  "3.3",
+				Time:    123,
+				RawTime: "123.45",
+			},
+		},
 	}
 	nowF := func() time.Time {
 		return time.Time{}
@@ -165,55 +176,63 @@ func TestRec(t *testing.T) {
 
 func TestNormalization(t *testing.T) {
 	tt := []struct {
-		in  string
-		out string
+		in        string
+		path, tag string
 	}{
 		{
-			in:  "a.b.c",
-			out: "a.b.c",
+			in:   "a.b.c",
+			path: "a.b.c",
 		},
 		{
-			in:  "a.b.c.",
-			out: "a.b.c",
+			in:   "a.b.c.",
+			path: "a.b.c",
 		},
 		{
-			in:  "abc.abc.abc",
-			out: "abc.abc.abc",
+			in:   "abc.abc.abc",
+			path: "abc.abc.abc",
 		},
 		{
-			in:  ".abc.abc.abc",
-			out: "abc.abc.abc",
+			in:   ".abc.abc.abc",
+			path: "abc.abc.abc",
 		},
 		{
-			in:  "...abc.abc.abc..",
-			out: "abc.abc.abc",
+			in:   "...abc.abc.abc..",
+			path: "abc.abc.abc",
 		},
 		{
-			in:  "abc..ab.abc",
-			out: "abc.ab.abc",
+			in:   "abc..ab.abc",
+			path: "abc.ab.abc",
 		},
 		{
-			in:  "abc..def..jkl..xyz",
-			out: "abc.def.jkl.xyz",
+			in:   "abc..def..jkl..xyz",
+			path: "abc.def.jkl.xyz",
 		},
 		{
-			in:  "ab&c",
-			out: "ab_c",
+			in:   "ab&c",
+			path: "ab_c",
 		},
 		{
-			in:  "ab   cd.a  b. zkl",
-			out: "ab___cd.a__b._zkl",
+			in:   "ab   cd.a  b. zkl",
+			path: "ab___cd.a__b._zkl",
 		},
 		{
-			in:  "ab^%+=.cdef.jk&",
-			out: "ab____.cdef.jk_",
+			in:   "ab^%+=.cdef.jk&",
+			path: "ab____.cdef.jk_",
+		},
+		{
+			in:   "ab^%+=.cdef.jk&;tag1=val1",
+			path: "ab____.cdef.jk_",
+			tag:  ";tag1=val1",
 		},
 	}
 
 	for _, test := range tt {
-		s := normalizePath(&test.in)
-		if *s != test.out {
-			t.Fatalf("Got %s after normalization of %s, expected %s", *s, test.in, test.out)
+		path, tag := normalizePath(test.in)
+		if path != test.path {
+			t.Fatalf("Got path %s after normalization of %s, expected %s", path, test.in, test.path)
+		}
+		if tag != test.tag {
+			t.Fatalf("Got tag %s after normalization of %s, expected %s", tag, test.in, test.tag)
 		}
 	}
 }
@@ -243,6 +262,17 @@ func testSerialization(t testing.TB) {
 				RawTime: "1568889265",
 			},
 			out: "a.b.c.d.path 89.0987 1568889265\n",
+		},
+		{
+			in: Rec{
+				Path:    "a.b.c.d.path",
+				Tag:     ";tag1=val1;tag2=val2",
+				Val:     89.0987,
+				RawVal:  "89.0987",
+				Time:    1568889265,
+				RawTime: "1568889265",
+			},
+			out: "a.b.c.d.path;tag1=val1;tag2=val2 89.0987 1568889265\n",
 		},
 	}
 

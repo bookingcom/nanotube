@@ -14,6 +14,7 @@ import (
 // Rec represents a single piece of data (a datapoint) that can be sent.
 type Rec struct {
 	Path    string
+	Tag     string
 	Val     float32
 	RawVal  string // this is to avoid discrepancies in precision and formatting
 	Time    uint32
@@ -52,15 +53,16 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 		}
 	}
 
-	var path *string
+	var path, tag string
 	if normalize {
-		path = normalizePath(&words[0])
+		path, tag = normalizePath(words[0])
 	} else {
-		path = &words[0]
+		path = words[0]
 	}
 
 	return &Rec{
-		Path:     *path,
+		Path:     path,
+		Tag:      tag,
 		Val:      float32(val),
 		RawVal:   words[1],
 		Time:     uint32(tm),
@@ -78,7 +80,7 @@ func (r *Rec) Serialize() *string {
 	// If you change anything in the next line, benchmark:  You
 	// may cause a switch from a fast path in the Go runtime to
 	// a slow path and strings.Builder might be faster then.
-	s := r.Path + " " + r.RawVal + " " + r.RawTime + "\n"
+	s := r.Path + r.Tag + " " + r.RawVal + " " + r.RawTime + "\n"
 
 	return &s
 }
@@ -91,43 +93,46 @@ func (r *Rec) Copy() *Rec {
 
 // normalizePath does path normalization as described in the docs.
 // It happens in one linear pass along the string. Pointers are used for input and output to save time on data copying.
-func normalizePath(s *string) *string {
-	if len(*s) == 0 {
-		res := ""
-		return &res
+func normalizePath(s string) (path, tag string) {
+	if len(s) == 0 {
+		return
 	}
 
 	start := 0
-	for ; (*s)[start] == '.' && start < len(*s); start++ {
+	for ; s[start] == '.' && start < len(s); start++ {
 	}
-	if start == len(*s) {
-		res := ""
-		return &res
+	if start == len(s) {
+		return
 	}
 
-	end := len(*s) - 1
-	for ; (*s)[end] == '.' && end >= 0; end-- {
+	end := len(s) - 1
+	for ; s[end] == '.' && end >= 0; end-- {
 	}
 	// check for string consisting only of points was done before
 
 	var b strings.Builder
 	for i := start; i <= end; i++ {
-		if (*s)[i] == '.' {
+		if s[i] == '.' {
 			// a dot cannot be the last char
-			if (*s)[i+1] == '.' {
+			if s[i+1] == '.' {
 				continue
 			}
 		}
 
-		if validChar((*s)[i]) {
-			b.WriteByte((*s)[i])
+		if s[i] == ';' {
+			tag = s[i:]
+			break
+		}
+
+		if validChar(s[i]) {
+			b.WriteByte(s[i])
 		} else {
 			b.WriteRune('_')
 		}
 	}
 
-	res := b.String()
-	return &res
+	path = b.String()
+	return
 }
 
 func validChar(c byte) bool {
