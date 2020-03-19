@@ -1,6 +1,7 @@
 package rec
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -68,7 +69,6 @@ func TestRec(t *testing.T) {
 				RawVal:  "12e-3",
 				Time:    1234567890,
 				RawTime: "1234567890",
-				// Raw:  "asdf.fdsa.a.1.c 12e-3 1234567890\n",
 			},
 			isErr: false,
 		},
@@ -133,18 +133,32 @@ func TestRec(t *testing.T) {
 				RawTime: "123.45",
 			},
 		},
+		{
+			s: "large.float.test 1.79769313486231e+308 12345",
+			res: Rec{
+				Path:    "large.float.test",
+				Val:     float64(1.79769313486231e+308),
+				RawVal:  "1.79769313486231e+308",
+				Time:    12345,
+				RawTime: "12345",
+			},
+		},
 	}
 	nowF := func() time.Time {
 		return time.Time{}
 	}
 
 	lg := zap.NewNop()
+	opt := cmp.Comparer(func(x, y float64) bool {
+		delta := math.Abs(x - y)
+		return delta < 0.00001
+	})
 	for _, tst := range tt {
 		t.Run(tst.s, func(t *testing.T) {
 			res, err := ParseRec(tst.s, true, true, nowF, lg)
 			if err != nil {
 				if !tst.isErr {
-					t.Error("unexpected error")
+					t.Error("unexpected error", err)
 				}
 			} else {
 				if tst.isErr {
@@ -154,7 +168,7 @@ func TestRec(t *testing.T) {
 						t.Error("unexpectected nil value of parsed rec")
 					}
 
-					if diff := cmp.Diff(*res, tst.res); diff != "" {
+					if diff := cmp.Diff(*res, tst.res, opt); diff != "" {
 						t.Errorf("diff in rec vals:\n%s", diff)
 					}
 				}
