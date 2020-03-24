@@ -34,6 +34,7 @@ func TestConfSimple(t *testing.T) {
 
 		MainQueueSize:  100,
 		HostQueueSize:  10,
+
 		WorkerPoolSize: 10,
 
 		IncomingConnIdleTimeoutSec: 13,

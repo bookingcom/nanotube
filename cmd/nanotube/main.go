@@ -26,9 +26,7 @@ import (
 var version string
 
 func main() {
-	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{"stdout"}
-	lg, err := config.Build()
+	lg, err := buildLogger()
 	if err != nil {
 		log.Fatalf("error building logger config: %v", err)
 	}
@@ -125,6 +123,18 @@ func parseFlags() (string, string, string, string, bool, bool) {
 	}
 
 	return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, false
+}
+
+func buildLogger() (*zap.Logger, error) {
+	config := zap.NewProductionConfig()
+	config.OutputPaths = []string{"stdout"}
+	// secondly limit the number of entries with the same level and message to `Initial`,
+	// after that log every `Thereafter`s message.
+	config.Sampling = &zap.SamplingConfig{
+		Initial:    10,
+		Thereafter: 1000,
+	}
+	return config.Build()
 }
 
 func loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath string,
