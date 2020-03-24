@@ -10,11 +10,15 @@ import (
 func TestConfSimple(t *testing.T) {
 	conf := `
 	ListeningPort = 2003
+	EnableUDP = true
+	EnableTCP = false
 	TargetPort = 2008
+
 	SendTimeoutSec = 7
 	OutConnTimeoutSec = 9
 	TermTimeoutSec = 11
 	IncomingConnIdleTimeoutSec = 13
+
 	MainQueueSize = 100
 	HostQueueSize = 10
 	WorkerPoolSize = 10
@@ -24,6 +28,9 @@ func TestConfSimple(t *testing.T) {
 	expected := Main{
 		ListeningPort: 2003,
 		TargetPort:    2008,
+
+		EnableTCP: false,
+		EnableUDP: true,
 
 		MainQueueSize: 100,
 		HostQueueSize: 10,
