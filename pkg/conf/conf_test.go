@@ -32,8 +32,8 @@ func TestConfSimple(t *testing.T) {
 		EnableTCP: false,
 		EnableUDP: true,
 
-		MainQueueSize:  100,
-		HostQueueSize:  10,
+		MainQueueSize: 100,
+		HostQueueSize: 10,
 
 		WorkerPoolSize: 10,
 
