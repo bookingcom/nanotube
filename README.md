@@ -1,4 +1,5 @@
 ![CI](https://github.com/bookingcom/nanotube/workflows/CI/badge.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/bookingcom/nanotube)](https://goreportcard.com/report/github.com/bookingcom/nanotube)
 
 
 Nanotube: data router for Graphite
