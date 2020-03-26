@@ -135,6 +135,7 @@ func (h *Host) Write(b []byte) (nn int, err error) {
 	return h.W.Write(b)
 }
 
+// Flush immediately flushes the buffer and performs a write
 func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 	t := time.NewTicker(d)
 	defer t.Stop()
@@ -148,6 +149,8 @@ func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 			if h.W != nil {
 				err := h.W.Flush()
 				if err != nil {
+					h.W = nil
+					h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
 					h.closeUpdateHostConnection(updateHostHealthStatus)
 				}
 			}
@@ -210,7 +213,13 @@ func (h *Host) updateHostConnWriteDeadline(updateHostHealthStatus chan *HostStat
 	if err != nil {
 		h.Lg.Warn("error setting write deadline. Renewing the connection.",
 			zap.Error(err))
-		h.closeUpdateHostConnection(updateHostHealthStatus)
+		err = h.Conn.Close()
+		if err != nil {
+			h.Lg.Error("error closing the connection",
+				zap.Error(err))
+		}
+		h.Conn = nil
+		h.updateHostHealthStatus(updateHostHealthStatus, false)
 		return false
 	}
 	return true
@@ -238,7 +247,7 @@ func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
 				reconnectWait = maxReconnectPeriodMs
 			}
 			h.Connect(updateHostHealthStatus, attemptCount)
-			attemptCount += 1
+			attemptCount++
 		}
 	}
 }

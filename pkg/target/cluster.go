@@ -13,6 +13,7 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
+// HostStatus is used to signal connection status by Host to cluster
 type HostStatus struct {
 	Host   *Host
 	Status bool
@@ -142,10 +143,10 @@ func (cl *Cluster) keepAvailableHostsUpdated() {
 
 func (cl *Cluster) updateHostAvailability(h HostStatus) {
 	defer close(h.sigCh)
-	if h.Status == false {
-		cl.removeAvailableHost(h.Host)
-	} else {
+	if h.Status {
 		cl.addAvailableHost(h.Host)
+	} else {
+		cl.removeAvailableHost(h.Host)
 	}
 }
 
