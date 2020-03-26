@@ -1,6 +1,6 @@
 module github.com/bookingcom/nanotube
 
-go 1.12
+go 1.14
 
 require (
 	github.com/burntsushi/toml v0.3.1
