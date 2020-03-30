@@ -24,9 +24,10 @@ type Host struct {
 	Conn net.Conn
 	Cm   sync.RWMutex
 
-	W    *bufio.Writer
-	Wm   sync.Mutex
-	stop chan int
+	W           *bufio.Writer
+	Wm          sync.Mutex
+	stop        chan int
+	initConnect chan struct{}
 
 	Lg                      *zap.Logger
 	Ms                      *metrics.Prom
@@ -54,11 +55,12 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		"upstream_host": hostCfg.Name,
 	}
 	return &Host{
-		Name: hostCfg.Name,
-		Port: targetPort,
-		Ch:   make(chan *rec.Rec, mainCfg.HostQueueSize),
-		Lg:   lg,
-		stop: make(chan int),
+		Name:        hostCfg.Name,
+		Port:        targetPort,
+		Ch:          make(chan *rec.Rec, mainCfg.HostQueueSize),
+		Lg:          lg,
+		stop:        make(chan int),
+		initConnect: make(chan struct{}),
 
 		SendTimeoutSec:          mainCfg.SendTimeoutSec,
 		ConnTimeoutSec:          mainCfg.OutConnTimeoutSec,
@@ -160,7 +162,7 @@ func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
-func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int) {
+func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int) bool {
 	dialer := net.Dialer{
 		Timeout:   time.Duration(h.ConnTimeoutSec) * time.Second,
 		KeepAlive: time.Duration(h.KeepAliveSec) * time.Second,
@@ -175,7 +177,7 @@ func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int
 			h.updateHostHealthStatus(updateHostHealthStatus, false)
 		}
 
-		return
+		return false
 	}
 
 	h.updateHostConnection(conn)
@@ -184,10 +186,16 @@ func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int
 	h.Wm.Lock()
 	defer h.Wm.Unlock()
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
+	return true
 }
 
 func (h *Host) updateHostHealthStatus(updateHostHealthStatus chan *HostStatus, status bool) {
 	updateHostHealthStatus <- &HostStatus{Host: h, Status: status, sigCh: make(chan struct{})}
+	if !status {
+		go func() {
+			h.initConnect <- struct{}{}
+		}()
+	}
 }
 
 func (h *Host) updateHostConnection(conn net.Conn) {
@@ -235,10 +243,18 @@ func (h *Host) closeConnection() error {
 }
 
 func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
+	select {
+	case <-h.initConnect:
+		h.connectWithExponentialBackoff(updateHostHealthStatus)
+	}
+}
+
+func (h *Host) connectWithExponentialBackoff(updateHostHealthStatus chan *HostStatus) {
 	const maxReconnectPeriodMs = 5000
 	const reconnectDeltaMs = 10
-	for {
-		for reconnectWait, attemptCount := 0, 1; h.getHostConnection() == nil; {
+	if h.getHostConnection() == nil {
+		reconnectWait, attemptCount := 0, 1
+		for {
 			time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
 			if reconnectWait < maxReconnectPeriodMs {
 				reconnectWait = reconnectWait*2 + reconnectDeltaMs
@@ -246,7 +262,10 @@ func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
 			if reconnectWait >= maxReconnectPeriodMs {
 				reconnectWait = maxReconnectPeriodMs
 			}
-			h.Connect(updateHostHealthStatus, attemptCount)
+			success := h.Connect(updateHostHealthStatus, attemptCount)
+			if success {
+				break
+			}
 			attemptCount++
 		}
 	}
