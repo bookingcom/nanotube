@@ -243,8 +243,8 @@ func (h *Host) closeConnection() error {
 }
 
 func (h *Host) maintainHostConnection(updateHostHealthStatus chan *HostStatus) {
-	select {
-	case <-h.initConnect:
+	h.connectWithExponentialBackoff(updateHostHealthStatus)
+	for range h.initConnect {
 		h.connectWithExponentialBackoff(updateHostHealthStatus)
 	}
 }
