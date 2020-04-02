@@ -1,0 +1,13 @@
+stages:
+  - package
+
+package:
+  stage: package
+  tags: [ docker ]
+  only:
+    - tags
+  except:
+    - branches
+    - triggers
+  script:
+    - ./development/ci/gitlab-package.sh
