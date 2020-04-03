@@ -10,4 +10,4 @@ package:
     - branches
     - triggers
   script:
-    - ./development/ci/gitlab-package.sh
+    - ./.build/gitlab-package.sh
