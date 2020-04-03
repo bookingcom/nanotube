@@ -1,5 +1,7 @@
 #!/bin/bash -xe
 
+yum install -y jq
+
 echo "Submitting packaging job"
 
 JOB_ID="$(curl -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PACKAGING_API_KEY" -d "{ \"owner\": \"$GITLAB_USER_EMAIL\", \"release_pkg\": 1, \"pkg_scm_url\": \"git@gitlab.booking.com:$CI_PROJECT_PATH.git\", \"pkg_scm_rev\":\"tag::$CI_COMMIT_TAG\", \"spec_scm_dir\": \"packages.git::$CI_PROJECT_NAME\", \"centos\": \"6,7\" }" http://yum-master.prod.booking.com/api/builds/new?src_from_scm=1 | jq .job_id)"
