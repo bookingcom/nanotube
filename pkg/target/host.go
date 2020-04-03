@@ -118,15 +118,12 @@ func (h *Host) Stream(wg *sync.WaitGroup, updateHostHealthStatus chan *HostStatu
 }
 
 func (h *Host) closeUpdateHostConnection(updateHostHealthStatus chan *HostStatus) {
-	// TODO (grzkv): This is called in case connection is already broken.
-	// what is the guarantee that it will not get stuck?
 	err := h.closeConnection()
 	if err != nil {
 		// not retrying here, file descriptor may be lost
 		h.Lg.Error("error closing the connection", zap.Error(err))
 	}
 	h.updateHostConnection(nil)
-	// TODO (grzkv): this is blocking. also, it can trigger multile goroutines
 	h.updateHostHealthStatus(updateHostHealthStatus, false)
 }
 
@@ -153,7 +150,6 @@ func (h *Host) Flush(d time.Duration, updateHostHealthStatus chan *HostStatus) {
 					err := h.W.Flush()
 					if err != nil {
 						h.W = nil
-						// TODO (grzkv) I am not sure this will nil connection fast enough
 						h.closeUpdateHostConnection(updateHostHealthStatus)
 						h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
 					}
@@ -192,9 +188,6 @@ func (h *Host) Connect(updateHostHealthStatus chan *HostStatus, attemptCount int
 	return true
 }
 
-// TODO (grzkv): The name does not say that it tries to re-connect
-// TODO (grzkv): Do we need to pass channel every time? can it be part of host?
-// TODO (grzkv): This looks like an idempotent function, but it's not
 func (h *Host) updateHostHealthStatus(updateHostHealthStatus chan *HostStatus, status bool) {
 	updateHostHealthStatus <- &HostStatus{Host: h, Status: status, sigCh: make(chan struct{})}
 	if !status {
