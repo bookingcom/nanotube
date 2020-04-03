@@ -1,3 +1,5 @@
+image: docker.artifactory.booking.com/projects/golang/golang-ci:1.13
+
 stages:
   - package
 
