@@ -2,15 +2,14 @@
 
 # WARNING: This is a sample config. You most likely need to tweak it for your use case.
 
-# The port to listen to for incoming connections.
-ListeningPort = 2003
 # The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 2004
 
-# Setting this to true will enable TCP listening on ListeningPort
-EnableTCP = true
-# Setting this to true will enable UDP listening on ListeningPort
-EnableUDP = false
+# Setting this to ip:port will enable TCP listening on specified address. Empty string to disable TCP listening.
+ListenTCP = ":2003"
+# Setting this to ip:port will enable UDP listening on specified address. Empty string to disable UDP listening
+ListenUDP = ""
+
 # Size of OS buffer for reading from UDP connction. Buffer not set if zero.
 UDPOSBufferSize = 0
 
