@@ -34,7 +34,7 @@ func parseListenOption(listenOption string) (net.IP, int, error) {
 	}
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
-		return ip, port, errors.New("Could not parse IP")
+		return ip, port, errors.New("could not parse IP")
 	}
 	return ip, port, nil
 }
