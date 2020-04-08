@@ -222,7 +222,6 @@ func (h *Host) getConnectionToHost() (net.Conn, error) {
 
 func (h *Host) checkUpdateHostStatus() {
 	conn, _ := h.getConnectionToHost()
-	fmt.Println(conn)
 	if conn != nil {
 		_ = conn.Close()
 		h.updateHostHealthStatus <- &HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
