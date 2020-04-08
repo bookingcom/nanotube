@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,12 +15,43 @@ import (
 	"go.uber.org/zap"
 )
 
+// parse "ip:port" string that is used for ListenTCP and ListenUDP config options
+func parseListenOption(listenOption string) (net.IP, int, error) {
+	ipStr, portStr, err := net.SplitHostPort(listenOption)
+	if err != nil {
+		return nil, 0, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, port, err
+	}
+	if port < 0 || port > 65535 {
+		return nil, port, errors.New("invalid port value")
+	}
+	// ":2003" will listen on all IPs
+	if ipStr == "" {
+		return nil, port, nil
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return ip, port, errors.New("could not parse IP")
+	}
+	return ip, port, nil
+}
+
 // Listen listens for incoming metric data
 func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan string, error) {
 	queue := make(chan string, cfg.MainQueueSize)
 
-	if cfg.EnableTCP {
-		l, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.ListeningPort))
+	if cfg.ListenTCP != "" {
+		ip, port, err := parseListenOption(cfg.ListenTCP)
+		if err != nil {
+			return nil, errors.Wrap(err, "error parsing ListenTCP option")
+		}
+		l, err := net.ListenTCP("tcp", &net.TCPAddr{
+			IP:   ip,
+			Port: port,
+		})
 		if err != nil {
 			return nil, errors.Wrap(err,
 				"error while opening TCP port for listening")
@@ -28,11 +59,15 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 		go acceptAndListenTCP(l, queue, stop, cfg, ms, lg)
 	}
 
-	if cfg.EnableUDP {
+	if cfg.ListenUDP != "" {
+		ip, port, err := parseListenOption(cfg.ListenUDP)
+		if err != nil {
+			return nil, errors.Wrap(err, "error parsing ListenUDP option")
+		}
 		conn, err := net.ListenUDP("udp", &net.UDPAddr{
-			IP:   nil,
-			Port: int(cfg.ListeningPort),
-			Zone: ""})
+			IP:   ip,
+			Port: port,
+		})
 		if err != nil {
 			lg.Error("error while opening UDP port for listening", zap.Error(err))
 			return nil, errors.Wrap(err,

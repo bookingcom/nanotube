@@ -1,8 +1,9 @@
-# The port to listen to for incoming connections.
-ListeningPort = 12123
 # The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 12003
-EnableUDP = true
+
+# Addresses to listen on
+ListenTCP = ":12123"
+ListenUDP = ":12123"
 
 # The size on main queue between listen and routing. Refer to docs for details.
 MainQueueSize = 100
