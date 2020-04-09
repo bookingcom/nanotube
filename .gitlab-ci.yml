@@ -3,13 +3,26 @@ image: docker.artifactory.booking.com/projects/golang/golang-ci:1.13
 stages:
   - package
 
-package:
+package_nanotube:
   stage: package
   tags: [ docker ]
   only:
     - tags
+    - /^nanotube-\d+-\d+$/
   except:
     - branches
     - triggers
   script:
-    - ./.build/gitlab-package.sh
+    - ./.build/gitlab-package.sh nanotube
+
+package_subnanotube:
+  stage: package
+  tags: [ docker ]
+  only:
+    - tags
+    - /^nanotube-\d+-\d+$/
+  except:
+    - branches
+    - triggers
+  script:
+    - ./.build/gitlab-package.sh subnanotube

@@ -1,6 +1,8 @@
 #!/bin/bash -xe
 
-yum install -y jq
+if [ -n "${1}" ]
+    then CI_PROJECT_NAME=$1
+fi
 
 echo "Submitting packaging job"
 
@@ -23,7 +25,7 @@ while true; do
         [[ $(jq .build_state <<<$response) =~ done|failed ]] && echo ===centos${centos_version}=== finished && done[$centos_version]=1
     done
     [[ ${done[6]} -eq 1 && ${done[7]} -eq 1 ]] && break
-    sleep 5
+    sleep 30
 done
 
 response=$(curl -s -X GET -H 'Content-Type: application/json' -H "X-API-KEY: $PACKAGING_API_KEY" http://yum-master.prod.booking.com/api/builds/list/by_key?job_id=$JOB_ID | jq  '.builds[] | {id: .id, bpackage_log: .bpackage_log, build_state: .build_state, centos: .centos, rpms_built: .rpms_built}' | sed -e 's/\/data0/http:\/\/yum-master.prod.booking.com/g')
