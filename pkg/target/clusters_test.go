@@ -25,6 +25,7 @@ func TestClustersWithNoAvailableHosts(t *testing.T) {
 
 	cfg := conf.MakeDefault()
 	cfg.OutConnTimeoutSec = 1
+	cfg.MaxHostReconnectPeriodMs = 50000
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
@@ -34,7 +35,7 @@ func TestClustersWithNoAvailableHosts(t *testing.T) {
 	clusters, _ := NewClusters(cfg, cls, logger, ms)
 
 	for _, cluster := range clusters {
-		if len(cluster.AvailableHosts) != 0 {
+		if cluster.getAvailableHostCount() != 0 {
 			t.Fatalf("expected 0 available hosts")
 		}
 	}
@@ -54,6 +55,8 @@ func TestClustersWithAllAvailableHosts(t *testing.T) {
 
 	cfg := conf.MakeDefault()
 	cfg.OutConnTimeoutSec = 1
+	cfg.MaxHostReconnectPeriodMs = 50000
+
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
@@ -62,7 +65,7 @@ func TestClustersWithAllAvailableHosts(t *testing.T) {
 
 	clusters, _ := NewClusters(cfg, cls, logger, ms)
 	for _, cluster := range clusters {
-		if len(cluster.AvailableHosts) != 0 {
+		if cluster.getAvailableHostCount() != 0 {
 			t.Fatalf("expected 0 available hosts")
 		}
 	}
@@ -77,8 +80,9 @@ func TestClustersWithAllAvailableHosts(t *testing.T) {
 		for _, sigCh := range sigChs {
 			<-sigCh
 		}
-		if len(cluster.AvailableHosts) != 2 {
-			t.Fatalf("expected 2 available hosts, found %d", len(cluster.AvailableHosts))
+		availableHostCount := cluster.getAvailableHostCount()
+		if availableHostCount != 2 {
+			t.Fatalf("expected 2 available hosts, found %d", availableHostCount)
 		}
 	}
 
@@ -98,6 +102,7 @@ func TestClustersWithFlappingHosts(t *testing.T) {
 
 	cfg := conf.MakeDefault()
 	cfg.OutConnTimeoutSec = 1
+	cfg.MaxHostReconnectPeriodMs = 50000
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
@@ -106,7 +111,7 @@ func TestClustersWithFlappingHosts(t *testing.T) {
 
 	clusters, _ := NewClusters(cfg, cls, logger, ms)
 	for _, cluster := range clusters {
-		if len(cluster.AvailableHosts) != 0 {
+		if cluster.getAvailableHostCount() != 0 {
 			t.Fatalf("expected 0 available hosts")
 		}
 	}
@@ -122,15 +127,17 @@ func TestClustersWithFlappingHosts(t *testing.T) {
 	ch := make(chan struct{})
 	cluster.UpdateHostHealthStatus <- &HostStatus{host, true, ch}
 	<-ch
-	if len(cluster.AvailableHosts) != 1 {
-		t.Fatalf("expected 1 available hosts, found %d", len(cluster.AvailableHosts))
+	availableHostCount := cluster.getAvailableHostCount()
+	if availableHostCount != 1 {
+		t.Fatalf("expected 1 available hosts, found %d", availableHostCount)
 	}
 
 	ch = make(chan struct{})
 	cluster.UpdateHostHealthStatus <- &HostStatus{host, false, ch}
 	<-ch
-	if len(cluster.AvailableHosts) != 0 {
-		t.Fatalf("expected 0 available hosts, found %d", len(cluster.AvailableHosts))
+	availableHostCount = cluster.getAvailableHostCount()
+	if availableHostCount != 0 {
+		t.Fatalf("expected 0 available hosts, found %d", availableHostCount)
 	}
 }
 
@@ -160,6 +167,8 @@ func TestRemoveAvailableHosts(t *testing.T) {
 
 	cfg := conf.MakeDefault()
 	cfg.OutConnTimeoutSec = 1
+	cfg.MaxHostReconnectPeriodMs = 50000
+
 	cls, _ := conf.ReadClustersConfig(strings.NewReader(clsConfig))
 
 	ms := metrics.New(&cfg)
@@ -168,7 +177,7 @@ func TestRemoveAvailableHosts(t *testing.T) {
 
 	clusters, _ := NewClusters(cfg, cls, logger, ms)
 	for _, cluster := range clusters {
-		if len(cluster.AvailableHosts) != 0 {
+		if cluster.getAvailableHostCount() != 0 {
 			t.Fatalf("expected 0 available hosts")
 		}
 	}
@@ -188,8 +197,9 @@ func TestRemoveAvailableHosts(t *testing.T) {
 		for _, sigCh := range sigChs {
 			<-sigCh
 		}
-		if len(cluster.AvailableHosts) != n {
-			t.Fatalf("expected 6 available hosts, found %d", len(cluster.AvailableHosts))
+		availableHostCount := cluster.getAvailableHostCount()
+		if availableHostCount != n {
+			t.Fatalf("expected 6 available hosts, found %d", availableHostCount)
 		}
 	}
 
@@ -198,10 +208,17 @@ func TestRemoveAvailableHosts(t *testing.T) {
 		cluster.UpdateHostHealthStatus <- &HostStatus{host, false, ch}
 		<-ch
 		n--
-		if len(cluster.AvailableHosts) != n {
-			t.Fatalf("expected %d available hosts", n)
+		availableHostCount := cluster.getAvailableHostCount()
+		if availableHostCount != n {
+			t.Fatalf("expected %d available hosts", availableHostCount)
 		}
 	}
+}
+
+func (cl *Cluster) getAvailableHostCount() int {
+	cl.Hm.RLock()
+	defer cl.Hm.RUnlock()
+	return len(cl.AvailableHosts)
 }
 
 func shuffle(hosts []*Host) []*Host {

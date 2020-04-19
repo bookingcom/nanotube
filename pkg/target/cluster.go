@@ -164,11 +164,11 @@ func (cl *Cluster) addAvailableHost(host *Host) {
 }
 
 func (cl *Cluster) removeAvailableHost(host *Host) {
+	cl.Hm.Lock()
+	defer cl.Hm.Unlock()
 	for i, h := range cl.AvailableHosts {
 		if h == host {
 			host.stateChanges.Inc()
-			cl.Hm.Lock()
-			defer cl.Hm.Unlock()
 			length := len(cl.AvailableHosts)
 
 			for j := i; j < length-1; j++ {
