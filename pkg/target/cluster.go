@@ -98,18 +98,40 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 	}()
 }
 
-func (cl *Cluster) addUpAgainFailedHosts(d time.Duration) {
+func (cl *Cluster) updateAvailableHostsPeriodically(d time.Duration) {
 	t := time.NewTicker(d)
 	defer t.Stop()
 
 	for range t.C {
-		failedHosts := cl.getFailedHosts()
-		for _, failedHost := range failedHosts {
-			go failedHost.checkUpdateHostStatus()
-		}
+		availableHosts := cl.getAvailableHosts()
+		cl.updateAvailableHosts(availableHosts)
 	}
 }
 
+func (cl *Cluster) updateAvailableHosts(availableHosts []*Host) {
+	cl.Hm.Lock()
+	defer cl.Hm.Unlock()
+	cl.AvailableHosts = availableHosts
+
+}
+
+func (cl *Cluster) getAvailableHosts() []*Host {
+	hostCount := len(cl.Hosts)
+	var availableHosts []*Host
+	c := make(chan HostStatus, hostCount)
+	for _, h := range cl.Hosts {
+		go h.checkUpdateHostStatus(c)
+	}
+	count := 0
+	for count < hostCount {
+		hostStatus := <-c
+		count++
+		if hostStatus.Status {
+			availableHosts = append(availableHosts, hostStatus.Host)
+		}
+	}
+	return availableHosts
+}
 func (cl *Cluster) getFailedHosts() []*Host {
 	cl.Hm.RLock()
 	defer cl.Hm.RUnlock()

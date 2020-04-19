@@ -66,9 +66,9 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 	for _, cl := range cls {
 		go cl.keepAvailableHostsUpdated()
 		if cl.Type == conf.LB {
-			go cl.addUpAgainFailedHosts(time.Duration(mainCfg.MaxHostReconnectPeriodMs) * time.Millisecond)
+			go cl.updateAvailableHostsPeriodically(time.Duration(mainCfg.MaxHostReconnectPeriodMs) * time.Millisecond)
 			for _, h := range cl.Hosts {
-				h.Connect()
+				h.Connect(1)
 			}
 		}
 	}

@@ -112,7 +112,7 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	for r := range h.Ch {
 		// retry until successful
 		for {
-			for reconnectWait := uint32(0); h.Conn == nil; {
+			for reconnectWait, attemptCount := uint32(0), 1; h.Conn == nil; {
 				hostConnectionStatus := true
 				time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
 				if reconnectWait > h.ConnectionLossThresholdMs && !hostConnectionStatus {
@@ -126,7 +126,8 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 					reconnectWait = h.MaxReconnectPeriodMs
 				}
 
-				h.Connect()
+				h.Connect(attemptCount)
+				attemptCount++
 			}
 
 			err := h.Conn.SetWriteDeadline(time.Now().Add(
@@ -192,13 +193,16 @@ func (h *Host) Flush(d time.Duration) {
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
-func (h *Host) Connect() {
+func (h *Host) Connect(attemptCount int) {
 	conn, err := h.getConnectionToHost()
 	if err != nil {
 		h.Lg.Warn("connection to host failed",
 			zap.String("host", h.Name),
 			zap.Uint16("port", h.Port))
 		h.Conn = nil
+		if attemptCount == 1 {
+			h.updateHostHealthStatus <- &HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
+		}
 
 		return
 	}
@@ -220,10 +224,12 @@ func (h *Host) getConnectionToHost() (net.Conn, error) {
 	return conn, err
 }
 
-func (h *Host) checkUpdateHostStatus() {
+func (h *Host) checkUpdateHostStatus(hostStatus chan HostStatus) {
 	conn, _ := h.getConnectionToHost()
 	if conn != nil {
-		_ = conn.Close()
-		h.updateHostHealthStatus <- &HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
+		defer conn.Close()
+		hostStatus <- HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
+	} else {
+		hostStatus <- HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
 	}
 }
