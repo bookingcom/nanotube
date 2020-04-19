@@ -2,7 +2,6 @@ package target
 
 import (
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -131,24 +130,6 @@ func (cl *Cluster) getAvailableHosts() []*Host {
 		}
 	}
 	return availableHosts
-}
-func (cl *Cluster) getFailedHosts() []*Host {
-	cl.Hm.RLock()
-	defer cl.Hm.RUnlock()
-	availableHostsLength := len(cl.AvailableHosts)
-	var failedHosts []*Host
-	if availableHostsLength != len(cl.Hosts) {
-		availableHosts := make(map[string]struct{})
-		for _, h := range cl.AvailableHosts {
-			availableHosts[h.Name+strconv.Itoa(int(h.Port))] = struct{}{}
-		}
-		for _, h := range cl.Hosts {
-			if _, ok := availableHosts[h.Name+strconv.Itoa(int(h.Port))]; !ok {
-				failedHosts = append(failedHosts, h)
-			}
-		}
-	}
-	return failedHosts
 }
 
 func (cl *Cluster) keepAvailableHostsUpdated() {

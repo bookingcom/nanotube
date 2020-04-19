@@ -227,8 +227,8 @@ func (h *Host) getConnectionToHost() (net.Conn, error) {
 func (h *Host) checkUpdateHostStatus(hostStatus chan HostStatus) {
 	conn, _ := h.getConnectionToHost()
 	if conn != nil {
-		defer conn.Close()
 		hostStatus <- HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
+		_ = conn.Close()
 	} else {
 		hostStatus <- HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
 	}
