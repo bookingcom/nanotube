@@ -27,20 +27,34 @@ type Host struct {
 	Wm   sync.Mutex
 	stop chan int
 
-	Lg                      *zap.Logger
-	Ms                      *metrics.Prom
-	SendTimeoutSec          uint32
-	ConnTimeoutSec          uint32
-	TCPOutBufFlushPeriodSec uint32
+	updateHostHealthStatus chan *HostStatus
+
+	Lg                        *zap.Logger
+	Ms                        *metrics.Prom
+	SendTimeoutSec            uint32
+	ConnTimeoutSec            uint32
+	KeepAliveSec              uint32
+	MaxReconnectPeriodMs      uint32
+	ReconnectPeriodDeltaMs    uint32
+	ConnectionLossThresholdMs uint32
+	TCPOutBufFlushPeriodSec   uint32
 
 	outRecs            prometheus.Counter
 	throttled          prometheus.Counter
+	stateChanges       prometheus.Counter
 	processingDuration prometheus.Histogram
 	bufSize            int
 }
 
+// HostStatus is used to signal connection status by Host to cluster
+type HostStatus struct {
+	Host   *Host
+	Status bool
+	sigCh  chan struct{}
+}
+
 //NewHost build new host object from config
-func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
+func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom, updateHostHealthStatus chan *HostStatus) *Host {
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
 		targetPort = hostCfg.Port
@@ -51,19 +65,25 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		"upstream_host": hostCfg.Name,
 	}
 	return &Host{
-		Name: hostCfg.Name,
-		Port: targetPort,
-		Ch:   make(chan *rec.Rec, mainCfg.HostQueueSize),
-		Lg:   lg,
-		stop: make(chan int),
+		Name:                   hostCfg.Name,
+		Port:                   targetPort,
+		Ch:                     make(chan *rec.Rec, mainCfg.HostQueueSize),
+		Lg:                     lg,
+		stop:                   make(chan int),
+		updateHostHealthStatus: updateHostHealthStatus,
 
-		SendTimeoutSec:          mainCfg.SendTimeoutSec,
-		ConnTimeoutSec:          mainCfg.OutConnTimeoutSec,
-		TCPOutBufFlushPeriodSec: mainCfg.TCPOutBufFlushPeriodSec,
-		outRecs:                 ms.OutRecs.With(promLabels),
-		throttled:               ms.ThrottledHosts.With(promLabels),
-		processingDuration:      ms.ProcessingDuration,
-		bufSize:                 mainCfg.TCPOutBufSize,
+		SendTimeoutSec:            mainCfg.SendTimeoutSec,
+		ConnTimeoutSec:            mainCfg.OutConnTimeoutSec,
+		KeepAliveSec:              mainCfg.KeepAliveSec,
+		MaxReconnectPeriodMs:      mainCfg.MaxHostReconnectPeriodMs,
+		ReconnectPeriodDeltaMs:    mainCfg.MaxHostReconnectPeriodMs,
+		ConnectionLossThresholdMs: mainCfg.ConnectionLossThresholdMs,
+		TCPOutBufFlushPeriodSec:   mainCfg.TCPOutBufFlushPeriodSec,
+		outRecs:                   ms.OutRecs.With(promLabels),
+		throttled:                 ms.ThrottledHosts.With(promLabels),
+		processingDuration:        ms.ProcessingDuration,
+		stateChanges:              ms.StateChangeHosts.With(promLabels),
+		bufSize:                   mainCfg.TCPOutBufSize,
 	}
 }
 
@@ -92,18 +112,22 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	for r := range h.Ch {
 		// retry until successful
 		for {
-			const maxReconnectPeriodMs = 5000
-			const reconnectDeltaMs = 10
-			for reconnectWait := 0; h.Conn == nil; {
+			for reconnectWait, attemptCount := uint32(0), 1; h.Conn == nil; {
+				hostConnectionStatus := true
 				time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-				if reconnectWait < maxReconnectPeriodMs {
-					reconnectWait = reconnectWait*2 + reconnectDeltaMs
+				if reconnectWait > h.ConnectionLossThresholdMs && !hostConnectionStatus {
+					hostConnectionStatus = false
+					h.updateHostHealthStatus <- &HostStatus{Host: h, Status: hostConnectionStatus, sigCh: make(chan struct{})}
 				}
-				if reconnectWait >= maxReconnectPeriodMs {
-					reconnectWait = maxReconnectPeriodMs
+				if reconnectWait < h.MaxReconnectPeriodMs {
+					reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
+				}
+				if reconnectWait >= h.MaxReconnectPeriodMs {
+					reconnectWait = h.MaxReconnectPeriodMs
 				}
 
-				h.Connect()
+				h.Connect(attemptCount)
+				attemptCount++
 			}
 
 			err := h.Conn.SetWriteDeadline(time.Now().Add(
@@ -169,21 +193,43 @@ func (h *Host) Flush(d time.Duration) {
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
-func (h *Host) Connect() {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port),
-		time.Duration(h.ConnTimeoutSec)*time.Second)
+func (h *Host) Connect(attemptCount int) {
+	conn, err := h.getConnectionToHost()
 	if err != nil {
 		h.Lg.Warn("connection to host failed",
 			zap.String("host", h.Name),
 			zap.Uint16("port", h.Port))
 		h.Conn = nil
+		if attemptCount == 1 {
+			h.updateHostHealthStatus <- &HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
+		}
 
 		return
 	}
 
 	h.Conn = conn
+	h.updateHostHealthStatus <- &HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
 
 	h.Wm.Lock()
 	defer h.Wm.Unlock()
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
+}
+
+func (h *Host) getConnectionToHost() (net.Conn, error) {
+	dialer := net.Dialer{
+		Timeout:   time.Duration(h.ConnTimeoutSec) * time.Second,
+		KeepAlive: time.Duration(h.KeepAliveSec) * time.Second,
+	}
+	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
+	return conn, err
+}
+
+func (h *Host) checkUpdateHostStatus(hostStatus chan HostStatus) {
+	conn, _ := h.getConnectionToHost()
+	if conn != nil {
+		hostStatus <- HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
+		_ = conn.Close()
+	} else {
+		hostStatus <- HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
+	}
 }
