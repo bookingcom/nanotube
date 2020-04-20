@@ -220,7 +220,7 @@ func (h *Host) getConnectionToHost() (net.Conn, error) {
 		Timeout:   time.Duration(h.ConnTimeoutSec) * time.Second,
 		KeepAlive: time.Duration(h.KeepAliveSec) * time.Second,
 	}
-	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, h.Port))
+	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
 	return conn, err
 }
 
