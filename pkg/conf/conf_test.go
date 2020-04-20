@@ -9,9 +9,8 @@ import (
 
 func TestConfSimple(t *testing.T) {
 	conf := `
-	ListeningPort = 2003
-	EnableUDP = true
-	EnableTCP = false
+	ListenUDP = "1.2.3.4:2003"
+	ListenTCP = ":2003"
 	TargetPort = 2008
 
 	SendTimeoutSec = 7
@@ -30,11 +29,10 @@ func TestConfSimple(t *testing.T) {
 	ConnectionLossThresholdMs = 200`
 
 	expected := Main{
-		ListeningPort: 2003,
-		TargetPort:    2008,
+		TargetPort: 2008,
 
-		EnableTCP: false,
-		EnableUDP: true,
+		ListenTCP: ":2003",
+		ListenUDP: "1.2.3.4:2003",
 
 		MainQueueSize: 100,
 		HostQueueSize: 10,

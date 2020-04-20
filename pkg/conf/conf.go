@@ -9,11 +9,12 @@ import (
 
 // Main is the main and generic nanotube config.
 type Main struct {
-	ListeningPort uint32
-	TargetPort    uint16
+	TargetPort uint16
 
-	EnableTCP bool
-	EnableUDP bool
+	// empty string not to listen
+	ListenTCP string
+	ListenUDP string
+
 	// 0 does not set buffer size
 	UDPOSBufferSize uint32
 
@@ -59,19 +60,19 @@ func ReadMain(r io.Reader) (Main, error) {
 	if cfg.PprofPort == cfg.PromPort {
 		return cfg, errors.New("PromPort and PprofPort can't have the same value")
 	}
-	if !cfg.EnableTCP && !cfg.EnableUDP {
+	if cfg.ListenTCP == "" && cfg.ListenUDP == "" {
 		return cfg, errors.New("we don't listen neither on TCP nor on UDP")
 	}
+
 	return cfg, nil
 }
 
 // MakeDefault creates configuration with default values.
 func MakeDefault() Main {
 	return Main{
-		ListeningPort: 2003,
-		TargetPort:    2004,
+		TargetPort: 2004,
 
-		EnableTCP: true,
+		ListenTCP: ":2003",
 
 		MainQueueSize:  1000,
 		HostQueueSize:  1000,
