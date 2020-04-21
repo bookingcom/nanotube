@@ -26,6 +26,10 @@ type Main struct {
 	IncomingConnIdleTimeoutSec uint32
 	SendTimeoutSec             uint32
 	OutConnTimeoutSec          uint32
+	MaxHostReconnectPeriodMs   uint32
+	HostReconnectPeriodDeltaMs uint32
+	KeepAliveSec               uint32
+	ConnectionLossThresholdMs  uint32
 	TermTimeoutSec             uint16
 	// 0 value turns off buffering
 	TCPOutBufSize int
@@ -77,6 +81,10 @@ func MakeDefault() Main {
 		IncomingConnIdleTimeoutSec: 90,
 		SendTimeoutSec:             5,
 		OutConnTimeoutSec:          5,
+		MaxHostReconnectPeriodMs:   5000,
+		HostReconnectPeriodDeltaMs: 10,
+		KeepAliveSec:               1,
+		ConnectionLossThresholdMs:  3000,
 		TermTimeoutSec:             10,
 		TCPOutBufSize:              0,
 		TCPOutBufFlushPeriodSec:    2,
