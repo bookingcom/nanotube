@@ -10,13 +10,14 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	InRecs           prometheus.Counter
-	OutRecs          *prometheus.CounterVec
-	OutRecsTotal     prometheus.Counter
-	ThrottledRecs    prometheus.Counter
-	StateChangeHosts *prometheus.CounterVec
-	BlackholedRecs   prometheus.Counter
-	ErrorRecs        prometheus.Counter
+	InRecs                prometheus.Counter
+	OutRecs               *prometheus.CounterVec
+	OutRecsTotal          prometheus.Counter
+	ThrottledRecs         prometheus.Counter
+	StateChangeHosts      *prometheus.CounterVec
+	StateChangeHostsTotal prometheus.Counter
+	BlackholedRecs        prometheus.Counter
+	ErrorRecs             prometheus.Counter
 
 	ThrottledHosts      *prometheus.CounterVec
 	ThrottledHostsTotal prometheus.Counter
@@ -70,9 +71,14 @@ func New(conf *conf.Main) *Prom {
 		}),
 		StateChangeHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
+			Name:      "state_change_hosts",
+			Help:      "Availability state change for hosts",
+		}, []string{"cluster", "upstream_host"}),
+		StateChangeHostsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
 			Name:      "state_change_hosts_total",
 			Help:      "Total availability state change for hosts",
-		}, []string{"cluster", "upstream_host"}),
+		}),
 		BlackholedRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "blackholed_records_total",
@@ -125,25 +131,10 @@ func New(conf *conf.Main) *Prom {
 
 // Register registers the metrics. It fatally fails and exits if metrics fail to register.
 // Meant to be called from main and fail completely if something goes wrong.
-func Register(m *Prom) {
+func Register(m *Prom, cfg *conf.Main) {
 	err := prometheus.Register(m.InRecs)
 	if err != nil {
 		log.Fatalf("error registering the in_records_counter metric: %v", err)
-	}
-
-	err = prometheus.Register(m.OutRecs)
-	if err != nil {
-		log.Fatalf("error registering the out_records metric: %v", err)
-	}
-
-	err = prometheus.Register(m.ThrottledRecs)
-	if err != nil {
-		log.Fatalf("error registering the throttled_records_counter metric: %v", err)
-	}
-
-	err = prometheus.Register(m.StateChangeHosts)
-	if err != nil {
-		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
 	}
 
 	err = prometheus.Register(m.OutRecsTotal)
@@ -151,9 +142,14 @@ func Register(m *Prom) {
 		log.Fatalf("error registering the out_records_total metric: %v", err)
 	}
 
-	err = prometheus.Register(m.ThrottledHosts)
+	err = prometheus.Register(m.ErrorRecs)
 	if err != nil {
-		log.Fatalf("error registering the throttled_host_records metrics: %v", err)
+		log.Fatalf("error registering the error_records_counter metric: %v", err)
+	}
+
+	err = prometheus.Register(m.ThrottledRecs)
+	if err != nil {
+		log.Fatalf("error registering the throttled_records_counter metric: %v", err)
 	}
 
 	err = prometheus.Register(m.ThrottledHostsTotal)
@@ -166,43 +162,59 @@ func Register(m *Prom) {
 		log.Fatalf("error registering the blackholed_records_counter metric: %v", err)
 	}
 
-	err = prometheus.Register(m.ErrorRecs)
-	if err != nil {
-		log.Fatalf("error registering the error_records_counter metric: %v", err)
-	}
-
-	err = prometheus.Register(m.MainQueueLength)
-	if err != nil {
-		log.Fatalf("error registering the main_queue_length_hist metric: %v", err)
-	}
-
-	err = prometheus.Register(m.HostQueueLength)
-	if err != nil {
-		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
-	}
-
-	err = prometheus.Register(m.ProcessingDuration)
-	if err != nil {
-		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
-	}
-
-	err = prometheus.Register(m.ActiveTCPConnections)
-	if err != nil {
-		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
-	}
-
 	err = prometheus.Register(m.InConnectionsTotalTCP)
 	if err != nil {
 		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
 	}
 
-	err = prometheus.Register(m.UDPReadFailures)
+	err = prometheus.Register(m.StateChangeHostsTotal)
 	if err != nil {
-		log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
+		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
 	}
 
-	err = prometheus.Register(m.Version)
-	if err != nil {
-		log.Fatalf("error registering the version metric: %v", err)
+	if !cfg.ShortMetrics {
+		err = prometheus.Register(m.OutRecs)
+		if err != nil {
+			log.Fatalf("error registering the out_records metric: %v", err)
+		}
+
+		err = prometheus.Register(m.StateChangeHosts)
+		if err != nil {
+			log.Fatalf("error registering the state_change_hosts metrics: %v", err)
+		}
+		err = prometheus.Register(m.ThrottledHosts)
+		if err != nil {
+			log.Fatalf("error registering the throttled_host_records metrics: %v", err)
+		}
+
+		err = prometheus.Register(m.MainQueueLength)
+		if err != nil {
+			log.Fatalf("error registering the main_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.HostQueueLength)
+		if err != nil {
+			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.ProcessingDuration)
+		if err != nil {
+			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.ActiveTCPConnections)
+		if err != nil {
+			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.UDPReadFailures)
+		if err != nil {
+			log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
+		}
+
+		err = prometheus.Register(m.Version)
+		if err != nil {
+			log.Fatalf("error registering the version metric: %v", err)
+		}
 	}
 }
