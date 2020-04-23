@@ -12,6 +12,7 @@ import (
 type Prom struct {
 	InRecs           prometheus.Counter
 	OutRecs          *prometheus.CounterVec
+	OutRecsTotal     prometheus.Counter
 	ThrottledRecs    prometheus.Counter
 	StateChangeHosts *prometheus.CounterVec
 	BlackholedRecs   prometheus.Counter
@@ -43,9 +44,14 @@ func New(conf *conf.Main) *Prom {
 		}),
 		OutRecs: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
-			Name:      "out_records_total",
+			Name:      "out_records",
 			Help:      "Outgoing records by cluster and hostname.",
 		}, []string{"cluster", "upstream_host"}),
+		OutRecsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "out_records_total",
+			Help:      "Total outgoing records.",
+		}),
 		ThrottledRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "throttled_records_total",
@@ -121,7 +127,7 @@ func Register(m *Prom) {
 
 	err = prometheus.Register(m.OutRecs)
 	if err != nil {
-		log.Fatalf("error registering the out_records_counter metric: %v", err)
+		log.Fatalf("error registering the out_records metric: %v", err)
 	}
 
 	err = prometheus.Register(m.ThrottledRecs)
@@ -132,6 +138,11 @@ func Register(m *Prom) {
 	err = prometheus.Register(m.StateChangeHosts)
 	if err != nil {
 		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
+	}
+
+	err = prometheus.Register(m.OutRecsTotal)
+	if err != nil {
+		log.Fatalf("error registering the out_records_total metric: %v", err)
 	}
 
 	err = prometheus.Register(m.ThrottledHosts)

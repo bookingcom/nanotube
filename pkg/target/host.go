@@ -40,6 +40,7 @@ type Host struct {
 	TCPOutBufFlushPeriodSec   uint32
 
 	outRecs            prometheus.Counter
+	outRecsTotal       prometheus.Counter
 	throttled          prometheus.Counter
 	stateChanges       prometheus.Counter
 	processingDuration prometheus.Histogram
@@ -80,6 +81,7 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		ConnectionLossThresholdMs: mainCfg.ConnectionLossThresholdMs,
 		TCPOutBufFlushPeriodSec:   mainCfg.TCPOutBufFlushPeriodSec,
 		outRecs:                   ms.OutRecs.With(promLabels),
+		outRecsTotal:              ms.OutRecsTotal,
 		throttled:                 ms.ThrottledHosts.With(promLabels),
 		processingDuration:        ms.ProcessingDuration,
 		stateChanges:              ms.StateChangeHosts.With(promLabels),
@@ -142,6 +144,7 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 
 			if err == nil {
 				h.outRecs.Inc()
+				h.outRecsTotal.Inc()
 				h.processingDuration.Observe(time.Since(r.Received).Seconds())
 				break
 			}
