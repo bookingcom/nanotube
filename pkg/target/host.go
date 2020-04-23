@@ -156,12 +156,11 @@ func (h *Host) Flush(d time.Duration) {
 		case <-t.C:
 			h.CWm.Lock()
 			if h.Conn != nil && h.W != nil && h.W.Buffered() != 0 {
-					err := h.W.Flush()
-					if err != nil {
-						h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
-						h.Conn = nil
-						h.W = nil
-					}
+				err := h.W.Flush()
+				if err != nil {
+					h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+					h.Conn = nil
+					h.W = nil
 				}
 			}
 			h.CWm.Unlock()
