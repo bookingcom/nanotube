@@ -18,7 +18,8 @@ type Prom struct {
 	BlackholedRecs   prometheus.Counter
 	ErrorRecs        prometheus.Counter
 
-	ThrottledHosts *prometheus.CounterVec
+	ThrottledHosts      *prometheus.CounterVec
+	ThrottledHostsTotal prometheus.Counter
 
 	MainQueueLength prometheus.Gauge
 	HostQueueLength prometheus.Histogram
@@ -59,9 +60,14 @@ func New(conf *conf.Main) *Prom {
 		}),
 		ThrottledHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
-			Name:      "throttled_host_records_total",
-			Help:      "Records dropped from the host queue because it's full.",
+			Name:      "throttled_host_records",
+			Help:      "Records dropped from the host queues because they're full labeled by cluster and host.",
 		}, []string{"cluster", "upstream_host"}),
+		ThrottledHostsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "throttled_host_records_total",
+			Help:      "Total records dropped from the host queues because it's full.",
+		}),
 		StateChangeHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "state_change_hosts_total",
@@ -146,6 +152,11 @@ func Register(m *Prom) {
 	}
 
 	err = prometheus.Register(m.ThrottledHosts)
+	if err != nil {
+		log.Fatalf("error registering the throttled_host_records metrics: %v", err)
+	}
+
+	err = prometheus.Register(m.ThrottledHostsTotal)
 	if err != nil {
 		log.Fatalf("error registering the throttled_host_records_total metrics: %v", err)
 	}
