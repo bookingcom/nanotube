@@ -117,7 +117,7 @@ func (h *Host) tryToSend(r *rec.Rec) {
 		err := h.Conn.SetWriteDeadline(time.Now().Add(
 			time.Duration(h.SendTimeoutSec) * time.Second))
 		if err != nil {
-			h.Lg.Warn("error setting write deadline. Renewing the connection.", zap.Error(err))
+			h.Lg.Warn("error setting write deadline", zap.Error(err))
 		}
 
 		// this may loose one record on disconnect
