@@ -44,6 +44,7 @@ type Host struct {
 	throttled          prometheus.Counter
 	throttledTotal     prometheus.Counter
 	stateChanges       prometheus.Counter
+	stateChangesTotal  prometheus.Counter
 	processingDuration prometheus.Histogram
 	bufSize            int
 }
@@ -87,6 +88,7 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		throttledTotal:            ms.ThrottledHostsTotal,
 		processingDuration:        ms.ProcessingDuration,
 		stateChanges:              ms.StateChangeHosts.With(promLabels),
+		stateChangesTotal:         ms.StateChangeHostsTotal,
 		bufSize:                   mainCfg.TCPOutBufSize,
 	}
 }

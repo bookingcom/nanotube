@@ -61,6 +61,8 @@ LogSpecialRecords = true
 PprofPort = 6000
 # Prometheus port
 PromPort = 9090
+# Switch to expose only small subset of essential metrics
+ShortMetrics = false
 
 # Histogram parameters for the host queue size
 HostQueueLengthBucketFactor = 3.0
