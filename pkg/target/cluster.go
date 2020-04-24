@@ -101,7 +101,7 @@ func (cl *Cluster) updateAvailableHostsPeriodically(d time.Duration) {
 	t := time.NewTicker(d)
 	defer t.Stop()
 
-	for range t.C {
+	for ; true; <-t.C {
 		availableHosts := cl.getAvailableHosts()
 		cl.updateAvailableHosts(availableHosts)
 	}

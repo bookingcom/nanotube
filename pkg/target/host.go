@@ -24,7 +24,7 @@ type Host struct {
 	Conn net.Conn
 
 	W    *bufio.Writer
-	Wm   sync.Mutex
+	CWm  sync.Mutex
 	stop chan int
 
 	updateHostHealthStatus chan *HostStatus
@@ -117,68 +117,61 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	}()
 
 	for r := range h.Ch {
-		// retry until successful
-		for {
-			for reconnectWait, attemptCount := uint32(0), 1; h.Conn == nil; {
-				hostConnectionStatus := true
-				time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-				if reconnectWait > h.ConnectionLossThresholdMs && !hostConnectionStatus {
-					hostConnectionStatus = false
-					h.updateHostHealthStatus <- &HostStatus{Host: h, Status: hostConnectionStatus, sigCh: make(chan struct{})}
-				}
-				if reconnectWait < h.MaxReconnectPeriodMs {
-					reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
-				}
-				if reconnectWait >= h.MaxReconnectPeriodMs {
-					reconnectWait = h.MaxReconnectPeriodMs
-				}
-
-				h.Connect(attemptCount)
-				attemptCount++
-			}
-
-			err := h.Conn.SetWriteDeadline(time.Now().Add(
-				time.Duration(h.SendTimeoutSec) * time.Second))
-			if err != nil {
-				h.Lg.Warn("error setting write deadline. Renewing the connection.",
-					zap.Error(err))
-			}
-
-			// this may loose one record on disconnect
-			_, err = h.Write([]byte(*r.Serialize()))
-
-			if err == nil {
-				h.outRecs.Inc()
-				h.outRecsTotal.Inc()
-				h.processingDuration.Observe(time.Since(r.Received).Seconds())
-				break
-			}
-
-			h.Lg.Warn("error sending value to host. Reconnect and retry..",
-				zap.String("target", h.Name),
-				zap.Uint16("port", h.Port),
-				zap.Error(err),
-			)
-			err = h.Conn.Close()
-			if err != nil {
-				// not retrying here, file descriptor may be lost
-				h.Lg.Error("error closing the connection",
-					zap.Error(err))
-			}
-
-			h.Conn = nil
-		}
+		h.tryToSend(r)
 	}
 }
 
-// Write does the remote write, i.e. sends the data
-func (h *Host) Write(b []byte) (nn int, err error) {
-	h.Wm.Lock()
-	defer h.Wm.Unlock()
-	return h.W.Write(b)
+func (h *Host) tryToSend(r *rec.Rec) {
+	h.CWm.Lock()
+	defer h.CWm.Unlock()
+
+	// retry until successful
+	for {
+		for reconnectWait, attemptCount := uint32(0), 1; h.Conn == nil; {
+			time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
+			if reconnectWait < h.MaxReconnectPeriodMs {
+				reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
+			}
+			if reconnectWait >= h.MaxReconnectPeriodMs {
+				reconnectWait = h.MaxReconnectPeriodMs
+			}
+
+			h.Connect(attemptCount)
+			attemptCount++
+		}
+
+		err := h.Conn.SetWriteDeadline(time.Now().Add(
+			time.Duration(h.SendTimeoutSec) * time.Second))
+		if err != nil {
+			h.Lg.Warn("error setting write deadline", zap.Error(err))
+		}
+
+		// this may loose one record on disconnect
+		_, err = h.W.Write([]byte(*r.Serialize()))
+
+		if err == nil {
+			h.outRecs.Inc()
+      h.outRecsTotal.Inc()
+			h.processingDuration.Observe(time.Since(r.Received).Seconds())
+			break
+		}
+
+		h.Lg.Warn("error sending value to host. Reconnect and retry..",
+			zap.String("target", h.Name),
+			zap.Uint16("port", h.Port),
+			zap.Error(err),
+		)
+		err = h.Conn.Close()
+		if err != nil {
+			// not retrying here, file descriptor may be lost
+			h.Lg.Error("error closing the connection", zap.Error(err))
+		}
+
+		h.Conn = nil
+	}
 }
 
-// Flush immediately flushes the buffer and performs a write
+// Flush periodically flushes the buffer and performs a write.
 func (h *Host) Flush(d time.Duration) {
 	t := time.NewTicker(d)
 	defer t.Stop()
@@ -188,14 +181,16 @@ func (h *Host) Flush(d time.Duration) {
 		case <-h.stop:
 			return
 		case <-t.C:
-			h.Wm.Lock()
-			if h.W != nil {
+			h.CWm.Lock()
+			if h.Conn != nil && h.W != nil && h.W.Buffered() != 0 {
 				err := h.W.Flush()
 				if err != nil {
 					h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+					h.Conn = nil
+					h.W = nil
 				}
 			}
-			h.Wm.Unlock()
+			h.CWm.Unlock()
 		}
 	}
 }
@@ -218,8 +213,6 @@ func (h *Host) Connect(attemptCount int) {
 	h.Conn = conn
 	h.updateHostHealthStatus <- &HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
 
-	h.Wm.Lock()
-	defer h.Wm.Unlock()
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
 }
 
