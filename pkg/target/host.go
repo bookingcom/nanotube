@@ -151,7 +151,7 @@ func (h *Host) tryToSend(r *rec.Rec) {
 
 		if err == nil {
 			h.outRecs.Inc()
-      h.outRecsTotal.Inc()
+                        h.outRecsTotal.Inc()
 			h.processingDuration.Observe(time.Since(r.Received).Seconds())
 			break
 		}
