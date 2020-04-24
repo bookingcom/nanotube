@@ -44,6 +44,14 @@ TCPOutBufSize = 4096
 # The value of zero means no flushing.
 TCPOutBufFlushPeriodSec = 2
 
+# Maximum reconnection period to target host
+MaxHostReconnectPeriodMs = 5000
+# Parameter for exponential backoffs during reconnects
+HostReconnectPeriodDeltaMs = 10
+# Threshold to indicate to cluster for host connection loss
+#Should be less than MaxHostReconnectPeriodMs
+ConnectionLossThresholdMs = 3000
+
 # Turns on and off the normalization of records path. Described in the docs in detail.
 NormalizeRecords = true
 # Turns on logging for special kinds of records. For now it's recrods with fractional timestamps.
