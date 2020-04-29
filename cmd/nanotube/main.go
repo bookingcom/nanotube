@@ -150,7 +150,7 @@ func loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath string,
 	}
 
 	ms := metrics.New(&cfg)
-	metrics.Register(ms)
+	metrics.Register(ms, &cfg)
 	ms.Version.WithLabelValues(version).Inc()
 
 	bs, err = ioutil.ReadFile(clPath)

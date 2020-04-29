@@ -160,6 +160,7 @@ func (cl *Cluster) addAvailableHost(host *Host) {
 		}
 	}
 	host.stateChanges.Inc()
+	host.stateChangesTotal.Inc()
 	cl.AvailableHosts = append(cl.AvailableHosts, host)
 }
 
@@ -169,6 +170,7 @@ func (cl *Cluster) removeAvailableHost(host *Host) {
 	for i, h := range cl.AvailableHosts {
 		if h == host {
 			host.stateChanges.Inc()
+			host.stateChangesTotal.Inc()
 			length := len(cl.AvailableHosts)
 
 			for j := i; j < length-1; j++ {
