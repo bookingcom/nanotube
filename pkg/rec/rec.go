@@ -14,7 +14,7 @@ import (
 // Rec represents a single piece of data (a datapoint) that can be sent.
 type Rec struct {
 	Path    string
-	Val     float32
+	Val     float64
 	RawVal  string // this is to avoid discrepancies in precision and formatting
 	Time    uint32
 	RawTime string // to avoid differences when encoding, and save time
@@ -31,7 +31,7 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 		return nil, fmt.Errorf("got record of %d tokens for parsing", len(words))
 	}
 
-	val, err := strconv.ParseFloat(words[1], 32)
+	val, err := strconv.ParseFloat(words[1], 64)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error converting incoming record val %s", words[1])
 	}
@@ -61,7 +61,7 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 
 	return &Rec{
 		Path:     *path,
-		Val:      float32(val),
+		Val:      float64(val),
 		RawVal:   words[1],
 		Time:     uint32(tm),
 		RawTime:  words[2],

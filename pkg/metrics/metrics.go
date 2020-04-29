@@ -10,18 +10,29 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	InRecs             prometheus.Counter
-	OutRecs            *prometheus.CounterVec
-	ThrottledRecs      prometheus.Counter
-	ThrottledHosts     *prometheus.CounterVec
-	BlackholedRecs     prometheus.Counter
-	ErrorRecs          prometheus.Counter
-	MainQueueLength    prometheus.Gauge
-	HostQueueLength    prometheus.Histogram
+	InRecs                prometheus.Counter
+	OutRecs               *prometheus.CounterVec
+	OutRecsTotal          prometheus.Counter
+	ThrottledRecs         prometheus.Counter
+	StateChangeHosts      *prometheus.CounterVec
+	StateChangeHostsTotal prometheus.Counter
+	BlackholedRecs        prometheus.Counter
+	ErrorRecs             prometheus.Counter
+
+	ThrottledHosts      *prometheus.CounterVec
+	ThrottledHostsTotal prometheus.Counter
+
+	MainQueueLength prometheus.Gauge
+	HostQueueLength prometheus.Histogram
+
 	ProcessingDuration prometheus.Histogram
-	ActiveConnections  prometheus.Gauge
-	InConnectionsTotal prometheus.Counter
-	Version            *prometheus.CounterVec
+
+	ActiveTCPConnections  prometheus.Gauge
+	InConnectionsTotalTCP prometheus.Counter
+
+	UDPReadFailures prometheus.Counter
+
+	Version *prometheus.CounterVec
 }
 
 // New creates a new set of metrics from the main config.
@@ -35,9 +46,14 @@ func New(conf *conf.Main) *Prom {
 		}),
 		OutRecs: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
-			Name:      "out_records_total",
+			Name:      "out_records",
 			Help:      "Outgoing records by cluster and hostname.",
 		}, []string{"cluster", "upstream_host"}),
+		OutRecsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "out_records_total",
+			Help:      "Total outgoing records.",
+		}),
 		ThrottledRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "throttled_records_total",
@@ -45,9 +61,24 @@ func New(conf *conf.Main) *Prom {
 		}),
 		ThrottledHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
-			Name:      "throttled_host_records_total",
-			Help:      "Records dropped from the host queue because it's full.",
+			Name:      "throttled_host_records",
+			Help:      "Records dropped from the host queues because they're full labeled by cluster and host.",
 		}, []string{"cluster", "upstream_host"}),
+		ThrottledHostsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "throttled_host_records_total",
+			Help:      "Total records dropped from the host queues because it's full.",
+		}),
+		StateChangeHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "state_change_hosts",
+			Help:      "Availability state change for hosts",
+		}, []string{"cluster", "upstream_host"}),
+		StateChangeHostsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "state_change_hosts_total",
+			Help:      "Total availability state change for hosts",
+		}),
 		BlackholedRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "blackholed_records_total",
@@ -75,15 +106,20 @@ func New(conf *conf.Main) *Prom {
 			Help:      "Time to process one record.",
 			Buckets:   prometheus.ExponentialBuckets(0.001, conf.ProcessingDurationBucketFactor, conf.ProcessingDurationBuckets),
 		}),
-		ActiveConnections: prometheus.NewGauge(prometheus.GaugeOpts{
+		ActiveTCPConnections: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "nanotube",
 			Name:      "active_connections",
 			Help:      "Number of active connections.",
 		}),
-		InConnectionsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+		InConnectionsTotalTCP: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "open_in_connections_total",
 			Help:      "Number of incoming connections.",
+		}),
+		UDPReadFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "udp_read_failures_total",
+			Help:      "Counter of failures when reading incoming data from the UDP connection.",
 		}),
 		Version: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
@@ -95,15 +131,20 @@ func New(conf *conf.Main) *Prom {
 
 // Register registers the metrics. It fatally fails and exits if metrics fail to register.
 // Meant to be called from main and fail completely if something goes wrong.
-func Register(m *Prom) {
+func Register(m *Prom, cfg *conf.Main) {
 	err := prometheus.Register(m.InRecs)
 	if err != nil {
 		log.Fatalf("error registering the in_records_counter metric: %v", err)
 	}
 
-	err = prometheus.Register(m.OutRecs)
+	err = prometheus.Register(m.OutRecsTotal)
 	if err != nil {
-		log.Fatalf("error registering the out_records_counter metric: %v", err)
+		log.Fatalf("error registering the out_records_total metric: %v", err)
+	}
+
+	err = prometheus.Register(m.ErrorRecs)
+	if err != nil {
+		log.Fatalf("error registering the error_records_counter metric: %v", err)
 	}
 
 	err = prometheus.Register(m.ThrottledRecs)
@@ -111,7 +152,7 @@ func Register(m *Prom) {
 		log.Fatalf("error registering the throttled_records_counter metric: %v", err)
 	}
 
-	err = prometheus.Register(m.ThrottledHosts)
+	err = prometheus.Register(m.ThrottledHostsTotal)
 	if err != nil {
 		log.Fatalf("error registering the throttled_host_records_total metrics: %v", err)
 	}
@@ -121,38 +162,59 @@ func Register(m *Prom) {
 		log.Fatalf("error registering the blackholed_records_counter metric: %v", err)
 	}
 
-	err = prometheus.Register(m.ErrorRecs)
-	if err != nil {
-		log.Fatalf("error registering the error_records_counter metric: %v", err)
-	}
-
-	err = prometheus.Register(m.MainQueueLength)
-	if err != nil {
-		log.Fatalf("error registering the main_queue_length_hist metric: %v", err)
-	}
-
-	err = prometheus.Register(m.HostQueueLength)
+	err = prometheus.Register(m.InConnectionsTotalTCP)
 	if err != nil {
 		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
 	}
 
-	err = prometheus.Register(m.ProcessingDuration)
+	err = prometheus.Register(m.StateChangeHostsTotal)
 	if err != nil {
-		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
+		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
 	}
 
-	err = prometheus.Register(m.ActiveConnections)
-	if err != nil {
-		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
-	}
+	if !cfg.LessMetrics {
+		err = prometheus.Register(m.OutRecs)
+		if err != nil {
+			log.Fatalf("error registering the out_records metric: %v", err)
+		}
 
-	err = prometheus.Register(m.InConnectionsTotal)
-	if err != nil {
-		log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
-	}
+		err = prometheus.Register(m.StateChangeHosts)
+		if err != nil {
+			log.Fatalf("error registering the state_change_hosts metrics: %v", err)
+		}
+		err = prometheus.Register(m.ThrottledHosts)
+		if err != nil {
+			log.Fatalf("error registering the throttled_host_records metrics: %v", err)
+		}
 
-	err = prometheus.Register(m.Version)
-	if err != nil {
-		log.Fatalf("error registering the version metric: %v", err)
+		err = prometheus.Register(m.MainQueueLength)
+		if err != nil {
+			log.Fatalf("error registering the main_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.HostQueueLength)
+		if err != nil {
+			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.ProcessingDuration)
+		if err != nil {
+			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.ActiveTCPConnections)
+		if err != nil {
+			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
+		}
+
+		err = prometheus.Register(m.UDPReadFailures)
+		if err != nil {
+			log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
+		}
+
+		err = prometheus.Register(m.Version)
+		if err != nil {
+			log.Fatalf("error registering the version metric: %v", err)
+		}
 	}
 }

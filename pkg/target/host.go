@@ -24,24 +24,40 @@ type Host struct {
 	Conn net.Conn
 
 	W    *bufio.Writer
+	CWm  sync.Mutex
 	stop chan int
 
-	Lg                      *zap.Logger
-	Ms                      *metrics.Prom
-	SendTimeoutSec          uint32
-	ConnTimeoutSec          uint32
-	TCPOutBufFlushPeriodSec uint32
-	MaxReconnectPeriodMs    uint32
-	ReconnectPeriodDeltaMs  uint32
+	updateHostHealthStatus chan *HostStatus
+
+	Lg                        *zap.Logger
+	Ms                        *metrics.Prom
+	SendTimeoutSec            uint32
+	ConnTimeoutSec            uint32
+	KeepAliveSec              uint32
+	MaxReconnectPeriodMs      uint32
+	ReconnectPeriodDeltaMs    uint32
+	ConnectionLossThresholdMs uint32
+	TCPOutBufFlushPeriodSec   uint32
 
 	outRecs            prometheus.Counter
+	outRecsTotal       prometheus.Counter
 	throttled          prometheus.Counter
+	throttledTotal     prometheus.Counter
+	stateChanges       prometheus.Counter
+	stateChangesTotal  prometheus.Counter
 	processingDuration prometheus.Histogram
 	bufSize            int
 }
 
+// HostStatus is used to signal connection status by Host to cluster
+type HostStatus struct {
+	Host   *Host
+	Status bool
+	sigCh  chan struct{}
+}
+
 //NewHost build new host object from config
-func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
+func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom, updateHostHealthStatus chan *HostStatus) *Host {
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
 		targetPort = hostCfg.Port
@@ -52,21 +68,28 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		"upstream_host": hostCfg.Name,
 	}
 	return &Host{
-		Name: hostCfg.Name,
-		Port: targetPort,
-		Ch:   make(chan *rec.Rec, mainCfg.HostQueueSize),
-		Lg:   lg,
-		stop: make(chan int),
+		Name:                   hostCfg.Name,
+		Port:                   targetPort,
+		Ch:                     make(chan *rec.Rec, mainCfg.HostQueueSize),
+		Lg:                     lg,
+		stop:                   make(chan int),
+		updateHostHealthStatus: updateHostHealthStatus,
 
-		SendTimeoutSec:          mainCfg.SendTimeoutSec,
-		ConnTimeoutSec:          mainCfg.OutConnTimeoutSec,
-		TCPOutBufFlushPeriodSec: mainCfg.TCPOutBufFlushPeriodSec,
-		outRecs:                 ms.OutRecs.With(promLabels),
-		throttled:               ms.ThrottledHosts.With(promLabels),
-		processingDuration:      ms.ProcessingDuration,
-		bufSize:                 mainCfg.TCPOutBufSize,
-		MaxReconnectPeriodMs:    mainCfg.MaxHostReconnectPeriodMs,
-		ReconnectPeriodDeltaMs:  mainCfg.MaxHostReconnectPeriodMs,
+		SendTimeoutSec:            mainCfg.SendTimeoutSec,
+		ConnTimeoutSec:            mainCfg.OutConnTimeoutSec,
+		KeepAliveSec:              mainCfg.KeepAliveSec,
+		MaxReconnectPeriodMs:      mainCfg.MaxHostReconnectPeriodMs,
+		ReconnectPeriodDeltaMs:    mainCfg.MaxHostReconnectPeriodMs,
+		ConnectionLossThresholdMs: mainCfg.ConnectionLossThresholdMs,
+		TCPOutBufFlushPeriodSec:   mainCfg.TCPOutBufFlushPeriodSec,
+		outRecs:                   ms.OutRecs.With(promLabels),
+		outRecsTotal:              ms.OutRecsTotal,
+		throttled:                 ms.ThrottledHosts.With(promLabels),
+		throttledTotal:            ms.ThrottledHostsTotal,
+		processingDuration:        ms.ProcessingDuration,
+		stateChanges:              ms.StateChangeHosts.With(promLabels),
+		stateChangesTotal:         ms.StateChangeHostsTotal,
+		bufSize:                   mainCfg.TCPOutBufSize,
 	}
 }
 
@@ -76,30 +99,7 @@ func (h *Host) Push(r *rec.Rec) {
 	case h.Ch <- r:
 	default:
 		h.throttled.Inc()
-	}
-}
-
-// OptionalTicker is a ticker that only starts if passed non-zero duration
-type OptionalTicker struct {
-	C <-chan time.Time
-	t *time.Ticker
-}
-
-// NewOptionalTicker makes a new ticker that only runs if duration supplied is non-zero
-func NewOptionalTicker(d time.Duration) *OptionalTicker {
-	var ticker OptionalTicker
-	if d != 0 {
-		ticker.t = time.NewTicker(d)
-		ticker.C = ticker.t.C
-	}
-
-	return &ticker
-}
-
-// Stop halts the ticker if it was ever started
-func (t *OptionalTicker) Stop() {
-	if t != nil {
-		t.Stop()
+		h.throttledTotal.Inc()
 	}
 }
 
@@ -108,110 +108,129 @@ func (t *OptionalTicker) Stop() {
 func (h *Host) Stream(wg *sync.WaitGroup) {
 	// TODO (grzkv) Maybe move (re)connection to a separate goroutine and communicate via a chan
 
-	ticker := NewOptionalTicker(time.Duration(h.TCPOutBufFlushPeriodSec))
-	defer ticker.Stop()
-
+	if h.TCPOutBufFlushPeriodSec != 0 {
+		go h.Flush(time.Second * time.Duration(h.TCPOutBufFlushPeriodSec))
+	}
 	defer func() {
 		wg.Done()
 		close(h.stop)
 	}()
 
+	for r := range h.Ch {
+		h.tryToSend(r)
+	}
+}
+
+func (h *Host) tryToSend(r *rec.Rec) {
+	h.CWm.Lock()
+	defer h.CWm.Unlock()
+
+	// retry until successful
+	for {
+		for reconnectWait, attemptCount := uint32(0), 1; h.Conn == nil; {
+			time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
+			if reconnectWait < h.MaxReconnectPeriodMs {
+				reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
+			}
+			if reconnectWait >= h.MaxReconnectPeriodMs {
+				reconnectWait = h.MaxReconnectPeriodMs
+			}
+
+			h.Connect(attemptCount)
+			attemptCount++
+		}
+
+		err := h.Conn.SetWriteDeadline(time.Now().Add(
+			time.Duration(h.SendTimeoutSec) * time.Second))
+		if err != nil {
+			h.Lg.Warn("error setting write deadline", zap.Error(err))
+		}
+
+		// this may loose one record on disconnect
+		_, err = h.W.Write([]byte(*r.Serialize()))
+
+		if err == nil {
+			h.outRecs.Inc()
+			h.outRecsTotal.Inc()
+			h.processingDuration.Observe(time.Since(r.Received).Seconds())
+			break
+		}
+
+		h.Lg.Warn("error sending value to host. Reconnect and retry..",
+			zap.String("target", h.Name),
+			zap.Uint16("port", h.Port),
+			zap.Error(err),
+		)
+		err = h.Conn.Close()
+		if err != nil {
+			// not retrying here, file descriptor may be lost
+			h.Lg.Error("error closing the connection", zap.Error(err))
+		}
+
+		h.Conn = nil
+	}
+}
+
+// Flush periodically flushes the buffer and performs a write.
+func (h *Host) Flush(d time.Duration) {
+	t := time.NewTicker(d)
+	defer t.Stop()
+
 	for {
 		select {
-		case r, ok := <-h.Ch:
-			if !ok {
-				return
-			}
-			// retry until successful
-			for {
-				h.reconnectIfNecessary()
-
-				err := h.Conn.SetWriteDeadline(time.Now().Add(
-					time.Duration(h.SendTimeoutSec) * time.Second))
+		case <-h.stop:
+			return
+		case <-t.C:
+			h.CWm.Lock()
+			if h.Conn != nil && h.W != nil && h.W.Buffered() != 0 {
+				err := h.W.Flush()
 				if err != nil {
-					h.Lg.Warn("error setting write deadline. Renewing the connection.",
-						zap.Error(err))
+					h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+					h.Conn = nil
+					h.W = nil
 				}
-
-				// this may loose one record on disconnect
-				_, err = h.Write([]byte(*r.Serialize()))
-
-				if err == nil {
-					h.outRecs.Inc()
-					h.processingDuration.Observe(time.Since(r.Received).Seconds())
-					break
-				}
-
-				h.Lg.Warn("error sending value to host. Reconnect and retry..",
-					zap.String("target", h.Name),
-					zap.Uint16("port", h.Port),
-					zap.Error(err),
-				)
-				err = h.Conn.Close()
-				if err != nil {
-					// not retrying here, file descriptor may be lost
-					h.Lg.Error("error closing the connection",
-						zap.Error(err))
-				}
-
-				h.Conn = nil
 			}
-		case <-ticker.C:
-			h.Flush(time.Second * time.Duration(h.TCPOutBufFlushPeriodSec))
+			h.CWm.Unlock()
 		}
-	}
-}
-
-// reconnect makes sure the host stays connected
-func (h *Host) reconnectIfNecessary() {
-	for reconnectWait := uint32(0); h.Conn == nil; {
-		time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-		if reconnectWait < h.MaxReconnectPeriodMs {
-			reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
-		}
-		if reconnectWait >= h.MaxReconnectPeriodMs {
-			reconnectWait = h.MaxReconnectPeriodMs
-		}
-
-		h.Connect()
-	}
-}
-
-// Write does the remote write, i.e. sends the data
-func (h *Host) Write(b []byte) (nn int, err error) {
-	return h.W.Write(b)
-}
-
-// Flush immediately flushes the buffer and performs a write
-func (h *Host) Flush(d time.Duration) {
-	if h.W == nil || h.W.Buffered() == 0 {
-		return
-	}
-	err := h.W.Flush()
-	if err != nil {
-		h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
-		// if flushing fails, the connection has to be re-established
-		h.Conn = nil
-		h.W = nil
 	}
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
-func (h *Host) Connect() {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h.Name, h.Port),
-		time.Duration(h.ConnTimeoutSec)*time.Second)
-
+func (h *Host) Connect(attemptCount int) {
+	conn, err := h.getConnectionToHost()
 	if err != nil {
 		h.Lg.Warn("connection to host failed",
 			zap.String("host", h.Name),
 			zap.Uint16("port", h.Port))
 		h.Conn = nil
-		h.W = nil
+		if attemptCount == 1 {
+			h.updateHostHealthStatus <- &HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
+		}
 
 		return
 	}
 
 	h.Conn = conn
+	h.updateHostHealthStatus <- &HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
 
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
+}
+
+func (h *Host) getConnectionToHost() (net.Conn, error) {
+	dialer := net.Dialer{
+		Timeout:   time.Duration(h.ConnTimeoutSec) * time.Second,
+		KeepAlive: time.Duration(h.KeepAliveSec) * time.Second,
+	}
+	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
+	return conn, err
+}
+
+func (h *Host) checkUpdateHostStatus(hostStatus chan HostStatus) {
+	conn, _ := h.getConnectionToHost()
+	if conn != nil {
+		hostStatus <- HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
+		_ = conn.Close()
+	} else {
+		hostStatus <- HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
+	}
 }

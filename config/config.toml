@@ -2,10 +2,20 @@
 
 # WARNING: This is a sample config. You most likely need to tweak it for your use case.
 
-# The port to listen to for incoming connections.
-ListeningPort = 2003
 # The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 2004
+
+# Setting this to ip:port will enable TCP listening on specified address.
+# 	Empty string to disable TCP listening.
+#		Empty ip to listen on all addresses.
+ListenTCP = ":2003"
+# Setting this to ip:port will enable UDP listening on specified address.
+#		Empty string to disable UDP listening.
+#		Empty ip to listen on all addresses.
+ListenUDP = ""
+
+# Size of OS buffer for reading from UDP connction. Buffer not set if zero.
+UDPOSBufferSize = 0
 
 # The size on main queue between listen and routing. Refer to docs for details.
 MainQueueSize = 100000
@@ -38,6 +48,9 @@ TCPOutBufFlushPeriodSec = 2
 MaxHostReconnectPeriodMs = 5000
 # Parameter for exponential backoffs during reconnects
 HostReconnectPeriodDeltaMs = 10
+# Threshold to indicate to cluster for host connection loss
+#Should be less than MaxHostReconnectPeriodMs
+ConnectionLossThresholdMs = 3000
 
 # Turns on and off the normalization of records path. Described in the docs in detail.
 NormalizeRecords = true
@@ -48,6 +61,9 @@ LogSpecialRecords = true
 PprofPort = 6000
 # Prometheus port
 PromPort = 9090
+# Switch to expose only small subset of essential metrics.
+# (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
+LessMetrics = false
 
 # Histogram parameters for the host queue size
 HostQueueLengthBucketFactor = 3.0
