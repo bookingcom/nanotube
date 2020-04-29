@@ -61,6 +61,9 @@ LogSpecialRecords = true
 PprofPort = 6000
 # Prometheus port
 PromPort = 9090
+# Switch to expose only small subset of essential metrics.
+# (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
+LessMetrics = false
 
 # Histogram parameters for the host queue size
 HostQueueLengthBucketFactor = 3.0

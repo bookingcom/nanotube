@@ -1,3 +1,4 @@
+.PHONY: all
 all:
 	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
@@ -11,7 +12,10 @@ lint:
 
 .PHONY: fmt
 fmt:
-	gofmt -d -s . #this will currently try to work on /vendor. It will be ok after vendor cleanup.
+	gofmt -d -s .
+
+.PHONY: check
+check: all test lint
 
 .PHONY: clean
 clean:

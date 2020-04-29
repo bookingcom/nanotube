@@ -40,8 +40,11 @@ type Host struct {
 	TCPOutBufFlushPeriodSec   uint32
 
 	outRecs            prometheus.Counter
+	outRecsTotal       prometheus.Counter
 	throttled          prometheus.Counter
+	throttledTotal     prometheus.Counter
 	stateChanges       prometheus.Counter
+	stateChangesTotal  prometheus.Counter
 	processingDuration prometheus.Histogram
 	bufSize            int
 }
@@ -80,9 +83,12 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		ConnectionLossThresholdMs: mainCfg.ConnectionLossThresholdMs,
 		TCPOutBufFlushPeriodSec:   mainCfg.TCPOutBufFlushPeriodSec,
 		outRecs:                   ms.OutRecs.With(promLabels),
+		outRecsTotal:              ms.OutRecsTotal,
 		throttled:                 ms.ThrottledHosts.With(promLabels),
+		throttledTotal:            ms.ThrottledHostsTotal,
 		processingDuration:        ms.ProcessingDuration,
 		stateChanges:              ms.StateChangeHosts.With(promLabels),
+		stateChangesTotal:         ms.StateChangeHostsTotal,
 		bufSize:                   mainCfg.TCPOutBufSize,
 	}
 }
@@ -93,6 +99,7 @@ func (h *Host) Push(r *rec.Rec) {
 	case h.Ch <- r:
 	default:
 		h.throttled.Inc()
+		h.throttledTotal.Inc()
 	}
 }
 
@@ -144,6 +151,7 @@ func (h *Host) tryToSend(r *rec.Rec) {
 
 		if err == nil {
 			h.outRecs.Inc()
+			h.outRecsTotal.Inc()
 			h.processingDuration.Observe(time.Since(r.Received).Seconds())
 			break
 		}
