@@ -172,7 +172,7 @@ func Register(m *Prom, cfg *conf.Main) {
 		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
 	}
 
-	if !cfg.ShortMetrics {
+	if !cfg.LessMetrics {
 		err = prometheus.Register(m.OutRecs)
 		if err != nil {
 			log.Fatalf("error registering the out_records metric: %v", err)

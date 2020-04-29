@@ -39,9 +39,9 @@ type Main struct {
 	NormalizeRecords  bool
 	LogSpecialRecords bool
 
-	PprofPort    uint16
-	PromPort     uint16
-	ShortMetrics bool
+	PprofPort   uint16
+	PromPort    uint16
+	LessMetrics bool
 
 	HostQueueLengthBucketFactor float64
 	HostQueueLengthBuckets      int
@@ -93,9 +93,9 @@ func MakeDefault() Main {
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,
 
-		PprofPort:    6000,
-		PromPort:     9090,
-		ShortMetrics: false,
+		PprofPort:   6000,
+		PromPort:    9090,
+		LessMetrics: false,
 
 		HostQueueLengthBucketFactor: 3,
 		HostQueueLengthBuckets:      10,
