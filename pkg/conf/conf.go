@@ -43,8 +43,9 @@ type Main struct {
 	NormalizeRecords  bool
 	LogSpecialRecords bool
 
-	PprofPort   uint16
-	PromPort    uint16
+	// -1 turns off pprof server
+	PprofPort   int
+	PromPort    int
 	LessMetrics bool
 
 	HostQueueLengthBucketFactor float64
@@ -68,7 +69,7 @@ func ReadMain(r io.Reader) (Main, error) {
 	if cfg.RulesConfig == "" {
 		return cfg, errors.New("missing mandatory RulesConfig setting")
 	}
-	if cfg.PprofPort == cfg.PromPort {
+	if cfg.PprofPort != -1 && cfg.PprofPort == cfg.PromPort {
 		return cfg, errors.New("PromPort and PprofPort can't have the same value")
 	}
 	if cfg.ListenTCP == "" && cfg.ListenUDP == "" {
@@ -107,7 +108,7 @@ func MakeDefault() Main {
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,
 
-		PprofPort:   6000,
+		PprofPort:   -1,
 		PromPort:    9090,
 		LessMetrics: false,
 

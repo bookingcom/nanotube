@@ -64,7 +64,7 @@ NormalizeRecords = true
 # Turns on logging for special kinds of records. For now it's recrods with fractional timestamps.
 LogSpecialRecords = true
 
-# Profiling port
+# Profiling port. Skip to disable.
 PprofPort = 6000
 # Prometheus port
 PromPort = 9090

@@ -50,13 +50,15 @@ func main() {
 		return
 	}
 
-	go func() {
-		err := http.ListenAndServe( // shadow
-			fmt.Sprintf("localhost:%d", cfg.PprofPort), nil)
-		if err != nil {
-			lg.Error("pprof server failed", zap.Error(err))
-		}
-	}()
+	if cfg.PprofPort != -1 {
+		go func() {
+			err := http.ListenAndServe( // shadow
+				fmt.Sprintf("localhost:%d", cfg.PprofPort), nil)
+			if err != nil {
+				lg.Error("pprof server failed", zap.Error(err))
+			}
+		}()
+	}
 
 	go func() {
 		err := http.ListenAndServe( // shadow

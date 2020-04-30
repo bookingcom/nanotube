@@ -61,7 +61,7 @@ func TestConfSimple(t *testing.T) {
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,
 
-		PprofPort: 6000,
+		PprofPort: -1,
 		PromPort:  9090,
 
 		HostQueueLengthBucketFactor: 3,
