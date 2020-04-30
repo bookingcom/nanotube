@@ -9,6 +9,10 @@ import (
 
 func TestConfSimple(t *testing.T) {
 	conf := `
+	ClustersConfig = "asdf" 
+	RulesConfig = "zxcv"
+	RewritesConfig = "qwert"
+
 	ListenUDP = "1.2.3.4:2003"
 	ListenTCP = ":2003"
 	TargetPort = 2008
@@ -29,6 +33,10 @@ func TestConfSimple(t *testing.T) {
 	ConnectionLossThresholdMs = 200`
 
 	expected := Main{
+		ClustersConfig: "asdf",
+		RulesConfig:    "zxcv",
+		RewritesConfig: "qwert",
+
 		TargetPort: 2008,
 
 		ListenTCP: ":2003",
