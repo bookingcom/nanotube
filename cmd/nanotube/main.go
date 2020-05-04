@@ -37,26 +37,28 @@ func main() {
 		}
 	}()
 
-	cfgPath, clPath, rulesPath, rewritesPath, validateConfig, versionInfo := parseFlags()
+	cfgPath, _, _, _, validateConfig, versionInfo := parseFlags()
 
 	if versionInfo {
 		fmt.Println(version)
 		return
 	}
 
-	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath, lg)
+	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, lg)
 
 	if validateConfig {
 		return
 	}
 
-	go func() {
-		err := http.ListenAndServe( // shadow
-			fmt.Sprintf("localhost:%d", cfg.PprofPort), nil)
-		if err != nil {
-			lg.Error("pprof server failed", zap.Error(err))
-		}
-	}()
+	if cfg.PprofPort != -1 {
+		go func() {
+			err := http.ListenAndServe( // shadow
+				fmt.Sprintf("localhost:%d", cfg.PprofPort), nil)
+			if err != nil {
+				lg.Error("pprof server failed", zap.Error(err))
+			}
+		}()
+	}
 
 	go func() {
 		err := http.ListenAndServe( // shadow
@@ -98,6 +100,7 @@ func main() {
 }
 
 func parseFlags() (string, string, string, string, bool, bool) {
+	// TODO (grzkv): Cleanup unused clPath, rulesPath, rewritesPath after migration
 	cfgPath := flag.String("config", "", "Path to config file.")
 	clPath := flag.String("clusters", "", "Path to clusters file.")
 	rulesPath := flag.String("rules", "", "Path to rules file.")
@@ -137,8 +140,8 @@ func buildLogger() (*zap.Logger, error) {
 	return config.Build()
 }
 
-func loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath string,
-	lg *zap.Logger) (conf.Main, target.Clusters, rules.Rules, rewrites.Rewrites, *metrics.Prom) {
+func loadBuildRegister(cfgPath string, lg *zap.Logger) (conf.Main, target.Clusters,
+	rules.Rules, rewrites.Rewrites, *metrics.Prom) {
 
 	bs, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
@@ -153,7 +156,7 @@ func loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath string,
 	metrics.Register(ms, &cfg)
 	ms.Version.WithLabelValues(version).Inc()
 
-	bs, err = ioutil.ReadFile(clPath)
+	bs, err = ioutil.ReadFile(cfg.ClustersConfig)
 	if err != nil {
 		log.Fatal("error reading clusters file")
 	}
@@ -166,7 +169,7 @@ func loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath string,
 		log.Fatalf("error building clusters")
 	}
 
-	bs, err = ioutil.ReadFile(rulesPath)
+	bs, err = ioutil.ReadFile(cfg.RulesConfig)
 	if err != nil {
 		log.Fatalf("error reading rules file: %v", err)
 	}
@@ -180,8 +183,8 @@ func loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath string,
 	}
 
 	var rewriteRules rewrites.Rewrites
-	if rewritesPath != "" {
-		bs, err := ioutil.ReadFile(rewritesPath)
+	if cfg.RewritesConfig != "" {
+		bs, err := ioutil.ReadFile(cfg.RewritesConfig)
 		if err != nil {
 			log.Fatalf("error reading rewrites config: %v", err)
 		}
