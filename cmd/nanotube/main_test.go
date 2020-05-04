@@ -44,11 +44,8 @@ func setup(t *testing.T) {
 	fixturesPath := "testdata/"
 
 	cfgPath := filepath.Join(fixturesPath, "config.toml")
-	clPath := filepath.Join(fixturesPath, "clusters.toml")
-	rulesPath := filepath.Join(fixturesPath, "rules.toml")
-	rewritesPath := filepath.Join(fixturesPath, "rewrites.toml")
 
-	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, clPath, rulesPath, rewritesPath, lg)
+	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, lg)
 
 	term := make(chan struct{})
 	pipe, err := Listen(&cfg, term, lg, ms)

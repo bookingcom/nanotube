@@ -16,7 +16,7 @@ Build and run
 `make`
 3. Run it with
 
-`./nanotube -config config/config.toml -clusters config/clusters.toml -rules config/rules.toml  -rewrites config/rewrite.toml`
+`./nanotube -config config/config.toml
 
 Running with docker-compose
 -----------------------------------
