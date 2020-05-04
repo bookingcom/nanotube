@@ -119,6 +119,9 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	for r := range h.Ch {
 		h.tryToSend(r)
 	}
+
+	// this line is only reached when the host channel was closed
+	h.tryToFlushIfNecessary()
 }
 
 func (h *Host) tryToSend(r *rec.Rec) {
@@ -182,15 +185,19 @@ func (h *Host) Flush(d time.Duration) {
 			return
 		case <-t.C:
 			h.CWm.Lock()
-			if h.Conn != nil && h.W != nil && h.W.Buffered() != 0 {
-				err := h.W.Flush()
-				if err != nil {
-					h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
-					h.Conn = nil
-					h.W = nil
-				}
-			}
+			h.tryToFlushIfNecessary()
 			h.CWm.Unlock()
+		}
+	}
+}
+
+func (h *Host) tryToFlushIfNecessary() {
+	if h.Conn != nil && h.W != nil && h.W.Buffered() != 0 {
+		err := h.W.Flush()
+		if err != nil {
+			h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+			h.Conn = nil
+			h.W = nil
 		}
 	}
 }
