@@ -121,6 +121,8 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	}
 
 	// this line is only reached when the host channel was closed
+	h.CWm.Lock()
+	defer h.CWm.Unlock()
 	h.tryToFlushIfNecessary()
 }
 
@@ -191,6 +193,7 @@ func (h *Host) Flush(d time.Duration) {
 	}
 }
 
+// Requires mCW mutex lock.
 func (h *Host) tryToFlushIfNecessary() {
 	if h.Conn != nil && h.W != nil && h.W.Buffered() != 0 {
 		err := h.W.Flush()
