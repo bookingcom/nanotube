@@ -36,6 +36,7 @@ WorkerPoolSize = 50
 # Timeout for dropping an incoming connection if no data is sent in.
 IncomingConnIdleTimeoutSec = 90
 # Timeout for sending data to target host via TCP connection.
+# Has to be > TCPOutBufFlushPeriodSec to allow enough time for the buffered records to be sent.
 SendTimeoutSec = 5
 # Timeout for connecting to a target host. Does not influence re-connections with exponential backoffs.
 OutConnTimeoutSec = 5
