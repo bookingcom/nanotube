@@ -118,12 +118,6 @@ func parseFlags() (string, string, string, string, bool, bool) {
 	if cfgPath == nil || *cfgPath == "" {
 		log.Fatal("config file path not specified")
 	}
-	if clPath == nil || *clPath == "" {
-		log.Fatal("clusters file not specified")
-	}
-	if rulesPath == nil || *rulesPath == "" {
-		log.Fatal("rules file not specified")
-	}
 
 	return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, false
 }
