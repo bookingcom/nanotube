@@ -75,6 +75,9 @@ func ReadMain(r io.Reader) (Main, error) {
 	if cfg.ListenTCP == "" && cfg.ListenUDP == "" {
 		return cfg, errors.New("we don't listen neither on TCP nor on UDP")
 	}
+	if cfg.SendTimeoutSec <= cfg.TCPOutBufFlushPeriodSec {
+		return cfg, errors.New("TCP send timeout is lesser or equal to TCP buffer flush period")
+	}
 
 	return cfg, nil
 }
