@@ -225,9 +225,9 @@ func TestNormalization(t *testing.T) {
 	}
 
 	for _, test := range tt {
-		s := normalizePath(&test.in)
-		if *s != test.out {
-			t.Fatalf("Got %s after normalization of %s, expected %s", *s, test.in, test.out)
+		s := normalizePath(test.in)
+		if s != test.out {
+			t.Fatalf("Got %s after normalization of %s, expected %s", s, test.in, test.out)
 		}
 	}
 }
@@ -261,8 +261,8 @@ func testSerialization(t testing.TB) {
 	}
 
 	for _, test := range tt {
-		if *test.in.Serialize() != test.out {
-			t.Errorf("expected serialization output %s, got %s for record %+v", test.out, *test.in.Serialize(), test.in)
+		if test.in.Serialize() != test.out {
+			t.Errorf("expected serialization output %s, got %s for record %+v", test.out, test.in.Serialize(), test.in)
 		}
 	}
 }

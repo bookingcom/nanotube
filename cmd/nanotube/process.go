@@ -32,7 +32,7 @@ func Process(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites,
 func worker(wg *sync.WaitGroup, queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	defer wg.Done()
 	for j := range queue {
-		proc(&j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+		proc(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 	}
 }
 
@@ -51,7 +51,7 @@ func routeRec(rec *rec.Rec, rules rules.Rules, lg *zap.Logger, metrics *metrics.
 					lg.Error("push to cluster failed",
 						zap.Error(err),
 						zap.String("cluster", cl.Name),
-						zap.String("record", *rec.Serialize()))
+						zap.String("record", rec.Serialize()))
 				}
 				pushedTo[cl] = struct{}{}
 			}
@@ -63,10 +63,10 @@ func routeRec(rec *rec.Rec, rules rules.Rules, lg *zap.Logger, metrics *metrics.
 	}
 }
 
-func proc(s *string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
-	r, err := rec.ParseRec(*s, shouldNormalize, shouldLog, time.Now, lg)
+func proc(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
+	r, err := rec.ParseRec(s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
-		lg.Info("Error parsing incoming record", zap.String("record", *s), zap.Error(err))
+		lg.Info("Error parsing incoming record", zap.String("record", s), zap.Error(err))
 		metrics.ErrorRecs.Inc()
 		return
 	}
