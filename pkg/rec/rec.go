@@ -72,8 +72,14 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 // Serialize makes record into a string ready to be sent via TCP w/ line protocol.
 func (r *Rec) Serialize() *string {
 	// TODO (grzkv): serialization can be avoided in case there is no normalization
-	// TODO (grzkv): this may not be the fastest way to concatenate
-	s := fmt.Sprintf("%s %s %s\n", r.Path, r.RawVal, r.RawTime)
+
+	// out of printf, strings.Builder (with pre-grow) and simply
+	// concat of strings, the latter turns out to be the fastest.
+	// If you change anything in the next line, benchmark:  You
+	// may cause a switch from a fast path in the Go runtime to
+	// a slow path and strings.Builder might be faster then.
+	s := r.Path + " " + r.RawVal + " " + r.RawTime + "\n"
+
 	return &s
 }
 
