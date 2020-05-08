@@ -152,7 +152,7 @@ func (h *Host) tryToSend(r *rec.Rec) {
 		}
 
 		// this may loose one record on disconnect
-		_, err = h.W.Write([]byte(*r.Serialize()))
+		_, err = h.W.Write([]byte(r.Serialize()))
 
 		if err == nil {
 			h.outRecs.Inc()
