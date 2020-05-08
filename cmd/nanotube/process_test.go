@@ -91,7 +91,7 @@ func BenchmarkProcess(b *testing.B) {
 	var emptyRewrites rewrites.Rewrites
 	for i := 0; i < b.N; i++ {
 		s := "abc 123 123"
-		proc(&s, rules, emptyRewrites, true, false, lg, ms)
+		proc(s, rules, emptyRewrites, true, false, lg, ms)
 	}
 }
 
