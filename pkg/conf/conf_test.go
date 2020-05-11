@@ -29,6 +29,7 @@ func TestConfSimple(t *testing.T) {
 	TCPOutBufFlushPeriodSec = 3
 	KeepAliveSec = 3
 	MaxHostReconnectPeriodMs = 777
+	LBClusterHealthCheckPeriodSec = 18
 	HostReconnectPeriodDeltaMs = 13
 	ConnectionLossThresholdMs = 200`
 
@@ -47,16 +48,17 @@ func TestConfSimple(t *testing.T) {
 
 		WorkerPoolSize: 10,
 
-		IncomingConnIdleTimeoutSec: 13,
-		SendTimeoutSec:             7,
-		OutConnTimeoutSec:          9,
-		TermTimeoutSec:             11,
-		TCPOutBufSize:              11,
-		TCPOutBufFlushPeriodSec:    3,
-		KeepAliveSec:               3,
-		MaxHostReconnectPeriodMs:   777,
-		HostReconnectPeriodDeltaMs: 13,
-		ConnectionLossThresholdMs:  200,
+		IncomingConnIdleTimeoutSec:    13,
+		SendTimeoutSec:                7,
+		OutConnTimeoutSec:             9,
+		TermTimeoutSec:                11,
+		TCPOutBufSize:                 11,
+		TCPOutBufFlushPeriodSec:       3,
+		KeepAliveSec:                  3,
+		MaxHostReconnectPeriodMs:      777,
+		LBClusterHealthCheckPeriodSec: 18,
+		HostReconnectPeriodDeltaMs:    13,
+		ConnectionLossThresholdMs:     200,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,

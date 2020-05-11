@@ -59,6 +59,8 @@ HostReconnectPeriodDeltaMs = 10
 # Threshold to indicate to cluster for host connection loss
 #Should be less than MaxHostReconnectPeriodMs
 ConnectionLossThresholdMs = 3000
+# LB cluster health check period
+LBClusterHealthCheckPeriodSec = 30
 
 # Turns on and off the normalization of records path. Described in the docs in detail.
 NormalizeRecords = true
