@@ -46,7 +46,6 @@ You can feed in sample data with:
 ```
 echo "test1.test 5 $(date +%s)" | nc -c localhost 2003
 ```
-As many netcat implementations exist, a parameter may be needed to instruct it to close the socket once data is sent. Such param will usually be -q0, -c or -N. Refer to your implementation man page.
 
 Get it back with:
 
@@ -74,8 +73,9 @@ Routing
 
 Is defined in the [rules config](config/rules.toml) that is in turn referred to in the [main config](config/config.toml). This is how it works:
 - routing rules are applied to each incoming record in order;
-- `continue` variable defines whether to continue matching next rules. It is `true` by default;
-- when regex in a rule matches, the record is sent to the clusters in the `clusters` list;
+    - if regex in a rule matches, the record is sent to the clusters in the `clusters` list;
+        - if `continue` is `true` continue matching next rules, stop otherwise. `false` is the default;
+    - if regex does not match, continue down the list of rules;
 - multiple rules can be matched to each record;
 - each record can be sent to a single cluster at most once. If two rules send it to same cluster, only one instance will be sent;
 - cluster names must be from the set defined in the [clusters config](clonfig/clusters.toml);
