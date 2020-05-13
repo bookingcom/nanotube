@@ -1,10 +1,5 @@
-# Rewrite rules.
-# - all rules are applied to each record
-# - if rule mathches, metric path is rewriten
-# - if copy is true, new metric is created
-
 [[rewrite]]
- from = "abc"
- to = "cde"
- copy = true
+    from = "abc"
+    to = "cde"
+    copy = true
 

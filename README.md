@@ -14,9 +14,23 @@ Build and run
 `go get -u github.com/bookingcom/nanotube`
 2. Navigate to it and run
 `make`
+to build
 3. Run it with
 
-`./nanotube -config config/config.toml
+```
+./nanotube -config config/config.toml
+```
+
+Command line options:
+
+```
+-config string
+    Path to config file.
+-validate
+    Validate configuration files.
+-version
+    Print version info.
+```
 
 Running with docker-compose
 -----------------------------------
@@ -45,7 +59,7 @@ To test the second store (alone or in conjunction) change the metric path to `te
 Record structure
 ----------------
 
-The only supported protocol is [line](https://graphite.readthedocs.io/en/latest/feeding-carbon.html#the-plaintext-protocol). The records should follow the structure:
+The only supported protocol is [line](https://graphite.readthedocs.io/en/latest/feeding-carbon.html#the-plaintext-protocol). The records have the structure:
 ```
 path.path.path value datetime
 ```
@@ -53,7 +67,28 @@ path.path.path value datetime
 Config
 ------
 
-Please refer to the sample configs in the _config_ folder for examples and documentation.
+Please refer to the [sample config](config/config.toml) for examples and documentation.
+
+Routing
+-------
+
+Is defined in the [rules config](config/rules.toml) that is in turn referred to in the [main config](config/config.toml). This is how it works:
+- routing rules are applied to each incoming record in order;
+- `continue` variable defines whether to continue matching next rules. It is `true` by default;
+- when regex in a rule matches, the record is sent to the clusters in the `clusters` list;
+- multiple rules can be matched to each record;
+- each record can be sent to a single cluster at most once. If two rules send it to same cluster, only one instance will be sent;
+- cluster names must be from the set defined in the [clusters config](clonfig/clusters.toml);
+
+#### Rewrites
+
+Optionally, it is possible to apply the [rewrite rules](config/rewrite.toml). This is how they work:
+
+- all rules are applied to each record;
+- rewrites are applied before the routing;
+- rule matches if `from` matches;
+    - then metric path is rewriten to `to`;
+    - if `copy` is `true` the original metric is retained in addition to the modified one.
 
 Record validation and normalization
 -----------------------------------
@@ -79,7 +114,7 @@ Tags are not supported for now. See https://github.com/bookingcom/nanotube/issue
 Design
 ------
 
-Please refer to the design doc _docs/design.md_.
+Design details are in the design [doc](docs/design.md).
 
 
 Acknowledgment
