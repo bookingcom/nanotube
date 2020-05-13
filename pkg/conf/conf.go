@@ -27,14 +27,15 @@ type Main struct {
 
 	WorkerPoolSize uint16
 
-	IncomingConnIdleTimeoutSec uint32
-	SendTimeoutSec             uint32
-	OutConnTimeoutSec          uint32
-	MaxHostReconnectPeriodMs   uint32
-	HostReconnectPeriodDeltaMs uint32
-	KeepAliveSec               uint32
-	ConnectionLossThresholdMs  uint32
-	TermTimeoutSec             uint16
+	IncomingConnIdleTimeoutSec    uint32
+	SendTimeoutSec                uint32
+	OutConnTimeoutSec             uint32
+	MaxHostReconnectPeriodMs      uint32
+	LBClusterHealthCheckPeriodSec uint32
+	HostReconnectPeriodDeltaMs    uint32
+	KeepAliveSec                  uint32
+	ConnectionLossThresholdMs     uint32
+	TermTimeoutSec                uint16
 	// 0 value turns off buffering
 	TCPOutBufSize int
 	// 0 value turns off flushing
@@ -97,16 +98,17 @@ func MakeDefault() Main {
 		HostQueueSize:  1000,
 		WorkerPoolSize: 10,
 
-		IncomingConnIdleTimeoutSec: 90,
-		SendTimeoutSec:             5,
-		OutConnTimeoutSec:          5,
-		MaxHostReconnectPeriodMs:   5000,
-		HostReconnectPeriodDeltaMs: 10,
-		KeepAliveSec:               1,
-		ConnectionLossThresholdMs:  3000,
-		TermTimeoutSec:             10,
-		TCPOutBufSize:              0,
-		TCPOutBufFlushPeriodSec:    2,
+		IncomingConnIdleTimeoutSec:    90,
+		SendTimeoutSec:                5,
+		OutConnTimeoutSec:             5,
+		MaxHostReconnectPeriodMs:      5000,
+		LBClusterHealthCheckPeriodSec: 10,
+		HostReconnectPeriodDeltaMs:    10,
+		KeepAliveSec:                  1,
+		ConnectionLossThresholdMs:     3000,
+		TermTimeoutSec:                10,
+		TCPOutBufSize:                 0,
+		TCPOutBufFlushPeriodSec:       2,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,
