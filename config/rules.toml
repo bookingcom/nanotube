@@ -1,16 +1,17 @@
 [[rule]]
     regexs = [
-        ".*a.*"
+        '.*a.*'
     ]
     clusters = [
-        "local0"
+        'local0'
     ]
     continue = true
 
 [[rule]]
     regexs = [
-        ".*b.*"
+        '.*b.*'
     ]
     clusters = [
-        "local1"
+        'local1'
     ]
+

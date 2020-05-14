@@ -77,5 +77,4 @@ func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
 		}
 	}
 	return result
-
 }

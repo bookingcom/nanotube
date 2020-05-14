@@ -84,11 +84,11 @@ Is defined in the [rules config](config/rules.toml) that is in turn referred to 
 
 Optionally, it is possible to apply the [rewrite rules](config/rewrite.toml). This is how they work:
 
-- all rules are applied to each record;
 - rewrites are applied before the routing;
+- all rules are applied to each record one-by-one in order. The record may be modified along the way;
 - rule matches if `from` matches;
-    - then metric path is rewriten to `to`;
-    - if `copy` is `true` the original metric is retained in addition to the modified one.
+    - then metric path is rewriten to `to` in place;
+    - if `copy` is `true` the original metric is copied and sent directly to be routed skipping the following re-writes. `copy` is `false` be default.
 
 Record validation and normalization
 -----------------------------------
