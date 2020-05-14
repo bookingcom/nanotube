@@ -1,10 +1,17 @@
-# Rewrite rules.
-# - all rules are applied to each record
-# - if rule mathches, metric path is rewriten
-# - if copy is true, new metric is created
-
+# E.g.
+# In: abcxxx
+# Out: cdexxx
 [[rewrite]]
- from = "abc"
- to = "cde"
- copy = true
+    from = 'abc'
+    to = 'cde'
+
+# E.g.
+# In: xxx.A99.foo.bar
+# Out:
+# - xxx.foo.bar.A99
+# - xxx.A99.foo.bar
+[[rewrite]]
+    from = '^xxx.([A-Za-z0-9_-]+).(.*)'
+    to = 'xxx.$2.$1'
+    copy = true
 
