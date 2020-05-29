@@ -39,8 +39,8 @@ func TestRewrites(t *testing.T) {
 	}{
 		{
 			rewrites: "first",
-			in:       "abc",
-			out:      []string{"cde"},
+			in:       "abcxxx",
+			out:      []string{"cdexxx"},
 		},
 		{
 			rewrites: "first",
