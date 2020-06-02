@@ -14,6 +14,11 @@ import (
 )
 
 func BenchmarkProcess(b *testing.B) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	cls := target.Clusters{
 		"1": &target.Cluster{
 			Name: "1",
@@ -32,8 +37,9 @@ func BenchmarkProcess(b *testing.B) {
 			Type: conf.BlackholeCluster,
 		},
 	}
-	rules := rules.Rules{
-		rules.Rule{
+
+	rules := rules.NewFromSlice([]rules.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
@@ -49,7 +55,7 @@ func BenchmarkProcess(b *testing.B) {
 				cls["1"],
 			},
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
@@ -61,7 +67,7 @@ func BenchmarkProcess(b *testing.B) {
 				cls["2"],
 			},
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
@@ -77,12 +83,7 @@ func BenchmarkProcess(b *testing.B) {
 				cls["3"],
 			},
 		},
-	}
-
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	}, ms)
 
 	err := rules.Compile()
 	if err != nil {
@@ -96,6 +97,11 @@ func BenchmarkProcess(b *testing.B) {
 }
 
 func TestContinueRuleProcessing(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := "ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -115,8 +121,9 @@ func TestContinueRuleProcessing(t *testing.T) {
 			Type: conf.BlackholeCluster,
 		},
 	}
-	rules := rules.Rules{
-		rules.Rule{
+
+	rules := rules.NewFromSlice([]rules.Rule{
+		{
 			Regexs: []string{
 				"a.*",
 				"ab.*",
@@ -127,7 +134,7 @@ func TestContinueRuleProcessing(t *testing.T) {
 			},
 			Continue: true,
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				"zz.*",
 				"ab.*",
@@ -137,12 +144,7 @@ func TestContinueRuleProcessing(t *testing.T) {
 				cls["2"],
 			},
 		},
-	}
-
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	}, ms)
 
 	err := rules.Compile()
 	if err != nil {
@@ -160,6 +162,11 @@ func TestContinueRuleProcessing(t *testing.T) {
 }
 
 func TestStopRuleProcessing(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := " ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -179,8 +186,9 @@ func TestStopRuleProcessing(t *testing.T) {
 			Type: conf.BlackholeCluster,
 		},
 	}
-	rules := rules.Rules{
-		rules.Rule{
+
+	rules := rules.NewFromSlice([]rules.Rule{
+		{
 			Regexs: []string{
 				"a.*",
 				"ab.*",
@@ -189,7 +197,7 @@ func TestStopRuleProcessing(t *testing.T) {
 			Targets: []*target.Cluster{cls["1"]},
 			//Continue: false,
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				"zz.*",
 				"ab.*",
@@ -200,12 +208,7 @@ func TestStopRuleProcessing(t *testing.T) {
 			},
 			Continue: true,
 		},
-	}
-
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	}, ms)
 
 	err := rules.Compile()
 	if err != nil {
@@ -223,6 +226,11 @@ func TestStopRuleProcessing(t *testing.T) {
 }
 
 func TestRewriteNoCopy(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := "ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -231,26 +239,21 @@ func TestRewriteNoCopy(t *testing.T) {
 		},
 	}
 
-	rules := rules.Rules{
-		rules.Rule{
+	rules := rules.NewFromSlice([]rules.Rule{
+		{
 			Regexs: []string{
 				"de",
 			},
 			Targets: []*target.Cluster{cls["1"]}},
-	}
+	}, ms)
 
-	rewrites := rewrites.Rewrites{
-		rewrites.Rewrite{
+	rewrites := rewrites.NewFromSlice([]rewrites.Rewrite{
+		{
 			From: "ab.c",
 			To:   "de",
 			Copy: false,
 		},
-	}
-
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	}, ms)
 
 	err := rules.Compile()
 	if err != nil {
@@ -271,6 +274,11 @@ func TestRewriteNoCopy(t *testing.T) {
 }
 
 func TestRewriteCopy(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := "ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -279,27 +287,22 @@ func TestRewriteCopy(t *testing.T) {
 		},
 	}
 
-	rules := rules.Rules{
-		rules.Rule{
+	rules := rules.NewFromSlice([]rules.Rule{
+		{
 			Regexs: []string{
 				"de",
 				"ab.c",
 			},
 			Targets: []*target.Cluster{cls["1"]}},
-	}
+	}, ms)
 
-	rewrites := rewrites.Rewrites{
-		rewrites.Rewrite{
+	rewrites := rewrites.NewFromSlice([]rewrites.Rewrite{
+		{
 			From: "ab.c",
 			To:   "de",
 			Copy: true,
 		},
-	}
-
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	}, ms)
 
 	err := rules.Compile()
 	if err != nil {

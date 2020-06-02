@@ -2,6 +2,12 @@
 all:
 	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
+.PHONY: install
+install:
+	go install ./cmd/nanotube
+	go install ./test/receiver
+	go install ./test/sender
+
 .PHONY: test
 test:
 	go test -cover -race ./...
