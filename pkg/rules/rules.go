@@ -108,7 +108,6 @@ func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
 				if _, pushedBefore := pushedTo[cl]; pushedBefore {
 					continue
 				}
-				fmt.Printf("push: %v", cl)
 				err := cl.Push(r, rs.metrics)
 				if err != nil {
 					lg.Error("push to cluster failed",
