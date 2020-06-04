@@ -57,7 +57,7 @@ func Build(crs conf.Rules, clusters target.Clusters, measureRegex bool, ms *metr
 		rs.rules = append(rs.rules, r)
 	}
 
-	err := rs.Compile()
+	err := rs.compile()
 	if err != nil {
 		return rs, errors.Wrap(err, "rules compilation failed :")
 	}
@@ -65,17 +65,8 @@ func Build(crs conf.Rules, clusters target.Clusters, measureRegex bool, ms *metr
 	return rs, nil
 }
 
-// NewFromSlice builds new rules list from slice of rules. Used in tests
-func NewFromSlice(rules []Rule, ms *metrics.Prom) Rules {
-	return Rules{
-		rules:        rules,
-		measureRegex: false,
-		metrics:      ms,
-	}
-}
-
-// Compile precompiles regexps for perf and performs validation.
-func (rs Rules) Compile() error {
+// compile precompiles regexps for perf and performs validation.
+func (rs Rules) compile() error {
 	for i := range rs.rules {
 		rs.rules[i].CompiledRE = make([]*regexp.Regexp, 0)
 		for _, re := range rs.rules[i].Regexs {

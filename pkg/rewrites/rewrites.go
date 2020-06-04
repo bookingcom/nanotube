@@ -47,7 +47,7 @@ func Build(crw conf.Rewrites, measureRegex bool, metrics *metrics.Prom) (Rewrite
 		rw.rewrites = append(rw.rewrites, r)
 	}
 
-	err := rw.Compile()
+	err := rw.compile()
 	if err != nil {
 		return rw, errors.Wrap(err, "rewrite rule compilation failed :")
 	}
@@ -55,17 +55,8 @@ func Build(crw conf.Rewrites, measureRegex bool, metrics *metrics.Prom) (Rewrite
 	return rw, nil
 }
 
-// NewFromSlice build a Rewrites struct from a slice of Rewrites. Used in tests
-func NewFromSlice(rewrites []Rewrite, ms *metrics.Prom) Rewrites {
-	return Rewrites{
-		rewrites:     rewrites,
-		measureRegex: false,
-		metrics:      ms,
-	}
-}
-
-// Compile precompiles regexps
-func (rw Rewrites) Compile() error {
+// compile precompiles regexps
+func (rw Rewrites) compile() error {
 	for i, r := range rw.rewrites {
 		cre, err := regexp.Compile(r.From)
 		if err != nil {

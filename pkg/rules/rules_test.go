@@ -106,7 +106,7 @@ func TestRules(t *testing.T) {
 				t.Fatalf("rules building failed: %v", err)
 			}
 
-			err = rs.Compile()
+			err = rs.compile()
 			if err != nil {
 				t.Fatalf("compiling rules failed: %v", err)
 			}

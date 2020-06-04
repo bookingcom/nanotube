@@ -38,8 +38,8 @@ func BenchmarkProcess(b *testing.B) {
 		},
 	}
 
-	rules := rules.NewFromSlice([]rules.Rule{
-		{
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		conf.Rule{
 			Regexs: []string{
 				".*",
 				".*",
@@ -51,23 +51,22 @@ func BenchmarkProcess(b *testing.B) {
 				".*",
 				".*",
 			},
-			Targets: []*target.Cluster{
-				cls["1"],
+			Clusters: []string{
+				"1",
 			},
 		},
-		{
+		conf.Rule{
 			Regexs: []string{
 				".*",
 				".*",
 				".*",
 				"^a.*",
 			},
-			Targets: []*target.Cluster{
-				cls["1"],
-				cls["2"],
+			Clusters: []string{
+				"1", "2",
 			},
 		},
-		{
+		conf.Rule{
 			Regexs: []string{
 				".*",
 				".*",
@@ -79,15 +78,16 @@ func BenchmarkProcess(b *testing.B) {
 				".*",
 				".*",
 			},
-			Targets: []*target.Cluster{
-				cls["3"],
+			Clusters: []string{
+				"3",
 			},
 		},
-	}, ms)
+	},
+	}
 
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		b.Fatalf("rules compilation failed: %v", err)
+		b.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
 	for i := 0; i < b.N; i++ {
@@ -122,15 +122,15 @@ func TestContinueRuleProcessing(t *testing.T) {
 		},
 	}
 
-	rules := rules.NewFromSlice([]rules.Rule{
+	rulesConf := conf.Rules{Rule: []conf.Rule{
 		{
 			Regexs: []string{
 				"a.*",
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{
-				cls["1"],
+			Clusters: []string{
+				"1",
 			},
 			Continue: true,
 		},
@@ -140,15 +140,16 @@ func TestContinueRuleProcessing(t *testing.T) {
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{
-				cls["2"],
+			Clusters: []string{
+				"2",
 			},
 		},
-	}, ms)
+	},
+	}
 
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
@@ -187,14 +188,16 @@ func TestStopRuleProcessing(t *testing.T) {
 		},
 	}
 
-	rules := rules.NewFromSlice([]rules.Rule{
+	rulesConf := conf.Rules{Rule: []conf.Rule{
 		{
 			Regexs: []string{
 				"a.*",
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{cls["1"]},
+			Clusters: []string{
+				"1",
+			},
 			//Continue: false,
 		},
 		{
@@ -203,16 +206,17 @@ func TestStopRuleProcessing(t *testing.T) {
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{
-				cls["2"],
+			Clusters: []string{
+				"2",
 			},
 			Continue: true,
 		},
-	}, ms)
+	},
+	}
 
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
@@ -239,29 +243,34 @@ func TestRewriteNoCopy(t *testing.T) {
 		},
 	}
 
-	rules := rules.NewFromSlice([]rules.Rule{
+	rulesConf := conf.Rules{Rule: []conf.Rule{
 		{
 			Regexs: []string{
 				"de",
 			},
-			Targets: []*target.Cluster{cls["1"]}},
-	}, ms)
+			Clusters: []string{
+				"1",
+			},
+		},
+	},
+	}
 
-	rewrites := rewrites.NewFromSlice([]rewrites.Rewrite{
+	rewritesConf := conf.Rewrites{Rewrite: []conf.Rewrite{
 		{
 			From: "ab.c",
 			To:   "de",
 			Copy: false,
 		},
-	}, ms)
-
-	err := rules.Compile()
-	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+	},
 	}
-	err = rewrites.Compile()
+
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rewrite rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
+	}
+	rewrites, err := rewrites.Build(rewritesConf, false, ms)
+	if err != nil {
+		t.Fatalf("rewrite rules building failed: %v", err)
 	}
 	queue := make(chan string, 1)
 	queue <- testMetric
@@ -287,30 +296,34 @@ func TestRewriteCopy(t *testing.T) {
 		},
 	}
 
-	rules := rules.NewFromSlice([]rules.Rule{
+	rulesConf := conf.Rules{Rule: []conf.Rule{
 		{
 			Regexs: []string{
 				"de",
 				"ab.c",
 			},
-			Targets: []*target.Cluster{cls["1"]}},
-	}, ms)
+			Clusters: []string{
+				"1",
+			},
+		},
+	}}
 
-	rewrites := rewrites.NewFromSlice([]rewrites.Rewrite{
+	rewritesConf := conf.Rewrites{Rewrite: []conf.Rewrite{
 		{
 			From: "ab.c",
 			To:   "de",
 			Copy: true,
 		},
-	}, ms)
-
-	err := rules.Compile()
-	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+	},
 	}
-	err = rewrites.Compile()
+
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rewrite rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
+	}
+	rewrites, err := rewrites.Build(rewritesConf, false, ms)
+	if err != nil {
+		t.Fatalf("rewrite rules building failed: %v", err)
 	}
 	queue := make(chan string, 1)
 	queue <- testMetric
