@@ -130,7 +130,6 @@ func (rl Rule) Match(r *rec.Rec, measureRegex bool) bool {
 	var timer *prometheus.Timer
 
 	for idx, re := range rl.CompiledRE {
-		// XXX measure regex
 		if measureRegex {
 			timer = prometheus.NewTimer(rl.regexDuration[idx])
 		}
