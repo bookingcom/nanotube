@@ -34,7 +34,7 @@ type Prom struct {
 
 	Version *prometheus.CounterVec
 
-	RegexDuration *prometheus.HistogramVec
+	RegexDuration *prometheus.SummaryVec
 }
 
 // New creates a new set of metrics from the main config.
@@ -128,11 +128,10 @@ func New(conf *conf.Main) *Prom {
 			Name:      "version",
 			Help:      "Version info in label. Value should be always 1.",
 		}, []string{"version"}),
-		RegexDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		RegexDuration: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace: "nanotube",
 			Name:      "regex_duration_seconds",
 			Help:      "Time to evaluate each regex from configuration",
-			Buckets:   []float64{0},
 		}, []string{"regex", "rule_type"}),
 	}
 }
