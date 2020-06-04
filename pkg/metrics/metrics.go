@@ -172,6 +172,11 @@ func Register(m *Prom, cfg *conf.Main) {
 		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
 	}
 
+	err = prometheus.Register(m.Version)
+	if err != nil {
+		log.Fatalf("error registering the version metric: %v", err)
+	}
+
 	if !cfg.LessMetrics {
 		err = prometheus.Register(m.OutRecs)
 		if err != nil {
@@ -210,11 +215,6 @@ func Register(m *Prom, cfg *conf.Main) {
 		err = prometheus.Register(m.UDPReadFailures)
 		if err != nil {
 			log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
-		}
-
-		err = prometheus.Register(m.Version)
-		if err != nil {
-			log.Fatalf("error registering the version metric: %v", err)
 		}
 	}
 }
