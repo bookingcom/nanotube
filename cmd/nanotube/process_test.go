@@ -39,7 +39,7 @@ func BenchmarkProcess(b *testing.B) {
 	}
 
 	rulesConf := conf.Rules{Rule: []conf.Rule{
-		conf.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
@@ -55,7 +55,7 @@ func BenchmarkProcess(b *testing.B) {
 				"1",
 			},
 		},
-		conf.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
@@ -66,7 +66,7 @@ func BenchmarkProcess(b *testing.B) {
 				"1", "2",
 			},
 		},
-		conf.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
