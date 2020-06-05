@@ -171,7 +171,7 @@ func loadBuildRegister(cfgPath string, lg *zap.Logger) (conf.Main, target.Cluste
 	if err != nil {
 		log.Fatalf("error reading rules config: %v", err)
 	}
-	rules, err := rules.Build(rulesConf, clusters)
+	rules, err := rules.Build(rulesConf, clusters, cfg.RegexDurationMetric, ms)
 	if err != nil {
 		log.Fatalf("error while compiling rules: %v", err)
 	}
@@ -186,7 +186,7 @@ func loadBuildRegister(cfgPath string, lg *zap.Logger) (conf.Main, target.Cluste
 		if err != nil {
 			log.Fatalf("error reading rewrites config: %v", err)
 		}
-		rewriteRules, err = rewrites.Build(rewritesConf)
+		rewriteRules, err = rewrites.Build(rewritesConf, cfg.RegexDurationMetric, ms)
 		if err != nil {
 			log.Fatalf("error while building rewrites: %v", err)
 		}

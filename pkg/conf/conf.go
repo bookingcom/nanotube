@@ -45,9 +45,10 @@ type Main struct {
 	LogSpecialRecords bool
 
 	// -1 turns off pprof server
-	PprofPort   int
-	PromPort    int
-	LessMetrics bool
+	PprofPort           int
+	PromPort            int
+	LessMetrics         bool
+	RegexDurationMetric bool
 
 	HostQueueLengthBucketFactor float64
 	HostQueueLengthBuckets      int
@@ -113,9 +114,10 @@ func MakeDefault() Main {
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,
 
-		PprofPort:   -1,
-		PromPort:    9090,
-		LessMetrics: false,
+		PprofPort:           -1,
+		PromPort:            9090,
+		LessMetrics:         false,
+		RegexDurationMetric: false,
 
 		HostQueueLengthBucketFactor: 3,
 		HostQueueLengthBuckets:      10,

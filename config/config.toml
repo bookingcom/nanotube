@@ -3,7 +3,7 @@
 # WARNING: This is a sample config. You most likely need to tweak it for your use case.
 
 # Clusters config path. Mandatory.
-ClustersConfig = "config/clusters.toml" 
+ClustersConfig = "config/clusters.toml"
 # Clusters config path. Mandatory.
 RulesConfig = "config/rules.toml"
 # Rewrites config path. Optional.
@@ -74,7 +74,9 @@ PromPort = 9090
 # Switch to expose only small subset of essential metrics.
 # (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
 LessMetrics = false
-
+# Explose prometheus metrcs with the total time for running each regex from config.
+# Can be used to understand what regexs from config are more 'expensive'
+RegexDurationMetric = false
 # Histogram parameters for the host queue size
 HostQueueLengthBucketFactor = 3.0
 HostQueueLengthBuckets = 10

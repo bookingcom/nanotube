@@ -101,29 +101,29 @@ func TestRules(t *testing.T) {
 			if err != nil {
 				t.Fatalf("building clusters failed: %v", err)
 			}
-			rs, err := Build(tt.crules, clusters)
+			rs, err := Build(tt.crules, clusters, false, ms)
 			if err != nil {
 				t.Fatalf("rules building failed: %v", err)
 			}
 
-			err = rs.Compile()
+			err = rs.compile()
 			if err != nil {
 				t.Fatalf("compiling rules failed: %v", err)
 			}
 
-			if len(rs) != tt.nRules {
-				t.Fatalf("expected %d rules, got %d", 2, len(rs))
+			if len(rs.rules) != tt.nRules {
+				t.Fatalf("expected %d rules, got %d", 2, len(rs.rules))
 			}
 
 			for i, n := range tt.nRegexs {
-				if len(rs[i].Regexs) != n {
-					t.Fatalf("expected %d regexs in the rule, got %d", n, len(rs[i].Regexs))
+				if len(rs.rules[i].Regexs) != n {
+					t.Fatalf("expected %d regexs in the rule, got %d", n, len(rs.rules[i].Regexs))
 				}
 			}
 
 			for i, n := range tt.nClusters {
-				if len(rs[i].Targets) != n {
-					t.Fatalf("expecte %d clusters in the rule, got %d", n, len(rs[i].Targets))
+				if len(rs.rules[i].Targets) != n {
+					t.Fatalf("expecte %d clusters in the rule, got %d", n, len(rs.rules[i].Targets))
 				}
 			}
 		})

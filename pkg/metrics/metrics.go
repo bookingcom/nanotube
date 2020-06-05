@@ -33,6 +33,8 @@ type Prom struct {
 	UDPReadFailures prometheus.Counter
 
 	Version *prometheus.CounterVec
+
+	RegexDuration *prometheus.SummaryVec
 }
 
 // New creates a new set of metrics from the main config.
@@ -126,6 +128,11 @@ func New(conf *conf.Main) *Prom {
 			Name:      "version",
 			Help:      "Version info in label. Value should be always 1.",
 		}, []string{"version"}),
+		RegexDuration: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+			Namespace: "nanotube",
+			Name:      "regex_duration_seconds",
+			Help:      "Time to evaluate each regex from configuration",
+		}, []string{"regex", "rule_type"}),
 	}
 }
 
@@ -215,6 +222,13 @@ func Register(m *Prom, cfg *conf.Main) {
 		err = prometheus.Register(m.UDPReadFailures)
 		if err != nil {
 			log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
+		}
+
+		if cfg.RegexDurationMetric {
+			err = prometheus.Register(m.RegexDuration)
+			if err != nil {
+				log.Fatalf("error register the RegexDuration metric")
+			}
 		}
 	}
 }

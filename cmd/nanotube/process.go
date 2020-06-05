@@ -10,7 +10,6 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rec"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
-	"github.com/bookingcom/nanotube/pkg/target"
 )
 
 // Process contains all the CPU-intensive processing operations
@@ -36,33 +35,6 @@ func worker(wg *sync.WaitGroup, queue <-chan string, rules rules.Rules, rewrites
 	}
 }
 
-func routeRec(rec *rec.Rec, rules rules.Rules, lg *zap.Logger, metrics *metrics.Prom) {
-	pushedTo := make(map[*target.Cluster]struct{})
-
-	for _, rl := range rules {
-		matchedRule := rl.Match(rec)
-		if matchedRule {
-			for _, cl := range rl.Targets {
-				if _, pushedBefore := pushedTo[cl]; pushedBefore {
-					continue
-				}
-				err := cl.Push(rec, metrics)
-				if err != nil {
-					lg.Error("push to cluster failed",
-						zap.Error(err),
-						zap.String("cluster", cl.Name),
-						zap.String("record", rec.Serialize()))
-				}
-				pushedTo[cl] = struct{}{}
-			}
-		}
-
-		if matchedRule && !rl.Continue {
-			break
-		}
-	}
-}
-
 func proc(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	r, err := rec.ParseRec(s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
@@ -74,7 +46,7 @@ func proc(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 	recs := rewrites.RewriteMetric(r)
 
 	for _, rec := range recs {
-		routeRec(rec, rules, lg, metrics)
+		rules.RouteRec(rec, lg)
 	}
 
 	// TODO: counter for dropped metrics
