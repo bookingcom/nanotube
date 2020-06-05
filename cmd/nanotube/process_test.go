@@ -14,6 +14,11 @@ import (
 )
 
 func BenchmarkProcess(b *testing.B) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	cls := target.Clusters{
 		"1": &target.Cluster{
 			Name: "1",
@@ -32,8 +37,9 @@ func BenchmarkProcess(b *testing.B) {
 			Type: conf.BlackholeCluster,
 		},
 	}
-	rules := rules.Rules{
-		rules.Rule{
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
@@ -45,23 +51,22 @@ func BenchmarkProcess(b *testing.B) {
 				".*",
 				".*",
 			},
-			Targets: []*target.Cluster{
-				cls["1"],
+			Clusters: []string{
+				"1",
 			},
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
 				".*",
 				"^a.*",
 			},
-			Targets: []*target.Cluster{
-				cls["1"],
-				cls["2"],
+			Clusters: []string{
+				"1", "2",
 			},
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				".*",
 				".*",
@@ -73,20 +78,16 @@ func BenchmarkProcess(b *testing.B) {
 				".*",
 				".*",
 			},
-			Targets: []*target.Cluster{
-				cls["3"],
+			Clusters: []string{
+				"3",
 			},
 		},
+	},
 	}
 
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
-
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		b.Fatalf("rules compilation failed: %v", err)
+		b.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
 	for i := 0; i < b.N; i++ {
@@ -96,6 +97,11 @@ func BenchmarkProcess(b *testing.B) {
 }
 
 func TestContinueRuleProcessing(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := "ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -115,38 +121,35 @@ func TestContinueRuleProcessing(t *testing.T) {
 			Type: conf.BlackholeCluster,
 		},
 	}
-	rules := rules.Rules{
-		rules.Rule{
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
 			Regexs: []string{
 				"a.*",
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{
-				cls["1"],
+			Clusters: []string{
+				"1",
 			},
 			Continue: true,
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				"zz.*",
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{
-				cls["2"],
+			Clusters: []string{
+				"2",
 			},
 		},
+	},
 	}
 
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
-
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
@@ -160,6 +163,11 @@ func TestContinueRuleProcessing(t *testing.T) {
 }
 
 func TestStopRuleProcessing(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := " ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -179,37 +187,36 @@ func TestStopRuleProcessing(t *testing.T) {
 			Type: conf.BlackholeCluster,
 		},
 	}
-	rules := rules.Rules{
-		rules.Rule{
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
 			Regexs: []string{
 				"a.*",
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{cls["1"]},
+			Clusters: []string{
+				"1",
+			},
 			//Continue: false,
 		},
-		rules.Rule{
+		{
 			Regexs: []string{
 				"zz.*",
 				"ab.*",
 				"ab*",
 			},
-			Targets: []*target.Cluster{
-				cls["2"],
+			Clusters: []string{
+				"2",
 			},
 			Continue: true,
 		},
+	},
 	}
 
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
-
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
@@ -223,6 +230,11 @@ func TestStopRuleProcessing(t *testing.T) {
 }
 
 func TestRewriteNoCopy(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := "ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -231,34 +243,34 @@ func TestRewriteNoCopy(t *testing.T) {
 		},
 	}
 
-	rules := rules.Rules{
-		rules.Rule{
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
 			Regexs: []string{
 				"de",
 			},
-			Targets: []*target.Cluster{cls["1"]}},
+			Clusters: []string{
+				"1",
+			},
+		},
+	},
 	}
 
-	rewrites := rewrites.Rewrites{
-		rewrites.Rewrite{
+	rewritesConf := conf.Rewrites{Rewrite: []conf.Rewrite{
+		{
 			From: "ab.c",
 			To:   "de",
 			Copy: false,
 		},
+	},
 	}
 
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
-
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
 	}
-	err = rewrites.Compile()
+	rewrites, err := rewrites.Build(rewritesConf, false, ms)
 	if err != nil {
-		t.Fatalf("rewrite rules compilation failed: %v", err)
+		t.Fatalf("rewrite rules building failed: %v", err)
 	}
 	queue := make(chan string, 1)
 	queue <- testMetric
@@ -271,6 +283,11 @@ func TestRewriteNoCopy(t *testing.T) {
 }
 
 func TestRewriteCopy(t *testing.T) {
+	// TODO remove logging altogether to get real results
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
 	testMetric := "ab.c 123 123"
 	cls := target.Clusters{
 		"1": &target.Cluster{
@@ -279,35 +296,34 @@ func TestRewriteCopy(t *testing.T) {
 		},
 	}
 
-	rules := rules.Rules{
-		rules.Rule{
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
 			Regexs: []string{
 				"de",
 				"ab.c",
 			},
-			Targets: []*target.Cluster{cls["1"]}},
-	}
+			Clusters: []string{
+				"1",
+			},
+		},
+	}}
 
-	rewrites := rewrites.Rewrites{
-		rewrites.Rewrite{
+	rewritesConf := conf.Rewrites{Rewrite: []conf.Rewrite{
+		{
 			From: "ab.c",
 			To:   "de",
 			Copy: true,
 		},
+	},
 	}
 
-	// TODO remove logging altogether to get real results
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
-
-	err := rules.Compile()
+	rules, err := rules.Build(rulesConf, cls, false, ms)
 	if err != nil {
-		t.Fatalf("rules compilation failed: %v", err)
+		t.Fatalf("rules building failed: %v", err)
 	}
-	err = rewrites.Compile()
+	rewrites, err := rewrites.Build(rewritesConf, false, ms)
 	if err != nil {
-		t.Fatalf("rewrite rules compilation failed: %v", err)
+		t.Fatalf("rewrite rules building failed: %v", err)
 	}
 	queue := make(chan string, 1)
 	queue <- testMetric
