@@ -18,6 +18,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
 	"github.com/bookingcom/nanotube/pkg/target"
+	_ "go.uber.org/automaxprocs"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
