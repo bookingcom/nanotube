@@ -2,9 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"net"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -132,15 +132,14 @@ func listenUDP(conn *net.UDPConn, cfg *conf.Main, queue chan string, stop <-chan
 		}
 	}()
 
-	buf := make([]byte, 64*1024)
-	var bufMux sync.Mutex
-	in := make(chan struct{})
+	// TODO (grzkv): Move out the length
+	in := make(chan *bytes.Buffer, 50)
 
 	go func() {
 		for {
-			bufMux.Lock()
-			_, cerr := conn.Read(buf)
-			bufMux.Unlock()
+			buf := make([]byte, 64*1024)
+			nRead, cerr := conn.Read(buf)
+			buf = buf[:nRead]
 			if cerr != nil {
 				// TODO (grzkv) gather info
 				// https://github.com/golang/go/issues/4373
@@ -150,7 +149,8 @@ func listenUDP(conn *net.UDPConn, cfg *conf.Main, queue chan string, stop <-chan
 				// }
 				ms.UDPReadFailures.Inc()
 			} else {
-				in <- struct{}{}
+				// TODO (grzkv): Reduce allocs
+				in <- bytes.NewBuffer(buf)
 			}
 		}
 	}()
@@ -158,12 +158,10 @@ func listenUDP(conn *net.UDPConn, cfg *conf.Main, queue chan string, stop <-chan
 loop:
 	for {
 		select {
-		case <-in:
-			bufMux.Lock()
-			lines := strings.Split(string(buf), "\n")
-			bufMux.Unlock()
+		case b := <-in:
+			lines := bytes.Split(b.Bytes(), []byte("\n"))
 			for i := 0; i < len(lines)-1; i++ {
-				sendToMainQ(lines[i], queue, ms)
+				sendToMainQ(string(lines[i]), queue, ms)
 			}
 		case <-stop:
 			break loop
