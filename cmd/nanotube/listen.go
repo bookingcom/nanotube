@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"bytes"
+	"io"
 	"net"
 	"strconv"
 	"sync"
@@ -73,7 +73,15 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 			return nil, errors.Wrap(err,
 				"error while opening UDP connection")
 		}
-		go listenUDP(conn, cfg, queue, stop, lg, ms)
+		if cfg.UDPOSBufferSize != 0 {
+			err := conn.SetReadBuffer(int(cfg.UDPOSBufferSize))
+			if err != nil {
+				lg.Error("error setting UDP reader buffer size", zap.Error(err))
+			}
+		}
+
+		go listenUDP(conn, queue, stop, 1024*64, lg, ms)
+
 	}
 
 	return queue, nil
@@ -116,15 +124,8 @@ loop:
 	close(queue)
 }
 
-func listenUDP(conn *net.UDPConn, cfg *conf.Main, queue chan string, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
-
-	if cfg.UDPOSBufferSize != 0 {
-		err := conn.SetReadBuffer(int(cfg.UDPOSBufferSize))
-		if err != nil {
-			lg.Error("error setting UDP reader buffer size", zap.Error(err))
-		}
-	}
-
+func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{},
+	UDPbBufSize int, lg *zap.Logger, ms *metrics.Prom) {
 	defer func() {
 		cerr := conn.Close()
 		if cerr != nil {
@@ -132,39 +133,21 @@ func listenUDP(conn *net.UDPConn, cfg *conf.Main, queue chan string, stop <-chan
 		}
 	}()
 
-	// TODO (grzkv): Move out the length
-	in := make(chan *bytes.Buffer, 50)
-
-	go func() {
-		for {
-			buf := make([]byte, 64*1024)
-			nRead, cerr := conn.Read(buf)
-			buf = buf[:nRead]
-			if cerr != nil {
-				// TODO (grzkv) gather info
-				// https://github.com/golang/go/issues/4373
-				// ignore net: errClosing error as it will occur during shutdown
-				// if strings.HasSuffix(err.Error(), "use of closed network connection") {
-				// 	return
-				// }
-				ms.UDPReadFailures.Inc()
-			} else {
-				// TODO (grzkv): Reduce allocs
-				in <- bytes.NewBuffer(buf)
-			}
-		}
-	}()
-
-loop:
+	r := bufio.NewReaderSize(conn, UDPbBufSize)
 	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil && err != io.EOF {
+			lg.Error("error reading a line from UDP connection", zap.Error(err))
+			continue
+		}
+
+		// TODO (grzkv): string -> []bytes
+		sendToMainQ(string(line), queue, ms)
+
 		select {
-		case b := <-in:
-			lines := bytes.Split(b.Bytes(), []byte("\n"))
-			for i := 0; i < len(lines)-1; i++ {
-				sendToMainQ(string(lines[i]), queue, ms)
-			}
 		case <-stop:
-			break loop
+			break
+		default:
 		}
 	}
 }
