@@ -25,10 +25,16 @@ func BenchmarkListenUDP(b *testing.B) {
 	rec := []byte("aaa.bbb.ccc 1 12345678\n")
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		server.Write(rec)
+		_, err := server.Write(rec)
+		if err != nil {
+			b.Fatal("writing to test connection failed", err)
+		}
 		<-q
 	}
 	b.StopTimer()
 
-	server.Close()
+	err := server.Close()
+	if err != nil {
+		b.Fatal("closing test server failed", err)
+	}
 }

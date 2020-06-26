@@ -146,7 +146,7 @@ func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{},
 
 		select {
 		case <-stop:
-			break
+			return
 		default:
 		}
 	}
