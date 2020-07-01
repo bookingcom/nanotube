@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
@@ -17,9 +18,11 @@ func BenchmarkListenUDP(b *testing.B) {
 	lg := zap.NewNop()
 	cfg := conf.MakeDefault()
 	ms := metrics.New(&cfg)
+	var wg sync.WaitGroup
 
+	wg.Add(1)
 	go func() {
-		listenUDP(conn, q, stop, lg, ms)
+		listenUDP(conn, q, stop, &wg, ms, lg)
 	}()
 
 	rec := []byte("aaa.bbb.ccc 1 12345678\n")
