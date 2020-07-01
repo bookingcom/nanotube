@@ -140,9 +140,10 @@ func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, lg *zap.L
 			continue
 		}
 
+		// WARNING: The split does not copy the data.
 		lines := bytes.Split(buf[:nRead], []byte{'\n'})
 
-		// TODO (grzkv): string -> []bytes
+		// TODO (grzkv): string -> []bytes, line has to be copied to avoid races.
 		for i := 0; i < len(lines)-1; i++ {
 			sendToMainQ(string(lines[i]), queue, ms)
 		}
