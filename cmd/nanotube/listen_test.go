@@ -19,7 +19,7 @@ func BenchmarkListenUDP(b *testing.B) {
 	ms := metrics.New(&cfg)
 
 	go func() {
-		listenUDP(conn, q, stop, 4096, lg, ms)
+		listenUDP(conn, q, stop, lg, ms)
 	}()
 
 	rec := []byte("aaa.bbb.ccc 1 12345678\n")

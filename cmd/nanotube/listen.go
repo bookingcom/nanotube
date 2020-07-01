@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"io"
+	"bytes"
 	"net"
 	"strconv"
 	"sync"
@@ -80,7 +80,7 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 			}
 		}
 
-		go listenUDP(conn, queue, stop, 1024*64, lg, ms)
+		go listenUDP(conn, queue, stop, lg, ms)
 
 	}
 
@@ -124,8 +124,7 @@ loop:
 	close(queue)
 }
 
-func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{},
-	UDPbBufSize int, lg *zap.Logger, ms *metrics.Prom) {
+func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
 	defer func() {
 		cerr := conn.Close()
 		if cerr != nil {
@@ -133,16 +132,21 @@ func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{},
 		}
 	}()
 
-	r := bufio.NewReaderSize(conn, UDPbBufSize)
+	buf := make([]byte, 64*1024) // 64k is the max UDP datagram size
 	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			lg.Error("error reading a line from UDP connection", zap.Error(err))
+		nRead, err := conn.Read(buf)
+		if err != nil {
+			lg.Error("error reading UDP datagram", zap.Error(err))
 			continue
 		}
 
-		// TODO (grzkv): string -> []bytes
-		sendToMainQ(string(line), queue, ms)
+		// WARNING: The split does not copy the data.
+		lines := bytes.Split(buf[:nRead], []byte{'\n'})
+
+		// TODO (grzkv): string -> []bytes, line has to be copied to avoid races.
+		for i := 0; i < len(lines)-1; i++ {
+			sendToMainQ(string(lines[i]), queue, ms)
+		}
 
 		select {
 		case <-stop:
