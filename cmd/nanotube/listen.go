@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,33 +16,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// parse "ip:port" string that is used for ListenTCP and ListenUDP config options
-func parseListenOption(listenOption string) (net.IP, int, error) {
-	ipStr, portStr, err := net.SplitHostPort(listenOption)
-	if err != nil {
-		return nil, 0, err
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return nil, port, err
-	}
-	if port < 0 || port > 65535 {
-		return nil, port, errors.New("invalid port value")
-	}
-	// ":2003" will listen on all IPs
-	if ipStr == "" {
-		return nil, port, nil
-	}
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return ip, port, errors.New("could not parse IP")
-	}
-	return ip, port, nil
-}
-
 // Listen listens for incoming metric data
 func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan string, error) {
 	queue := make(chan string, cfg.MainQueueSize)
+	var connWG sync.WaitGroup
 
 	if cfg.ListenTCP != "" {
 		ip, port, err := parseListenOption(cfg.ListenTCP)
@@ -56,7 +34,9 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 			return nil, errors.Wrap(err,
 				"error while opening TCP port for listening")
 		}
-		go acceptAndListenTCP(l, queue, stop, cfg, ms, lg)
+
+		connWG.Add(1)
+		go acceptAndListenTCP(l, queue, stop, cfg, &connWG, ms, lg)
 	}
 
 	if cfg.ListenUDP != "" {
@@ -80,14 +60,21 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 			}
 		}
 
-		go listenUDP(conn, queue, stop, lg, ms)
-
+		connWG.Add(1)
+		go listenUDP(conn, queue, stop, &connWG, ms, lg)
 	}
+
+	go func() {
+		connWG.Wait()
+		lg.Info("Termination: all incoming connections closed. Draining the main queue...")
+		close(queue)
+	}()
 
 	return queue, nil
 }
 
-func acceptAndListenTCP(l net.Listener, queue chan string, term <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func acceptAndListenTCP(l net.Listener, queue chan string, term <-chan struct{},
+	cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	var wg sync.WaitGroup
 
 loop:
@@ -118,14 +105,15 @@ loop:
 			go readFromConnectionTCP(&wg, conn, queue, term, cfg, ms, lg)
 		}
 	}
-	lg.Info("Termination: stopped accepting new connections. Starting to close incoming connections...")
+	lg.Info("Termination: stopped accepting new TCP connections. Starting to close incoming connections...")
 	wg.Wait()
-	lg.Info("Termination: all incoming connections closed. Draining the main queue...")
-	close(queue)
+	lg.Info("Termination: Finished incoming TCP connections...")
+	connWG.Done()
 }
 
-func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
-	defer func() {
+func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+	go func() {
+		<-stop
 		cerr := conn.Close()
 		if cerr != nil {
 			lg.Error("closing the incoming connection", zap.Error(cerr))
@@ -136,6 +124,11 @@ func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, lg *zap.L
 	for {
 		nRead, err := conn.Read(buf)
 		if err != nil {
+			// There is no other way, see https://github.com/golang/go/issues/4373
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				break
+			}
+
 			lg.Error("error reading UDP datagram", zap.Error(err))
 			continue
 		}
@@ -147,13 +140,10 @@ func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, lg *zap.L
 		for i := 0; i < len(lines)-1; i++ {
 			sendToMainQ(string(lines[i]), queue, ms)
 		}
-
-		select {
-		case <-stop:
-			return
-		default:
-		}
 	}
+
+	lg.Info("Termination: Stopped accepting UDP data...")
+	connWG.Done()
 }
 
 func sendToMainQ(rec string, q chan<- string, ms *metrics.Prom) {
@@ -220,4 +210,28 @@ loop:
 			break loop // break both from select and from for
 		}
 	}
+}
+
+// parse "ip:port" string that is used for ListenTCP and ListenUDP config options
+func parseListenOption(listenOption string) (net.IP, int, error) {
+	ipStr, portStr, err := net.SplitHostPort(listenOption)
+	if err != nil {
+		return nil, 0, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, port, err
+	}
+	if port < 0 || port > 65535 {
+		return nil, port, errors.New("invalid port value")
+	}
+	// ":2003" will listen on all IPs
+	if ipStr == "" {
+		return nil, port, nil
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return ip, port, errors.New("could not parse IP")
+	}
+	return ip, port, nil
 }
