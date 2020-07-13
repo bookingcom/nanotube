@@ -7,7 +7,7 @@ ClustersConfig = "config/clusters.toml"
 # Clusters config path. Mandatory.
 RulesConfig = "config/rules.toml"
 # Rewrites config path. Optional.
-RewritesConfig = ""
+RewritesConfig = "config/rewrite.toml"
 
 # The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 2004

@@ -15,3 +15,14 @@
         'local1'
     ]
 
+[[rule]]
+    regexs = [
+        '^abc.*'
+    ]
+    prefixes = [
+        'xyz',
+        'poi'
+    ]
+    clusters = [
+        'local1'
+    ]
