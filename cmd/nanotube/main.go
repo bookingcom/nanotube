@@ -31,12 +31,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("error building logger config: %v", err)
 	}
-	defer func() {
-		err := lg.Sync()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error when syncing logger: %v", err)
-		}
-	}()
 
 	cfgPath, _, _, _, validateConfig, versionInfo := parseFlags()
 

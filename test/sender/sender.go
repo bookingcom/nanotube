@@ -17,8 +17,18 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-func connectAndSend(destination string, cycle bool, ncycles int, messages [][]byte, limiter ratelimit.Limiter, wg *sync.WaitGroup, s *stats.Stats) {
-	conn, err := net.Dial("tcp", destination)
+func connectAndSend(destination string, useUDP bool, cycle bool, ncycles int, messages [][]byte, limiter ratelimit.Limiter,
+	wg *sync.WaitGroup, s *stats.Stats) {
+
+	var conn net.Conn
+	var err error
+
+	if useUDP {
+		conn, err = net.Dial("udp", destination)
+	} else {
+		conn, err = net.Dial("tcp", destination)
+	}
+
 	if err != nil {
 		log.Fatalf("could not connect to target host : %v", err)
 	}
@@ -34,7 +44,7 @@ func connectAndSend(destination string, cycle bool, ncycles int, messages [][]by
 			limiter.Take()
 			_, err := conn.Write(message)
 			if err != nil {
-				log.Fatalf("error sending data via TCP: %v", err)
+				log.Fatalf("error sending data: %v", err)
 			}
 			s.Inc()
 		}
@@ -57,6 +67,7 @@ func main() {
 	path := flag.String("data", "", "path to records file to be sent to the relay")
 	targetHost := flag.String("host", "", "target hostname")
 	targetPort := flag.Int("port", 0, "target port")
+	useUDP := flag.Bool("udp", false, "use UDP instead of TCP? Default - false.")
 	rate := flag.Int("rate", 1000, "rate to send messages(number/sec)")
 	cycle := flag.Bool("cycle", false, "cycle through the traffic file indefinitely?")
 	nCycles := flag.Int("ncycles", 0, "number of cycles over the data for each connection. 0 by default. 0 means infinity.")
@@ -102,7 +113,7 @@ func main() {
 	destination := net.JoinHostPort(*targetHost, strconv.Itoa(*targetPort))
 	for i := 0; i < *connections; i++ {
 		wg.Add(1)
-		go connectAndSend(destination, *cycle, *nCycles, messages, limiter, &wg, s)
+		go connectAndSend(destination, *useUDP, *cycle, *nCycles, messages, limiter, &wg, s)
 	}
 
 	wg.Wait()
