@@ -13,7 +13,7 @@
 
 [[rule]]
     # Prefix matching can be used instead of regex to match prefixes.
-    # Prefix matching is faster than prefix matching.
+    # Prefix matching is faster than regex matching.
     prefixes = [
         'abc',
         'xyz',
