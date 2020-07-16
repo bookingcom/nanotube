@@ -1,3 +1,0 @@
-.PHONY: all
-all:
-	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" -mod vendor ./cmd/nanotube
