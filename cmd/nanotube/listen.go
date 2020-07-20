@@ -11,13 +11,15 @@ import (
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/libp2p/go-reuseport"
 
+	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // Listen listens for incoming metric data
-func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan string, error) {
+func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan string, error) {
 	queue := make(chan string, cfg.MainQueueSize)
 	var connWG sync.WaitGroup
 
@@ -26,7 +28,7 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 		if err != nil {
 			return nil, errors.Wrap(err, "error parsing ListenTCP option")
 		}
-		l, err := net.ListenTCP("tcp", &net.TCPAddr{
+		l, err := n.ListenTCP("tcp", &net.TCPAddr{
 			IP:   ip,
 			Port: port,
 		})
@@ -34,31 +36,20 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 			return nil, errors.Wrap(err,
 				"error while opening TCP port for listening")
 		}
+		lg.Info("Launch: Opened TCP connection for listening.", zap.String("ListenTCP", cfg.ListenTCP))
 
 		connWG.Add(1)
 		go acceptAndListenTCP(l, queue, stop, cfg, &connWG, ms, lg)
 	}
 
 	if cfg.ListenUDP != "" {
-		ip, port, err := parseListenOption(cfg.ListenUDP)
-		if err != nil {
-			return nil, errors.Wrap(err, "error parsing ListenUDP option")
-		}
-		conn, err := net.ListenUDP("udp", &net.UDPAddr{
-			IP:   ip,
-			Port: port,
-		})
+		conn, err := reuseport.ListenPacket("udp", cfg.ListenUDP)
+
 		if err != nil {
 			lg.Error("error while opening UDP port for listening", zap.Error(err))
-			return nil, errors.Wrap(err,
-				"error while opening UDP connection")
+			return nil, errors.Wrap(err, "error while opening UDP connection")
 		}
-		if cfg.UDPOSBufferSize != 0 {
-			err := conn.SetReadBuffer(int(cfg.UDPOSBufferSize))
-			if err != nil {
-				lg.Error("error setting UDP reader buffer size", zap.Error(err))
-			}
-		}
+		lg.Info("Launch: Opened UDP connection for listening.", zap.String("ListenUDP", cfg.ListenUDP))
 
 		connWG.Add(1)
 		go listenUDP(conn, queue, stop, &connWG, ms, lg)
@@ -66,7 +57,7 @@ func Listen(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Pr
 
 	go func() {
 		connWG.Wait()
-		lg.Info("Termination: all incoming connections closed. Draining the main queue...")
+		lg.Info("Termination: All incoming connections closed. Draining the main queue.")
 		close(queue)
 	}()
 
@@ -97,32 +88,37 @@ loop:
 		select {
 		case <-term:
 			// stop accepting new connections on termination signal
-			break loop // need to break both select and the loop
+			err := l.Close()
+			if err != nil {
+				lg.Error("failed to close listening TCP connection", zap.Error(err))
+			}
+			break loop
 		case err := <-errCh:
-			lg.Error("accpeting connection failed", zap.Error(err))
+			lg.Error("accepting connection failed", zap.Error(err))
 		case conn := <-connCh:
 			wg.Add(1)
 			go readFromConnectionTCP(&wg, conn, queue, term, cfg, ms, lg)
 		}
 	}
-	lg.Info("Termination: stopped accepting new TCP connections. Starting to close incoming connections...")
+	lg.Info("Termination: Stopped accepting new TCP connections. Starting to close incoming connections...")
 	wg.Wait()
-	lg.Info("Termination: Finished incoming TCP connections...")
+	lg.Info("Termination: Finished previously accpted TCP connections.")
 	connWG.Done()
 }
 
-func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+func listenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	go func() {
 		<-stop
+		lg.Info("Termination: Closing the UDP connection.")
 		cerr := conn.Close()
 		if cerr != nil {
-			lg.Error("closing the incoming connection", zap.Error(cerr))
+			lg.Error("closing the incoming UDP connection failed", zap.Error(cerr))
 		}
 	}()
 
 	buf := make([]byte, 64*1024) // 64k is the max UDP datagram size
 	for {
-		nRead, err := conn.Read(buf)
+		nRead, _, err := conn.ReadFrom(buf)
 		if err != nil {
 			// There is no other way, see https://github.com/golang/go/issues/4373
 			if strings.Contains(err.Error(), "use of closed network connection") {
@@ -142,7 +138,7 @@ func listenUDP(conn net.Conn, queue chan string, stop <-chan struct{}, connWG *s
 		}
 	}
 
-	lg.Info("Termination: Stopped accepting UDP data...")
+	lg.Info("Termination: Stopped accepting UDP data.")
 	connWG.Done()
 }
 

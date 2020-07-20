@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -18,9 +20,12 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
 	"github.com/bookingcom/nanotube/pkg/target"
-	_ "go.uber.org/automaxprocs"
-
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/facebookgo/grace/gracenet"
+	"github.com/libp2p/go-reuseport"
+	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 )
 
@@ -39,16 +44,26 @@ func main() {
 		return
 	}
 
-	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, lg)
+	cfg, clusters, rules, rewrites, ms, err := loadBuildRegister(cfgPath, lg)
+	if err != nil {
+		log.Fatalf("error reading and compiling config: %v", err)
+	}
 
 	if validateConfig {
 		return
 	}
 
+	metrics.Register(ms, &cfg)
+	ms.Version.WithLabelValues(version).Inc()
+
 	if cfg.PprofPort != -1 {
 		go func() {
-			err := http.ListenAndServe( // shadow
-				fmt.Sprintf("localhost:%d", cfg.PprofPort), nil)
+			l, err := reuseport.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(cfg.PprofPort)))
+			if err != nil {
+				lg.Error("opening TCP port for pprof failed", zap.Error(err))
+			}
+
+			err = http.Serve(l, nil)
 			if err != nil {
 				lg.Error("pprof server failed", zap.Error(err))
 			}
@@ -56,15 +71,19 @@ func main() {
 	}
 
 	go func() {
-		err := http.ListenAndServe( // shadow
-			fmt.Sprintf(":%d", cfg.PromPort), promhttp.Handler())
+		l, err := reuseport.Listen("tcp", fmt.Sprintf(":%d", cfg.PromPort))
+		if err != nil {
+			lg.Error("opening TCP port for Prometheus failed", zap.Error(err))
+		}
+		err = http.Serve(l, promhttp.Handler())
 		if err != nil {
 			lg.Error("Prometheus server failed", zap.Error(err))
 		}
 	}()
 
 	stop := make(chan struct{})
-	queue, err := Listen(&cfg, stop, lg, ms)
+	n := gracenet.Net{}
+	queue, err := Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}
@@ -75,21 +94,41 @@ func main() {
 
 	// SIGTERM gracefully terminates with timeout
 	// SIGKILL terminates immediately
+	// SIGUSR2 triggers zero-downtime restart
 	sgn := make(chan os.Signal, 1)
-	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM)
-	<-sgn
+	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR2)
 
-	// start termination sequence
-	close(stop)
+	for {
+		s := <-sgn
+
+		if s == syscall.SIGUSR2 {
+			lg.Info("Reload: Got signal for reload. Checking config.")
+			_, _, _, _, _, err = loadBuildRegister(cfgPath, lg)
+			if err != nil {
+				lg.Error("Reload: Cannot reload: config invalid", zap.Error(err))
+				continue
+			} else {
+				lg.Info("Reload: Config OK. Starting a new instance.")
+			}
+			pid, err := n.StartProcess()
+			if err != nil {
+				lg.Error("Reload: Failed to start new process", zap.Error(err))
+			} else {
+				lg.Info("Reload: Started new process. Moved FDs.", zap.Int("pid", pid))
+			}
+			lg.Info("Termination: Staring termination sequence")
+			close(stop)
+		} else {
+			lg.Info("Termination: Staring termination sequence")
+			close(stop)
+		}
+
+		break
+	}
 
 	select {
 	case <-time.After(time.Second * time.Duration(cfg.TermTimeoutSec)):
-		err = lg.Sync()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error when syncing logger: %v", err)
-		}
-
-		log.Fatalf("force quit. Queue not fully flushed")
+		log.Fatalf("Termination: Force quit due to timeout. Queue not fully flushed")
 	case <-done:
 	}
 }
@@ -129,65 +168,73 @@ func buildLogger() (*zap.Logger, error) {
 	return config.Build()
 }
 
-func loadBuildRegister(cfgPath string, lg *zap.Logger) (conf.Main, target.Clusters,
-	rules.Rules, rewrites.Rewrites, *metrics.Prom) {
-
+func loadBuildRegister(cfgPath string, lg *zap.Logger) (cfg conf.Main, clusters target.Clusters,
+	rls rules.Rules, rewriteRules rewrites.Rewrites, ms *metrics.Prom, retErr error) {
 	bs, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
-		log.Fatalf("error reading config file: %v", err)
+		retErr = errors.Wrap(err, "error reading config file")
+		return
 	}
-	cfg, err := conf.ReadMain(bytes.NewReader(bs))
+	cfg, err = conf.ReadMain(bytes.NewReader(bs))
 	if err != nil {
-		log.Fatalf("error reading main config: %v", err)
+		retErr = errors.Wrap(err, "error reading main config")
+		return
 	}
 
-	ms := metrics.New(&cfg)
-	metrics.Register(ms, &cfg)
-	ms.Version.WithLabelValues(version).Inc()
+	ms = metrics.New(&cfg)
 
 	bs, err = ioutil.ReadFile(cfg.ClustersConfig)
 	if err != nil {
-		log.Fatal("error reading clusters file")
+		log.Fatal()
+		retErr = errors.Wrap(err, "error reading clusters file")
+		return
 	}
 	clustersConf, err := conf.ReadClustersConfig(bytes.NewReader(bs))
 	if err != nil {
-		log.Fatalf("error reading clusters config: %v", err)
+		retErr = errors.Wrap(err, "error reading clusters config")
+		return
 	}
-	clusters, err := target.NewClusters(cfg, clustersConf, lg, ms)
+	clusters, err = target.NewClusters(cfg, clustersConf, lg, ms)
 	if err != nil {
-		log.Fatalf("error building clusters")
+		retErr = errors.Wrap(err, "error building clusters")
+		return
 	}
 
 	bs, err = ioutil.ReadFile(cfg.RulesConfig)
 	if err != nil {
-		log.Fatalf("error reading rules file: %v", err)
+		retErr = errors.Wrap(err, "error reading rules file")
+		return
 	}
 	rulesConf, err := conf.ReadRules(bytes.NewReader(bs))
 	if err != nil {
-		log.Fatalf("error reading rules config: %v", err)
+		retErr = errors.Wrap(err, "error reading rules config")
+		return
 	}
-	rules, err := rules.Build(rulesConf, clusters, cfg.RegexDurationMetric, ms)
+	rls, err = rules.Build(rulesConf, clusters, cfg.RegexDurationMetric, ms)
 	if err != nil {
-		log.Fatalf("error while compiling rules: %v", err)
+		retErr = errors.Wrap(err, "error while compiling rules")
+		return
 	}
 
-	var rewriteRules rewrites.Rewrites
 	if cfg.RewritesConfig != "" {
 		bs, err := ioutil.ReadFile(cfg.RewritesConfig)
 		if err != nil {
-			log.Fatalf("error reading rewrites config: %v", err)
+			retErr = errors.Wrap(err, "error reading rewrites config")
+			return
 		}
 		rewritesConf, err := conf.ReadRewrites(bytes.NewReader(bs))
 		if err != nil {
-			log.Fatalf("error reading rewrites config: %v", err)
+			retErr = errors.Wrap(err, "error reading rewrites config")
+			return
 		}
 		rewriteRules, err = rewrites.Build(rewritesConf, cfg.RegexDurationMetric, ms)
 		if err != nil {
-			log.Fatalf("error while building rewrites: %v", err)
+			retErr = errors.Wrap(err, "error while building rewrites")
+			return
 		}
 	}
 
-	return cfg, clusters, rules, rewriteRules, ms
+	return cfg, clusters, rls, rewriteRules, ms, err
 }
 
 // gaugeQueue starts and maintains a goroutine to measure the main queue size.
