@@ -1,6 +1,8 @@
 package conf
 
 import (
+	"crypto/md5"
+	"fmt"
 	"io"
 
 	"github.com/burntsushi/toml"
@@ -125,4 +127,14 @@ func MakeDefault() Main {
 		ProcessingDurationBucketFactor: 2,
 		ProcessingDurationBuckets:      10,
 	}
+}
+
+// Hash calculates hash of all the configs to track config versions.
+func Hash(cfg *Main, clusters *Clusters, rules *Rules, rewrites *Rewrites) (string, error) {
+	h := md5.New()
+	_, err := h.Write([]byte(fmt.Sprintf("%v%v%v%v", cfg, clusters, rules, rewrites)))
+	if err != nil {
+		return "", fmt.Errorf("failed to calculate config hash: %w", err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }

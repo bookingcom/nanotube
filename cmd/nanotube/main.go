@@ -44,7 +44,7 @@ func main() {
 		return
 	}
 
-	cfg, clusters, rules, rewrites, ms, err := loadBuildRegister(cfgPath, lg)
+	cfg, clusters, rules, rewrites, ms, hash, err := loadBuildRegister(cfgPath, lg)
 	if err != nil {
 		log.Fatalf("error reading and compiling config: %v", err)
 	}
@@ -55,6 +55,7 @@ func main() {
 
 	metrics.Register(ms, &cfg)
 	ms.Version.WithLabelValues(version).Inc()
+	ms.ConfVersion.WithLabelValues(hash).Inc()
 
 	if cfg.PprofPort != -1 {
 		go func() {
@@ -103,7 +104,7 @@ func main() {
 
 		if s == syscall.SIGUSR2 {
 			lg.Info("Reload: Got signal for reload. Checking config.")
-			_, _, _, _, _, err = loadBuildRegister(cfgPath, lg)
+			_, _, _, _, _, _, err = loadBuildRegister(cfgPath, lg)
 			if err != nil {
 				lg.Error("Reload: Cannot reload: config invalid", zap.Error(err))
 				continue
@@ -169,7 +170,7 @@ func buildLogger() (*zap.Logger, error) {
 }
 
 func loadBuildRegister(cfgPath string, lg *zap.Logger) (cfg conf.Main, clusters target.Clusters,
-	rls rules.Rules, rewriteRules rewrites.Rewrites, ms *metrics.Prom, retErr error) {
+	rls rules.Rules, rewriteRules rewrites.Rewrites, ms *metrics.Prom, hash string, retErr error) {
 	bs, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading config file")
@@ -216,6 +217,7 @@ func loadBuildRegister(cfgPath string, lg *zap.Logger) (cfg conf.Main, clusters 
 		return
 	}
 
+	var rewritesConf conf.Rewrites
 	if cfg.RewritesConfig != "" {
 		bs, err := ioutil.ReadFile(cfg.RewritesConfig)
 		if err != nil {
@@ -234,7 +236,11 @@ func loadBuildRegister(cfgPath string, lg *zap.Logger) (cfg conf.Main, clusters 
 		}
 	}
 
-	return cfg, clusters, rls, rewriteRules, ms, err
+	hash, err = conf.Hash(&cfg, &clustersConf, &rulesConf, &rewritesConf)
+	if err != nil {
+		retErr = fmt.Errorf("error calculating hash config: %w", err)
+	}
+	return
 }
 
 // gaugeQueue starts and maintains a goroutine to measure the main queue size.
