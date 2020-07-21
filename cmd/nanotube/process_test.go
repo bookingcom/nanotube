@@ -13,91 +13,131 @@ import (
 	"go.uber.org/zap"
 )
 
-func BenchmarkProcess(b *testing.B) {
-	// TODO remove logging altogether to get real results
+func BenchmarkProcessREs(b *testing.B) {
+	b.StopTimer()
+	var benchMetrics = [...]string{
+		"aaa 1 1",
+		"abcabc 1 1",
+		"xxx 1 1",
+		"1234lkjsljfdlaskdjfskdjf 1 1",
+		"123kjkj 1 1",
+		"123 1 1",
+		"jkn 1 1",
+		"lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1",
+		"lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1",
+		"lkjsdlkjfaljbajlkjlkjabcabc 1 1",
+		"kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1",
+		"aaaaaaaaaaajabcabcabcabcabclkjljk 1 1",
+		"a 1 1",
+		"abc 1 1",
+		"abcabcabcabc 1 1",
+		"abcabcabcabcabcabc 1 1",
+	}
+	var REs = []string{
+		"^a.*",
+		"^abc.*",
+		"^abcabcabcabc.*",
+		"^abcabcabcabcabcabc.*",
+	}
+
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
 
-	cls := target.Clusters{
-		"1": &target.Cluster{
-			Name: "1",
-			Type: conf.BlackholeCluster,
-		},
-		"2": &target.Cluster{
-			Name: "2",
-			Type: conf.BlackholeCluster,
-		},
-		"3": &target.Cluster{
-			Name: "3",
-			Type: conf.BlackholeCluster,
-		},
-		"4": &target.Cluster{
-			Name: "4",
-			Type: conf.BlackholeCluster,
-		},
+	cls := map[string]*target.TestTarget{
+		"1": {Name: "1"},
+		"2": {Name: "2"},
+		"3": {Name: "3"},
+		"4": {Name: "4"},
 	}
 
 	rulesConf := conf.Rules{Rule: []conf.Rule{
 		{
-			Regexs: []string{
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-			},
+			Regexs: REs,
 			Clusters: []string{
 				"1",
-			},
-		},
-		{
-			Regexs: []string{
-				".*",
-				".*",
-				".*",
-				"^a.*",
-			},
-			Clusters: []string{
-				"1", "2",
-			},
-		},
-		{
-			Regexs: []string{
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-				".*",
-			},
-			Clusters: []string{
-				"3",
 			},
 		},
 	},
 	}
 
-	rules, err := rules.Build(rulesConf, cls, false, ms)
+	rules, err := rules.TestBuild(rulesConf, cls, false, ms)
 	if err != nil {
 		b.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
+
+	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		s := "abc 123 123"
-		proc(s, rules, emptyRewrites, true, false, lg, ms)
+		for _, m := range benchMetrics {
+			proc(m, rules, emptyRewrites, true, false, lg, ms)
+		}
+	}
+}
+
+func BenchmarkProcessPrefix(b *testing.B) {
+	b.StopTimer()
+	var benchMetrics = [...]string{
+		"aaa 1 1",
+		"abcabc 1 1",
+		"xxx 1 1",
+		"1234lkjsljfdlaskdjfskdjf 1 1",
+		"123kjkj 1 1",
+		"123 1 1",
+		"jkn 1 1",
+		"lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1",
+		"lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1",
+		"lkjsdlkjfaljbajlkjlkjabcabc 1 1",
+		"kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1",
+		"aaaaaaaaaaajabcabcabcabcabclkjljk 1 1",
+		"a 1 1",
+		"abc 1 1",
+		"abcabcabcabc 1 1",
+		"abcabcabcabcabcabc 1 1",
+	}
+	var prefixes = []string{
+		"a",
+		"abc",
+		"abcabcabcabc",
+		"abcabcabcabcabcabc",
+	}
+
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
+	cls := map[string]*target.TestTarget{
+		"1": {Name: "1"},
+		"2": {Name: "2"},
+		"3": {Name: "3"},
+		"4": {Name: "4"},
+	}
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
+			Prefixes: prefixes,
+			Clusters: []string{
+				"1",
+			},
+		},
+	},
+	}
+
+	rules, err := rules.TestBuild(rulesConf, cls, false, ms)
+	if err != nil {
+		b.Fatalf("rules building failed: %v", err)
+	}
+	var emptyRewrites rewrites.Rewrites
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		for _, m := range benchMetrics {
+			proc(m, rules, emptyRewrites, true, false, lg, ms)
+		}
 	}
 }
 
 func TestContinueRuleProcessing(t *testing.T) {
-	// TODO remove logging altogether to get real results
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
@@ -163,7 +203,6 @@ func TestContinueRuleProcessing(t *testing.T) {
 }
 
 func TestStopRuleProcessing(t *testing.T) {
-	// TODO remove logging altogether to get real results
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
@@ -230,7 +269,6 @@ func TestStopRuleProcessing(t *testing.T) {
 }
 
 func TestRewriteNoCopy(t *testing.T) {
-	// TODO remove logging altogether to get real results
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
@@ -283,7 +321,6 @@ func TestRewriteNoCopy(t *testing.T) {
 }
 
 func TestRewriteCopy(t *testing.T) {
-	// TODO remove logging altogether to get real results
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
@@ -332,5 +369,129 @@ func TestRewriteCopy(t *testing.T) {
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 2 {
 		t.Fatal("Error processing rules")
+	}
+}
+
+func TestProcessing(t *testing.T) {
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
+	var testMetrics = []string{
+		"ab.c 123 123",
+		"aaa 123 123",
+		"zz 1 1",
+		"klk.kjl.kjo 1.9800 8909876",
+	}
+
+	cls := map[string]*target.TestTarget{
+		"1": {Name: "1"},
+		"2": {Name: "2"},
+		"3": {Name: "3"},
+		"4": {Name: "4"},
+	}
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
+			Regexs: []string{
+				"a.*",
+				"ab.*",
+				"ab*"},
+			Clusters: []string{
+				"1",
+			},
+			Continue: true,
+		},
+		{
+			Regexs: []string{
+				"zz.*",
+				"ab.*",
+			},
+			Clusters: []string{
+				"2",
+			},
+		},
+	},
+	}
+
+	rules, err := rules.TestBuild(rulesConf, cls, false, ms)
+	if err != nil {
+		t.Fatalf("rules building failed: %v", err)
+	}
+	var emptyRewrites rewrites.Rewrites
+	queue := make(chan string, len(testMetrics))
+	for _, m := range testMetrics {
+		queue <- m
+	}
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	close(queue)
+	<-done
+	if cls["1"].ReceivedRecsNum != 2 {
+		t.Fatalf("did not receive 2 rec in 1, but %d", cls["1"].ReceivedRecsNum)
+	}
+	if cls["2"].ReceivedRecsNum != 2 {
+		t.Fatal("did not receive 2 rec in 2")
+	}
+}
+
+func TestProcessingPrefix(t *testing.T) {
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
+	var testMetrics = []string{
+		"ab.c 123 123",
+		"aaa 123 123",
+		"zz 1 1",
+		"klk.kjl.kjo 1.9800 8909876",
+	}
+
+	cls := map[string]*target.TestTarget{
+		"1": {Name: "1"},
+		"2": {Name: "2"},
+		"3": {Name: "3"},
+		"4": {Name: "4"},
+	}
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
+			Prefixes: []string{
+				"a",
+				"ab",
+			},
+			Clusters: []string{
+				"1",
+			},
+			Continue: true,
+		},
+		{
+			Prefixes: []string{
+				"zz",
+				"ab",
+			},
+			Clusters: []string{
+				"2",
+			},
+		},
+	},
+	}
+
+	rules, err := rules.TestBuild(rulesConf, cls, false, ms)
+	if err != nil {
+		t.Fatalf("rules building failed: %v", err)
+	}
+	var emptyRewrites rewrites.Rewrites
+	queue := make(chan string, len(testMetrics))
+	for _, m := range testMetrics {
+		queue <- m
+	}
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	close(queue)
+	<-done
+	if cls["1"].ReceivedRecsNum != 2 {
+		t.Fatalf("did not receive 2 rec in 1, but %d", cls["1"].ReceivedRecsNum)
+	}
+	if cls["2"].ReceivedRecsNum != 2 {
+		t.Fatal("did not receive 2 rec in 2")
 	}
 }

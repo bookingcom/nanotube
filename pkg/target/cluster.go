@@ -14,11 +14,17 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
+// Target is abstract notion of a target to send the records to during processing.
+type Target interface {
+	Push(*rec.Rec, *metrics.Prom) error
+	Send(*sync.WaitGroup, chan struct{})
+	GetName() string
+}
+
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
 type Cluster struct {
-	Name string
-	// Are ordered by index
-	Hosts                  []*Host
+	Name                   string
+	Hosts                  []*Host // ordered by index
 	AvailableHosts         []*Host
 	Hm                     sync.RWMutex
 	Type                   string
@@ -42,6 +48,11 @@ func (cl *Cluster) Push(r *rec.Rec, metrics *metrics.Prom) error {
 	}
 
 	return nil
+}
+
+// GetName returns cluster name.
+func (cl *Cluster) GetName() string {
+	return cl.Name
 }
 
 // resolveHosts does routing inside the cluster.
@@ -74,7 +85,8 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 }
 
 // Send starts continuous process of sending data to hosts in the cluster.
-// The sending is stopped on demand.
+// The sending is stopped on demand. Wait-group should be marked as done after
+// finished.
 func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 	// launch streaming on all hosts and wait until it's finished
 	go func() {
@@ -189,4 +201,27 @@ func (cl *Cluster) removeAvailableHost(host *Host) {
 func jumpHash(path string, ringSize int) int32 {
 	key := fnv1a.HashString64(path)
 	return jump.Hash(key, ringSize)
+}
+
+// TestTarget mocks a target cluster in tests.
+type TestTarget struct {
+	Name            string
+	ReceivedRecsNum uint64
+}
+
+// Push is a push in tests. It does nothing, just increases the counter.
+func (tt *TestTarget) Push(rec *rec.Rec, ms *metrics.Prom) error {
+	tt.ReceivedRecsNum++
+	return nil
+}
+
+// Send emulates mocks a remote sending routine. Does nothing.
+func (tt *TestTarget) Send(wg *sync.WaitGroup, finish chan struct{}) {
+	<-finish
+	wg.Done()
+}
+
+// GetName returns cluster name.
+func (tt *TestTarget) GetName() string {
+	return tt.Name
 }

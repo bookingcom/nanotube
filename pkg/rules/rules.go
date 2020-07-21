@@ -4,6 +4,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -26,7 +27,8 @@ type Rules struct {
 // Rule is a routing rule.
 type Rule struct {
 	Regexs        []string
-	Targets       []*target.Cluster
+	Prefixes      []string
+	Targets       []target.Target
 	Continue      bool
 	CompiledRE    []*regexp.Regexp
 	regexDuration []prometheus.Observer
@@ -42,6 +44,7 @@ func Build(crs conf.Rules, clusters target.Clusters, measureRegex bool, ms *metr
 	for _, cr := range crs.Rule {
 		r := Rule{
 			Regexs:   cr.Regexs,
+			Prefixes: cr.Prefixes,
 			Continue: cr.Continue,
 		}
 		for _, clName := range cr.Clusters {
@@ -90,7 +93,7 @@ func (rs Rules) compile() error {
 
 // RouteRec a record by following the rules
 func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
-	pushedTo := make(map[*target.Cluster]struct{})
+	pushedTo := make(map[target.Target]struct{})
 
 	for _, rl := range rs.rules {
 		matchedRule := rl.Match(r, rs.measureRegex)
@@ -103,7 +106,7 @@ func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
 				if err != nil {
 					lg.Error("push to cluster failed",
 						zap.Error(err),
-						zap.String("cluster", cl.Name),
+						zap.String("cluster", cl.GetName()),
 						zap.String("record", r.Serialize()))
 				}
 				pushedTo[cl] = struct{}{}
@@ -118,6 +121,12 @@ func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
 
 // Match a record with any of the rule regexps
 func (rl Rule) Match(r *rec.Rec, measureRegex bool) bool {
+	for _, pre := range rl.Prefixes {
+		if strings.HasPrefix(r.Path, pre) {
+			return true
+		}
+	}
+
 	var timer *prometheus.Timer
 
 	for idx, re := range rl.CompiledRE {
@@ -133,4 +142,38 @@ func (rl Rule) Match(r *rec.Rec, measureRegex bool) bool {
 		}
 	}
 	return false
+}
+
+// TestBuild makes a set of rules for testgin.
+func TestBuild(crs conf.Rules, clusters map[string]*target.TestTarget, measureRegex bool, ms *metrics.Prom) (Rules, error) {
+	var rs Rules
+
+	rs.measureRegex = measureRegex
+	rs.metrics = ms
+
+	for _, cr := range crs.Rule {
+		r := Rule{
+			Regexs:   cr.Regexs,
+			Prefixes: cr.Prefixes,
+			Continue: cr.Continue,
+		}
+		for _, clName := range cr.Clusters {
+			cl, ok := clusters[clName]
+			if !ok {
+				return rs,
+					fmt.Errorf("got non-existent cluster name %s in the rules config",
+						clName)
+			}
+			r.Targets = append(r.Targets, cl)
+		}
+
+		rs.rules = append(rs.rules, r)
+	}
+
+	err := rs.compile()
+	if err != nil {
+		return rs, errors.Wrap(err, "rules compilation failed :")
+	}
+
+	return rs, nil
 }

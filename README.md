@@ -72,13 +72,13 @@ Please refer to the [sample config](config/config.toml) for examples and documen
 
 Is defined in the [rules config](config/rules.toml) that is in turn referred to in the [main config](config/config.toml). This is how it works:
 
-- routing rules are applied to each incoming record in order;
-  - if regex in a rule matches, the record is sent to the clusters in the `clusters` list;
-    - if `continue` is `true` continue matching next rules, stop otherwise. `false` is the default;
-  - if regex does not match, continue down the list of rules;
-- multiple rules can be matched to each record;
-- each record can be sent to a single cluster at most once. If two rules send it to same cluster, only one instance will be sent;
-- cluster names must be from the set defined in the [clusters config](clonfig/clusters.toml);
+- Routing rules are applied to each incoming record in order;
+  - If regex or prefix in a rule matches, the record is sent to the clusters in the `clusters` list;
+    - If `continue` is `true` continue matching next rules, stop otherwise. `false` is the default;
+  - If no regex or prefix matches, continue down the list of rules;
+- Multiple rules can be matched to each record;
+- Each record is sent to a single cluster only once. If two rules send it to same cluster, only one instance will be sent;
+- Cluster names must be from the set in the [clusters config](clonfig/clusters.toml).
 
 ### Rewrites
 

@@ -48,6 +48,4 @@ func proc(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 	for _, rec := range recs {
 		rules.RouteRec(rec, lg)
 	}
-
-	// TODO: counter for dropped metrics
 }
