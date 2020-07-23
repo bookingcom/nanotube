@@ -16,6 +16,7 @@ type Rules struct {
 // Rule in configuration for a single rule.
 type Rule struct {
 	Regexs   []string
+	Prefixes []string
 	Clusters []string
 	Continue bool
 }
@@ -31,8 +32,8 @@ func ReadRules(r io.Reader) (Rules, error) {
 		return rs, fmt.Errorf("no rules specified in the rules file")
 	}
 	for idx, rule := range rs.Rule {
-		if len(rule.Regexs) == 0 {
-			return rs, fmt.Errorf("rule %d is missing 'regexs' section", idx)
+		if len(rule.Regexs) == 0 && len(rule.Prefixes) == 0 {
+			return rs, fmt.Errorf("rule %d is missing both 'regexs' and 'prefixes' sections", idx)
 		}
 		if len(rule.Clusters) == 0 {
 			return rs, fmt.Errorf("rule %d is missing 'clusters' section", idx)
