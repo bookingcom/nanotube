@@ -56,6 +56,10 @@ To test the second store (alone or in conjunction) change the metric path to `te
 
 The only supported Go version is `1.14`.
 
+### Supported platforms
+
+are *Linux* and *Darwin*.
+
 ## Record structure
 
 The only supported protocol is [line](https://graphite.readthedocs.io/en/latest/feeding-carbon.html#the-plaintext-protocol). The records have the structure:
@@ -104,6 +108,10 @@ It is possible to turn on record normalization with the `NormalizeRecords` optio
 - Prefix and trailing dots in path are removed: _.a.b.c._ -> _a.b.c_
 - Spaces in record are normalized to a single space character: _a.b.c␣␣␣1.23<tab>1234567_ -> _a.b.c␣1.23␣1234567_
 - Characters not in the set `[0-9a-zA-Z-_:#]` are replaced with `_`. Tags have their own allowed chars but are not supported for now.
+
+## Zero-downtime reload
+
+Nanotube supports zero-downtime reload that can be triggered with `USR2` signal. It will update the binary and try to load updated config. If the config is invalid, the old instance will keep running.
 
 ## Tags support
 

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
@@ -45,10 +46,14 @@ func setup(t *testing.T) {
 
 	cfgPath := filepath.Join(fixturesPath, "config.toml")
 
-	cfg, clusters, rules, rewrites, ms := loadBuildRegister(cfgPath, lg)
+	cfg, clusters, rules, rewrites, ms, err := loadBuildRegister(cfgPath, lg)
+	if err != nil {
+		t.Fatalf("failed to build config: %v", err)
+	}
 
 	term := make(chan struct{})
-	pipe, err := Listen(&cfg, term, lg, ms)
+	n := gracenet.Net{}
+	pipe, err := Listen(&n, &cfg, term, lg, ms)
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}
