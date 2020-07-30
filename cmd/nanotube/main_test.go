@@ -46,7 +46,7 @@ func setup(t *testing.T) {
 
 	cfgPath := filepath.Join(fixturesPath, "config.toml")
 
-	cfg, clusters, rules, rewrites, ms, err := loadBuildRegister(cfgPath, lg)
+	cfg, clusters, rules, rewrites, ms, _, err := loadBuildRegister(cfgPath, lg)
 	if err != nil {
 		t.Fatalf("failed to build config: %v", err)
 	}

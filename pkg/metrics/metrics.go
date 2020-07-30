@@ -32,9 +32,10 @@ type Prom struct {
 
 	UDPReadFailures prometheus.Counter
 
-	Version *prometheus.CounterVec
-
 	RegexDuration *prometheus.SummaryVec
+
+	Version     *prometheus.CounterVec
+	ConfVersion *prometheus.CounterVec
 }
 
 // New creates a new set of metrics from the main config.
@@ -123,16 +124,21 @@ func New(conf *conf.Main) *Prom {
 			Name:      "udp_read_failures_total",
 			Help:      "Counter of failures when reading incoming data from the UDP connection.",
 		}),
-		Version: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "nanotube",
-			Name:      "version",
-			Help:      "Version info in label. Value should be always 1.",
-		}, []string{"version"}),
 		RegexDuration: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace: "nanotube",
 			Name:      "regex_duration_seconds",
 			Help:      "Time to evaluate each regex from configuration",
 		}, []string{"regex", "rule_type"}),
+		Version: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "version",
+			Help:      "Version info in label. Value should be always 1.",
+		}, []string{"version"}),
+		ConfVersion: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "conf_version",
+			Help:      "Config version in label. Value should be always 1.",
+		}, []string{"conf_version"}),
 	}
 }
 
@@ -182,6 +188,11 @@ func Register(m *Prom, cfg *conf.Main) {
 	err = prometheus.Register(m.Version)
 	if err != nil {
 		log.Fatalf("error registering the version metric: %v", err)
+	}
+
+	err = prometheus.Register(m.ConfVersion)
+	if err != nil {
+		log.Fatalf("error registering the conf version metric: %v", err)
 	}
 
 	if !cfg.LessMetrics {
