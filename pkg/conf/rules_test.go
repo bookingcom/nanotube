@@ -24,6 +24,10 @@ func TestRulesSimple(t *testing.T) {
 		"^abc$",
 		"^cbd*df$"
 	]
+	prefixes = [
+		"xyz",
+		"oiu"
+	]
 	clusters = [
 		"aaa",
 		"bbb"
@@ -45,6 +49,10 @@ func TestRulesSimple(t *testing.T) {
 				Regexs: []string{
 					"^abc$",
 					"^cbd*df$",
+				},
+				Prefixes: []string{
+					"xyz",
+					"oiu",
 				},
 				Clusters: []string{
 					"aaa",
