@@ -20,7 +20,7 @@ type Main struct {
 	ListenUDP string
 
 	// 0 does not set buffer size
-	UDPOSBufferSize uint32
+	// UDPOSBufferSize uint32
 
 	MainQueueSize uint64
 	HostQueueSize uint64
