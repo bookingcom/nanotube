@@ -11,7 +11,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.0.0
 	github.com/segmentio/fasthash v1.0.0
-	go.uber.org/atomic v1.4.0 // indirect
+	go.uber.org/atomic v1.4.0
 	go.uber.org/automaxprocs v1.3.0
 	go.uber.org/multierr v1.1.0 // indirect
 	go.uber.org/ratelimit v0.1.0

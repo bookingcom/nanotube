@@ -10,10 +10,11 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	InRecs                prometheus.Counter
-	OutRecs               *prometheus.CounterVec
-	OutRecsTotal          prometheus.Counter
-	ThrottledRecs         prometheus.Counter
+	InRecs        prometheus.Counter
+	OutRecs       *prometheus.CounterVec
+	OutRecsTotal  prometheus.Counter
+	ThrottledRecs prometheus.Counter
+	// TODO: Rename to "became unavailable"
 	StateChangeHosts      *prometheus.CounterVec
 	StateChangeHostsTotal prometheus.Counter
 	BlackholedRecs        prometheus.Counter

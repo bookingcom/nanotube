@@ -44,16 +44,15 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 	var err error
 	for _, cc := range cfg.Cluster {
 		cl := &Cluster{
-			Name:                   cc.Name,
-			UpdateHostHealthStatus: make(chan *HostStatus),
-			Type:                   cc.Type,
+			Name: cc.Name,
+			Type: cc.Type,
 		}
 		switch cc.Type {
 		case conf.JumpCluster:
 			cl, err = getJumpCluster(cl, cc, mainCfg, lg, ms)
 		case conf.BlackholeCluster, conf.ToallCluster, conf.LB:
 			for _, h := range cc.Hosts {
-				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, mainCfg, h, lg, ms, cl.UpdateHostHealthStatus))
+				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, mainCfg, h, lg, ms))
 			}
 		default:
 			return cls, fmt.Errorf("incorrect cluster type %s for cluster %s",
@@ -64,7 +63,6 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 	}
 
 	for _, cl := range cls {
-		go cl.keepAvailableHostsUpdated()
 		if cl.Type == conf.LB {
 			go cl.updateAvailableHostsPeriodically(time.Duration(mainCfg.LBClusterHealthCheckPeriodSec) * time.Second)
 		}
@@ -83,7 +81,7 @@ func getJumpCluster(cl *Cluster, cc conf.Cluster, mainCfg conf.Main, lg *zap.Log
 			return cl, fmt.Errorf("host %s index %d out of bounds in cluster %s (cluster size %d)", h.Name, h.Index, cl.Name, len(cl.Hosts))
 		}
 
-		cl.Hosts[h.Index] = NewHost(cc.Name, mainCfg, h, lg, ms, cl.UpdateHostHealthStatus)
+		cl.Hosts[h.Index] = NewHost(cc.Name, mainCfg, h, lg, ms)
 	}
 
 	for _, hst := range cl.Hosts {
