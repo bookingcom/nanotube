@@ -209,11 +209,10 @@ func (h *Host) Connect(attemptCount int) {
 			zap.Uint16("port", h.Port))
 		h.Conn = nil
 		if attemptCount == 1 {
-			if h.Available.Load() {
+			if h.Available.CAS(true, false) { // CAS = compare-and-save
 				h.stateChanges.Inc()
 				h.stateChangesTotal.Inc()
 			}
-			h.Available.Store(false)
 		}
 
 		return
@@ -240,10 +239,9 @@ func (h *Host) checkUpdateHostStatus() {
 		h.Available.Store(true)
 		_ = conn.Close()
 	} else {
-		if h.Available.Load() {
+		if h.Available.CAS(true, false) { // CAS = compare-and-save
 			h.stateChanges.Inc()
 			h.stateChangesTotal.Inc()
 		}
-		h.Available.Store(false)
 	}
 }
