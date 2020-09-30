@@ -12,6 +12,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rec"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
@@ -20,14 +21,13 @@ type Host struct {
 	Name string
 	Port uint16
 	// TODO (grzkv): Replace w/ circular buffer
-	Ch   chan *rec.Rec
-	Conn net.Conn
+	Ch        chan *rec.Rec
+	Conn      net.Conn
+	Available atomic.Bool
 
 	W    *bufio.Writer
 	CWm  sync.Mutex
 	stop chan int
-
-	updateHostHealthStatus chan *HostStatus
 
 	Lg                        *zap.Logger
 	Ms                        *metrics.Prom
@@ -49,15 +49,8 @@ type Host struct {
 	bufSize            int
 }
 
-// HostStatus is used to signal connection status by Host to cluster
-type HostStatus struct {
-	Host   *Host
-	Status bool
-	sigCh  chan struct{}
-}
-
 //NewHost build new host object from config
-func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom, updateHostHealthStatus chan *HostStatus) *Host {
+func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
 		targetPort = hostCfg.Port
@@ -67,13 +60,12 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		"cluster":       clusterName,
 		"upstream_host": hostCfg.Name,
 	}
-	return &Host{
-		Name:                   hostCfg.Name,
-		Port:                   targetPort,
-		Ch:                     make(chan *rec.Rec, mainCfg.HostQueueSize),
-		Lg:                     lg,
-		stop:                   make(chan int),
-		updateHostHealthStatus: updateHostHealthStatus,
+	h := Host{
+		Name: hostCfg.Name,
+		Port: targetPort,
+		Ch:   make(chan *rec.Rec, mainCfg.HostQueueSize),
+		Lg:   lg,
+		stop: make(chan int),
 
 		SendTimeoutSec:            mainCfg.SendTimeoutSec,
 		ConnTimeoutSec:            mainCfg.OutConnTimeoutSec,
@@ -91,6 +83,9 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		stateChangesTotal:         ms.StateChangeHostsTotal,
 		bufSize:                   mainCfg.TCPOutBufSize,
 	}
+	h.Available.Store(true)
+
+	return &h
 }
 
 // Push adds a new record to send to the host queue.
@@ -214,14 +209,17 @@ func (h *Host) Connect(attemptCount int) {
 			zap.Uint16("port", h.Port))
 		h.Conn = nil
 		if attemptCount == 1 {
-			h.updateHostHealthStatus <- &HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
+			if h.Available.CAS(true, false) { // CAS = compare-and-save
+				h.stateChanges.Inc()
+				h.stateChangesTotal.Inc()
+			}
 		}
 
 		return
 	}
 
 	h.Conn = conn
-	h.updateHostHealthStatus <- &HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
+	h.Available.Store(true)
 
 	h.W = bufio.NewWriterSize(conn, h.bufSize)
 }
@@ -235,12 +233,15 @@ func (h *Host) getConnectionToHost() (net.Conn, error) {
 	return conn, err
 }
 
-func (h *Host) checkUpdateHostStatus(hostStatus chan HostStatus) {
+func (h *Host) checkUpdateHostStatus() {
 	conn, _ := h.getConnectionToHost()
 	if conn != nil {
-		hostStatus <- HostStatus{Host: h, Status: true, sigCh: make(chan struct{})}
+		h.Available.Store(true)
 		_ = conn.Close()
 	} else {
-		hostStatus <- HostStatus{Host: h, Status: false, sigCh: make(chan struct{})}
+		if h.Available.CAS(true, false) { // CAS = compare-and-save
+			h.stateChanges.Inc()
+			h.stateChangesTotal.Inc()
+		}
 	}
 }
