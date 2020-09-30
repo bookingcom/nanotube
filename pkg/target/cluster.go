@@ -23,12 +23,21 @@ type Target interface {
 
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
 type Cluster struct {
-	Name                   string
-	Hosts                  []*Host // ordered by index
-	AvailableHosts         []*Host
-	Hm                     sync.RWMutex
-	Type                   string
-	UpdateHostHealthStatus chan *HostStatus
+	Name  string
+	Hosts []*Host // ordered by index
+	Hm    sync.RWMutex
+	Type  string
+}
+
+func (cl *Cluster) availHostsList() []*Host {
+	var availHosts []*Host
+	for _, h := range cl.Hosts {
+		if h.Available.Load() {
+			availHosts = append(availHosts, h)
+		}
+	}
+
+	return availHosts
 }
 
 // Push sends single record to cluster. Routing happens based on cluster type.
@@ -63,17 +72,15 @@ func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
 			cl.Hosts[jumpHash(path, len(cl.Hosts))],
 		}, nil
 	case conf.LB:
-		cl.Hm.RLock()
-		defer cl.Hm.RUnlock()
-		availableHostCount := len(cl.AvailableHosts)
+		availHosts := cl.availHostsList()
 		key := fnv1a.HashString64(path)
-		if availableHostCount == 0 {
+		if len(availHosts) == 0 {
 			return []*Host{
 				cl.Hosts[key%uint64(len(cl.Hosts))],
 			}, nil
 		}
 		return []*Host{
-			cl.AvailableHosts[key%uint64(availableHostCount)],
+			availHosts[key%uint64(len(availHosts))],
 		}, nil
 	case conf.ToallCluster:
 		return cl.Hosts, nil
@@ -109,88 +116,14 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 	}()
 }
 
+// TODO: Move this to host.
 func (cl *Cluster) updateAvailableHostsPeriodically(d time.Duration) {
 	t := time.NewTicker(d)
 	defer t.Stop()
 
 	for ; true; <-t.C {
-		availableHosts := cl.getAvailableHosts()
-		cl.updateAvailableHosts(availableHosts)
-	}
-}
-
-func (cl *Cluster) updateAvailableHosts(availableHosts []*Host) {
-	cl.Hm.Lock()
-	defer cl.Hm.Unlock()
-	cl.AvailableHosts = availableHosts
-
-}
-
-func (cl *Cluster) getAvailableHosts() []*Host {
-	hostCount := len(cl.Hosts)
-	var availableHosts []*Host
-	c := make(chan HostStatus, hostCount)
-	for _, h := range cl.Hosts {
-		go h.checkUpdateHostStatus(c)
-	}
-	count := 0
-	for count < hostCount {
-		hostStatus := <-c
-		count++
-		if hostStatus.Status {
-			availableHosts = append(availableHosts, hostStatus.Host)
-		}
-	}
-	return availableHosts
-}
-
-func (cl *Cluster) keepAvailableHostsUpdated() {
-	for {
-		h := <-cl.UpdateHostHealthStatus
-		if cl.Type != conf.LB {
-			continue
-		}
-		go cl.updateHostAvailability(*h)
-	}
-}
-
-func (cl *Cluster) updateHostAvailability(h HostStatus) {
-	defer close(h.sigCh)
-	if h.Status {
-		cl.addAvailableHost(h.Host)
-	} else {
-		cl.removeAvailableHost(h.Host)
-	}
-}
-
-func (cl *Cluster) addAvailableHost(host *Host) {
-	cl.Hm.Lock()
-	defer cl.Hm.Unlock()
-	for _, h := range cl.AvailableHosts {
-		if h.Name == host.Name && host.Port == h.Port {
-			return
-		}
-	}
-	host.stateChanges.Inc()
-	host.stateChangesTotal.Inc()
-	cl.AvailableHosts = append(cl.AvailableHosts, host)
-}
-
-func (cl *Cluster) removeAvailableHost(host *Host) {
-	cl.Hm.Lock()
-	defer cl.Hm.Unlock()
-	for i, h := range cl.AvailableHosts {
-		if h == host {
-			host.stateChanges.Inc()
-			host.stateChangesTotal.Inc()
-			length := len(cl.AvailableHosts)
-
-			for j := i; j < length-1; j++ {
-				cl.AvailableHosts[j] = cl.AvailableHosts[j+1]
-			}
-			cl.AvailableHosts = cl.AvailableHosts[:length-1]
-
-			break
+		for _, h := range cl.Hosts {
+			go h.checkUpdateHostStatus()
 		}
 	}
 }
