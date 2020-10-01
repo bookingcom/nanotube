@@ -24,8 +24,13 @@ fmt:
 	gofmt -d -s .
 
 .PHONY: check
-check: all test lint
+check: all test lint fuzz
 
 .PHONY: clean
 clean:
 	rm -f nanotube
+
+.PHONY: fuzz
+fuzz:
+	go-fuzz-build ./pkg/rec
+	go-fuzz -bin=rec-fuzz.zip
