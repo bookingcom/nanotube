@@ -90,7 +90,6 @@ func (r *Rec) Copy() *Rec {
 }
 
 // normalizePath does path normalization as described in the docs.
-// It happens in one linear pass along the string. Pointers are used for input and output to save time on data copying.
 func normalizePath(s string) string {
 	if len(s) == 0 {
 		res := ""
