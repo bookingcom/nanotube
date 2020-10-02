@@ -6,7 +6,7 @@ test/sender/sender
 test/receiver/receiver
 
 # Fuzzing artefacts.
-corpus
-crashers
-suppressions
-*.zip
+test/fuzzing/corpus
+test/fuzzing/crashers
+test/fuzzing/suppressions
+test/fuzzing/*.zip

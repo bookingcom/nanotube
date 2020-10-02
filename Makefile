@@ -24,7 +24,7 @@ fmt:
 	gofmt -d -s .
 
 .PHONY: check
-check: all test lint fuzz
+check: all test lint
 
 .PHONY: clean
 clean:
@@ -32,5 +32,5 @@ clean:
 
 .PHONY: fuzz
 fuzz:
-	go-fuzz-build ./pkg/rec
-	go-fuzz -bin=rec-fuzz.zip
+	go-fuzz-build -o test/fuzzing/pkg-rec.zip ./pkg/rec
+	go-fuzz -workdir=test/fuzzing -bin=test/fuzzing/pkg-rec.zip
