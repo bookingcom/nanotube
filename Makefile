@@ -29,3 +29,8 @@ check: all test lint
 .PHONY: clean
 clean:
 	rm -f nanotube
+
+.PHONY: fuzz
+fuzz:
+	go-fuzz-build -o test/fuzzing/pkg-rec.zip ./pkg/rec
+	go-fuzz -workdir=test/fuzzing -bin=test/fuzzing/pkg-rec.zip
