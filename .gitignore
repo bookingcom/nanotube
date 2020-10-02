@@ -5,3 +5,8 @@ cover.out
 test/sender/sender
 test/receiver/receiver
 
+# Fuzzing artefacts.
+test/fuzzing/corpus
+test/fuzzing/crashers
+test/fuzzing/suppressions
+test/fuzzing/*.zip
