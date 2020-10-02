@@ -184,7 +184,7 @@ func Register(m *Prom, cfg *conf.Main) {
 
 	err = prometheus.Register(m.ThrottledHostsTotal)
 	if err != nil {
-		log.Fatalf("error registering the throttled_host_records_total metrics: %v", err)
+		log.Fatalf("error registering the throttled_host_records_total metric: %v", err)
 	}
 
 	err = prometheus.Register(m.BlackholedRecs)
@@ -199,7 +199,12 @@ func Register(m *Prom, cfg *conf.Main) {
 
 	err = prometheus.Register(m.StateChangeHostsTotal)
 	if err != nil {
-		log.Fatalf("error registering the state_change_hosts_total metrics: %v", err)
+		log.Fatalf("error registering the state_change_hosts_total metric: %v", err)
+	}
+
+	err = prometheus.Register(m.OldConnectionRefreshTotal)
+	if err != nil {
+		log.Fatalf("error registering the old_connection_refresh metric: %v", err)
 	}
 
 	err = prometheus.Register(m.Version)
@@ -220,11 +225,17 @@ func Register(m *Prom, cfg *conf.Main) {
 
 		err = prometheus.Register(m.StateChangeHosts)
 		if err != nil {
-			log.Fatalf("error registering the state_change_hosts metrics: %v", err)
+			log.Fatalf("error registering the state_change_hosts metric: %v", err)
 		}
+
+		err = prometheus.Register(m.OldConnectionRefresh)
+		if err != nil {
+			log.Fatalf("error registering the old_connection_refresh_total metric: %v", err)
+		}
+
 		err = prometheus.Register(m.ThrottledHosts)
 		if err != nil {
-			log.Fatalf("error registering the throttled_host_records metrics: %v", err)
+			log.Fatalf("error registering the throttled_host_records metric: %v", err)
 		}
 
 		err = prometheus.Register(m.MainQueueLength)
