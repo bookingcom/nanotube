@@ -53,6 +53,13 @@ TCPOutBufSize = 4096
 # The value of zero means no flushing.
 TCPOutBufFlushPeriodSec = 2
 
+# The period to refresh the outgoing TCP connection.
+# This solves the following problem. If nothing is sent for a prolonged period of time to a client
+# it may drop the connection because of read i/o timeout. This will go unnoticed until the first
+# write attempt that will fail and data will be lost. To prevent this situation and data loss, connection
+# can be dropped and esteblished from scratch.
+TCPOutConnectionRefreshPeriodSec = 0
+
 # Maximum reconnection period to target host
 MaxHostReconnectPeriodMs = 5000
 # Parameter for exponential backoffs during reconnects

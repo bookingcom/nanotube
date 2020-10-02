@@ -11,20 +11,26 @@ import (
 // Prom is the set of Prometheus metrics.
 type Prom struct {
 	InRecs        prometheus.Counter
-	OutRecs       *prometheus.CounterVec
-	OutRecsTotal  prometheus.Counter
 	ThrottledRecs prometheus.Counter
-	// TODO: Rename to "became unavailable"
-	StateChangeHosts      *prometheus.CounterVec
-	StateChangeHostsTotal prometheus.Counter
-	BlackholedRecs        prometheus.Counter
-	ErrorRecs             prometheus.Counter
 
-	ThrottledHosts      *prometheus.CounterVec
-	ThrottledHostsTotal prometheus.Counter
+	// TODO: Rename
+	StateChangeHosts *prometheus.CounterVec
+	// TODO: Rename
+	StateChangeHostsTotal prometheus.Counter
+	// TODO: Maybe remove after adoption is complete.
+	OldConnectionRefresh *prometheus.CounterVec
+	// TODO: Maybe remove after adoption is complete.
+	OldConnectionRefreshTotal prometheus.Counter
+	ThrottledHosts            *prometheus.CounterVec
+	ThrottledHostsTotal       prometheus.Counter
+	HostQueueLength           prometheus.Histogram
+	OutRecs                   *prometheus.CounterVec
+	OutRecsTotal              prometheus.Counter
+
+	BlackholedRecs prometheus.Counter
+	ErrorRecs      prometheus.Counter
 
 	MainQueueLength prometheus.Gauge
-	HostQueueLength prometheus.Histogram
 
 	ProcessingDuration prometheus.Histogram
 
@@ -83,10 +89,20 @@ func New(conf *conf.Main) *Prom {
 			Name:      "state_change_hosts_total",
 			Help:      "Total availability state change for hosts",
 		}),
+		OldConnectionRefresh: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "old_connection_refresh",
+			Help:      "Old connection refreshes per target host",
+		}, []string{"cluster", "upstream_host"}),
+		OldConnectionRefreshTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "old_connection_refresh_total",
+			Help:      "Total old connection refreshes for target hosts",
+		}),
 		BlackholedRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "blackholed_records_total",
-			Help:      "Black holed records counter.",
+			Help:      "Blackholed records counter.",
 		}),
 		ErrorRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
