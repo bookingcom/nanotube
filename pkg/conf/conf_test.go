@@ -58,7 +58,6 @@ func TestConfSimple(t *testing.T) {
 		MaxHostReconnectPeriodMs:      777,
 		LBClusterHealthCheckPeriodSec: 18,
 		HostReconnectPeriodDeltaMs:    13,
-		ConnectionLossThresholdMs:     200,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: true,
