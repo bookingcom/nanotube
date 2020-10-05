@@ -207,7 +207,7 @@ func (h *Host) tryToFlushIfNecessary() {
 func (h *Host) keepConnectionFresh() {
 	// 0 value = don't refresh connections
 	if h.conf.TCPOutConnectionRefreshPeriodSec != 0 {
-		if h.Conn.Conn != nil && time.Since(h.Conn.LastConnUse) > time.Duration(h.conf.TCPOutConnectionRefreshPeriodSec) {
+		if h.Conn.Conn != nil && (time.Since(h.Conn.LastConnUse) > time.Second*time.Duration(h.conf.TCPOutConnectionRefreshPeriodSec)) {
 			h.oldConnectionRefresh.Inc()
 			h.oldConnectionRefreshTotal.Inc()
 
