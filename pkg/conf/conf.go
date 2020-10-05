@@ -36,7 +36,6 @@ type Main struct {
 	LBClusterHealthCheckPeriodSec uint32
 	HostReconnectPeriodDeltaMs    uint32
 	KeepAliveSec                  uint32
-	ConnectionLossThresholdMs     uint32
 	TermTimeoutSec                uint16
 	// 0 value turns off buffering
 	TCPOutBufSize int
@@ -110,7 +109,6 @@ func MakeDefault() Main {
 		LBClusterHealthCheckPeriodSec:    10,
 		HostReconnectPeriodDeltaMs:       10,
 		KeepAliveSec:                     1,
-		ConnectionLossThresholdMs:        3000,
 		TermTimeoutSec:                   10,
 		TCPOutBufSize:                    0,
 		TCPOutBufFlushPeriodSec:          2,

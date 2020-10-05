@@ -58,15 +58,13 @@ TCPOutBufFlushPeriodSec = 2
 # it may drop the connection because of read i/o timeout. This will go unnoticed until the first
 # write attempt that will fail and data will be lost. To prevent this situation and data loss, connection
 # can be dropped and esteblished from scratch.
+# 0 = no connection refresh.
 TCPOutConnectionRefreshPeriodSec = 0
 
 # Maximum reconnection period to target host
 MaxHostReconnectPeriodMs = 5000
 # Parameter for exponential backoffs during reconnects
 HostReconnectPeriodDeltaMs = 10
-# Threshold to indicate to cluster for host connection loss
-#Should be less than MaxHostReconnectPeriodMs
-ConnectionLossThresholdMs = 3000
 # LB cluster health check period
 LBClusterHealthCheckPeriodSec = 10
 

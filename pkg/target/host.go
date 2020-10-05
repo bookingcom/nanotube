@@ -28,16 +28,10 @@ type Host struct {
 
 	stop chan int
 
-	Lg                               *zap.Logger
-	Ms                               *metrics.Prom
-	SendTimeoutSec                   uint32
-	ConnTimeoutSec                   uint32
-	KeepAliveSec                     uint32
-	MaxReconnectPeriodMs             uint32
-	ReconnectPeriodDeltaMs           uint32
-	ConnectionLossThresholdMs        uint32
-	TCPOutBufFlushPeriodSec          uint32
-	TCPOutConnectionRefreshPeriodSec uint32
+	Lg *zap.Logger
+	Ms *metrics.Prom
+
+	conf *conf.Main
 
 	outRecs                   prometheus.Counter
 	outRecsTotal              prometheus.Counter
@@ -48,7 +42,6 @@ type Host struct {
 	oldConnectionRefresh      prometheus.Counter
 	oldConnectionRefreshTotal prometheus.Counter
 	processingDuration        prometheus.Histogram
-	bufSize                   int
 }
 
 // Connection contains all the attributes of the target host connection.
@@ -88,24 +81,17 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		Ch:   make(chan *rec.Rec, mainCfg.HostQueueSize),
 		stop: make(chan int),
 
-		SendTimeoutSec:                   mainCfg.SendTimeoutSec,
-		ConnTimeoutSec:                   mainCfg.OutConnTimeoutSec,
-		KeepAliveSec:                     mainCfg.KeepAliveSec,
-		MaxReconnectPeriodMs:             mainCfg.MaxHostReconnectPeriodMs,
-		ReconnectPeriodDeltaMs:           mainCfg.MaxHostReconnectPeriodMs,
-		ConnectionLossThresholdMs:        mainCfg.ConnectionLossThresholdMs,
-		TCPOutBufFlushPeriodSec:          mainCfg.TCPOutBufFlushPeriodSec,
-		TCPOutConnectionRefreshPeriodSec: mainCfg.TCPOutConnectionRefreshPeriodSec,
-		outRecs:                          ms.OutRecs.With(promLabels),
-		outRecsTotal:                     ms.OutRecsTotal,
-		throttled:                        ms.ThrottledHosts.With(promLabels),
-		throttledTotal:                   ms.ThrottledHostsTotal,
-		processingDuration:               ms.ProcessingDuration,
-		stateChanges:                     ms.StateChangeHosts.With(promLabels),
-		stateChangesTotal:                ms.StateChangeHostsTotal,
-		oldConnectionRefresh:             ms.OldConnectionRefresh.With(promLabels),
-		oldConnectionRefreshTotal:        ms.OldConnectionRefreshTotal,
-		bufSize:                          mainCfg.TCPOutBufSize,
+		conf: &mainCfg,
+
+		outRecs:                   ms.OutRecs.With(promLabels),
+		outRecsTotal:              ms.OutRecsTotal,
+		throttled:                 ms.ThrottledHosts.With(promLabels),
+		throttledTotal:            ms.ThrottledHostsTotal,
+		processingDuration:        ms.ProcessingDuration,
+		stateChanges:              ms.StateChangeHosts.With(promLabels),
+		stateChangesTotal:         ms.StateChangeHostsTotal,
+		oldConnectionRefresh:      ms.OldConnectionRefresh.With(promLabels),
+		oldConnectionRefreshTotal: ms.OldConnectionRefreshTotal,
 	}
 	h.Available.Store(true)
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
@@ -126,8 +112,8 @@ func (h *Host) Push(r *rec.Rec) {
 // Stream launches the the sending to target host.
 // Exits when queue is closed and sending is finished.
 func (h *Host) Stream(wg *sync.WaitGroup) {
-	if h.TCPOutBufFlushPeriodSec != 0 {
-		go h.Flush(time.Second * time.Duration(h.TCPOutBufFlushPeriodSec))
+	if h.conf.TCPOutBufFlushPeriodSec != 0 {
+		go h.Flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec))
 	}
 	defer func() {
 		wg.Done()
@@ -154,7 +140,7 @@ func (h *Host) tryToSend(r *rec.Rec) {
 		h.keepConnectionFresh()
 
 		err := h.Conn.SetWriteDeadline(time.Now().Add(
-			time.Duration(h.SendTimeoutSec) * time.Second))
+			time.Duration(h.conf.SendTimeoutSec) * time.Second))
 		if err != nil {
 			h.Lg.Warn("error setting write deadline", zap.Error(err))
 		}
@@ -220,8 +206,8 @@ func (h *Host) tryToFlushIfNecessary() {
 // This function may take a long time.
 func (h *Host) keepConnectionFresh() {
 	// 0 value = don't refresh connections
-	if h.TCPOutConnectionRefreshPeriodSec != 0 {
-		if h.Conn.Conn != nil && time.Since(h.Conn.LastConnUse) > time.Duration(h.TCPOutConnectionRefreshPeriodSec) {
+	if h.conf.TCPOutConnectionRefreshPeriodSec != 0 {
+		if h.Conn.Conn != nil && time.Since(h.Conn.LastConnUse) > time.Duration(h.conf.TCPOutConnectionRefreshPeriodSec) {
 			h.oldConnectionRefresh.Inc()
 			h.oldConnectionRefreshTotal.Inc()
 
@@ -239,11 +225,11 @@ func (h *Host) keepConnectionFresh() {
 func (h *Host) ensureConnection() {
 	for reconnectWait, attemptCount := uint32(0), 1; h.Conn.Conn == nil; {
 		time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-		if reconnectWait < h.MaxReconnectPeriodMs {
-			reconnectWait = reconnectWait*2 + h.ReconnectPeriodDeltaMs
+		if reconnectWait < h.conf.MaxHostReconnectPeriodMs {
+			reconnectWait = reconnectWait*2 + h.conf.HostReconnectPeriodDeltaMs
 		}
-		if reconnectWait >= h.MaxReconnectPeriodMs {
-			reconnectWait = h.MaxReconnectPeriodMs
+		if reconnectWait >= h.conf.MaxHostReconnectPeriodMs {
+			reconnectWait = h.conf.MaxHostReconnectPeriodMs
 		}
 
 		h.Connect(attemptCount)
@@ -268,14 +254,14 @@ func (h *Host) Connect(attemptCount int) {
 		return
 	}
 
-	h.Conn.New(conn, h.bufSize)
+	h.Conn.New(conn, h.conf.TCPOutBufSize)
 	h.Available.Store(true)
 }
 
 func (h *Host) getConnectionToHost() (net.Conn, error) {
 	dialer := net.Dialer{
-		Timeout:   time.Duration(h.ConnTimeoutSec) * time.Second,
-		KeepAlive: time.Duration(h.KeepAliveSec) * time.Second,
+		Timeout:   time.Duration(h.conf.OutConnTimeoutSec) * time.Second,
+		KeepAlive: time.Duration(h.conf.KeepAliveSec) * time.Second,
 	}
 	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
 	return conn, err
