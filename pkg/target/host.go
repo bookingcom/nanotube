@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -52,10 +53,10 @@ type Host struct {
 
 // Connection contains all the attributes of the target host connection.
 type Connection struct {
-	Conn        net.Conn
+	net.Conn
+	sync.Mutex
 	LastConnUse time.Time
 	W           *bufio.Writer
-	Mux         sync.Mutex
 }
 
 // New or updated target connection from existing net.Conn
@@ -65,9 +66,9 @@ func (c *Connection) New(conn net.Conn, bufSize int) {
 	c.W = bufio.NewWriterSize(conn, bufSize)
 }
 
-// String implements the Stringer intrface.
+// String implements the Stringer interface.
 func (h *Host) String() string {
-	return fmt.Sprintf("%s%d", h.Name, h.Port)
+	return net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port)))
 }
 
 //NewHost build new host object from config
@@ -107,7 +108,7 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 		bufSize:                          mainCfg.TCPOutBufSize,
 	}
 	h.Available.Store(true)
-	h.Lg = lg.With(zap.String("target_host", h.String()))
+	h.Lg = lg.With(zap.Stringer("target_host", &h))
 
 	return &h
 }
@@ -138,21 +139,21 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	}
 
 	// this line is only reached when the host channel was closed
-	h.Conn.Mux.Lock()
-	defer h.Conn.Mux.Unlock()
+	h.Conn.Lock()
+	defer h.Conn.Unlock()
 	h.tryToFlushIfNecessary()
 }
 
 func (h *Host) tryToSend(r *rec.Rec) {
-	h.Conn.Mux.Lock()
-	defer h.Conn.Mux.Unlock()
+	h.Conn.Lock()
+	defer h.Conn.Unlock()
 
 	// retry until successful
 	for {
 		h.ensureConnection()
 		h.keepConnectionFresh()
 
-		err := h.Conn.Conn.SetWriteDeadline(time.Now().Add(
+		err := h.Conn.SetWriteDeadline(time.Now().Add(
 			time.Duration(h.SendTimeoutSec) * time.Second))
 		if err != nil {
 			h.Lg.Warn("error setting write deadline", zap.Error(err))
@@ -170,7 +171,7 @@ func (h *Host) tryToSend(r *rec.Rec) {
 		}
 
 		h.Lg.Warn("error sending value to host. Reconnect and retry..", zap.Error(err))
-		err = h.Conn.Conn.Close()
+		err = h.Conn.Close()
 		if err != nil {
 			// not retrying here, file descriptor may be lost
 			h.Lg.Error("error closing the connection", zap.Error(err))
@@ -190,9 +191,9 @@ func (h *Host) Flush(d time.Duration) {
 		case <-h.stop:
 			return
 		case <-t.C:
-			h.Conn.Mux.Lock()
+			h.Conn.Lock()
 			h.tryToFlushIfNecessary()
-			h.Conn.Mux.Unlock()
+			h.Conn.Unlock()
 		}
 	}
 }
@@ -224,7 +225,7 @@ func (h *Host) keepConnectionFresh() {
 			h.oldConnectionRefresh.Inc()
 			h.oldConnectionRefreshTotal.Inc()
 
-			err := h.Conn.Conn.Close()
+			err := h.Conn.Close()
 			if err != nil {
 				h.Lg.Error("closing connection to target host failed", zap.String("host", h.Name))
 			}
