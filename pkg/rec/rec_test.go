@@ -143,6 +143,16 @@ func TestRec(t *testing.T) {
 				RawTime: "12345",
 			},
 		},
+		{
+			s: ". 0 0",
+			res: Rec{
+				Path:    "",
+				Val:     0,
+				RawVal:  "0",
+				Time:    0,
+				RawTime: "0",
+			},
+		},
 	}
 	nowF := func() time.Time {
 		return time.Time{}
