@@ -41,7 +41,7 @@ docker-compose up
 You can feed in sample data with:
 
 ```
-echo "test1.test 5 $(date +%s)" | nc -c localhost 2003
+echo "test1.test 5 $(date +%s)" | nc localhost 2003
 ```
 
 Get it back with:
@@ -54,7 +54,7 @@ To test the second store (alone or in conjunction) change the metric path to `te
 
 ### Go version
 
-The only supported Go version is `1.14`.
+The only supported Go version is `1.15`.
 
 ### Supported platforms
 
