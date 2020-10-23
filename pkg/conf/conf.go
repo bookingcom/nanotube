@@ -115,7 +115,7 @@ func MakeDefault() Main {
 		TCPOutConnectionRefreshPeriodSec: 0,
 
 		NormalizeRecords:  true,
-		LogSpecialRecords: true,
+		LogSpecialRecords: false,
 
 		PprofPort:           -1,
 		PromPort:            9090,
