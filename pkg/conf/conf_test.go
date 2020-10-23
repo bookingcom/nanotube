@@ -60,7 +60,7 @@ func TestConfSimple(t *testing.T) {
 		HostReconnectPeriodDeltaMs:    13,
 
 		NormalizeRecords:  true,
-		LogSpecialRecords: true,
+		LogSpecialRecords: false,
 
 		PprofPort: -1,
 		PromPort:  9090,
