@@ -7,9 +7,11 @@ require (
 	github.com/dgryski/go-jump v0.0.0-20170409065014-e1f439676b57
 	github.com/dvyukov/go-fuzz v0.0.0-20200916044129-21309f307f61
 	github.com/elazarl/go-bindata-assetfs v1.0.1 // indirect
+	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5 // indirect
 	github.com/facebookgo/ensure v0.0.0-20200202191622-63f1cf65ac4c // indirect
 	github.com/facebookgo/freeport v0.0.0-20150612182905-d4adf43b75b9 // indirect
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
+	github.com/facebookgo/pidfile v0.0.0-20150612191647-f242e2999868
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
 	github.com/facebookgo/subset v0.0.0-20200203212716-c811ad88dec4 // indirect
 	github.com/google/go-cmp v0.3.0
