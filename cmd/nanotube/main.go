@@ -20,12 +20,14 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
 	"github.com/bookingcom/nanotube/pkg/target"
+	"github.com/facebookgo/pidfile"
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/libp2p/go-reuseport"
-	_ "go.uber.org/automaxprocs"
+	_ "go.uber.org/automaxprocs" // TODO: Make explicit. Remove logline.
 	"go.uber.org/zap"
 )
 
@@ -51,6 +53,14 @@ func main() {
 
 	if validateConfig {
 		return
+	}
+
+	if cfg.PidFilePath != "" {
+		pidfile.SetPidfilePath(cfg.PidFilePath)
+		err = pidfile.Write()
+		if err != nil {
+			log.Fatalf("error writing pidfile: %v", err)
+		}
 	}
 
 	metrics.Register(ms, &cfg)
