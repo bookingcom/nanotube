@@ -73,7 +73,7 @@ NormalizeRecords = true
 # Turns on logging for special kinds of records. For now it's recrods with fractional timestamps.
 LogSpecialRecords = false
 
-# Absulte path for a pidfile. Not written if left empty.
+# Absolute path for a pidfile. Not written if left empty.
 PidFilePath = "/home/rgrytskiv/nt.pid"
 
 # Profiling port. Skip to disable.
