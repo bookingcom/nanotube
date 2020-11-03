@@ -153,6 +153,10 @@ func TestRec(t *testing.T) {
 				RawTime: "0",
 			},
 		},
+		{
+			s:     "a.b.c NaN 12345",
+			isErr: true,
+		},
 	}
 	nowF := func() time.Time {
 		return time.Time{}

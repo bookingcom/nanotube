@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/burntsushi/toml"
 	"github.com/pkg/errors"
@@ -53,6 +54,8 @@ type Main struct {
 	LessMetrics         bool
 	RegexDurationMetric bool
 
+	PidFilePath string
+
 	HostQueueLengthBucketFactor float64
 	HostQueueLengthBuckets      int
 
@@ -82,6 +85,11 @@ func ReadMain(r io.Reader) (Main, error) {
 	}
 	if cfg.SendTimeoutSec <= cfg.TCPOutBufFlushPeriodSec {
 		return cfg, errors.New("TCP send timeout is lesser or equal to TCP buffer flush period")
+	}
+	if cfg.PidFilePath != "" {
+		if !filepath.IsAbs(cfg.PidFilePath) {
+			return cfg, errors.New("pidfile path is not valid or not an absolute path")
+		}
 	}
 
 	return cfg, nil
@@ -115,12 +123,14 @@ func MakeDefault() Main {
 		TCPOutConnectionRefreshPeriodSec: 0,
 
 		NormalizeRecords:  true,
-		LogSpecialRecords: true,
+		LogSpecialRecords: false,
 
 		PprofPort:           -1,
 		PromPort:            9090,
 		LessMetrics:         false,
 		RegexDurationMetric: false,
+
+		PidFilePath: "",
 
 		HostQueueLengthBucketFactor: 3,
 		HostQueueLengthBuckets:      10,

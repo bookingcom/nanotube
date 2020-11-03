@@ -3,6 +3,7 @@ package rec
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,9 @@ func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, l
 	val, err := strconv.ParseFloat(words[1], 64)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error converting incoming record val %s", words[1])
+	}
+	if math.IsNaN(val) {
+		return nil, errors.New("got NaN value for metric")
 	}
 
 	var tm uint64
