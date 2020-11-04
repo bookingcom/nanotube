@@ -1,4 +1,4 @@
-#!/usr/env bash
+#!/usr/bin/env bash
 
 set -o errexit   # abort on nonzero exitstatus
 set -o nounset   # abort on unbound variable
@@ -8,7 +8,9 @@ set -x
 tag_day=$(date '+%Y%m%d')
 tag_time=$(date '+%H%M%S')
 
-git_tag="nanotube-${tag_day}_${tag_time}"
+echo ">>> Building version ${tag_day}.${tag_time}"
+
+git_tag="nanotube-${tag_day}-${tag_time}"
 echo "Tagging new release $git_tag."
 git tag "$git_tag"
 git push --tags
