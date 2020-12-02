@@ -266,20 +266,3 @@ func (h *Host) getConnectionToHost() (net.Conn, error) {
 	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
 	return conn, err
 }
-
-func (h *Host) checkUpdateHostStatus() {
-	// TODO: Logic here is different from Connect function. Fix error handling.
-	conn, _ := h.getConnectionToHost()
-	if conn != nil {
-		h.Available.Store(true)
-		err := conn.Close()
-		if err != nil {
-			h.Lg.Warn("failed to close the LB probe connection", zap.Error(err))
-		}
-	} else {
-		if h.Available.CAS(true, false) { // CAS = compare-and-save
-			h.stateChanges.Inc()
-			h.stateChangesTotal.Inc()
-		}
-	}
-}
