@@ -30,14 +30,13 @@ type Main struct {
 
 	WorkerPoolSize uint16
 
-	IncomingConnIdleTimeoutSec    uint32
-	SendTimeoutSec                uint32
-	OutConnTimeoutSec             uint32
-	MaxHostReconnectPeriodMs      uint32
-	LBClusterHealthCheckPeriodSec uint32
-	HostReconnectPeriodDeltaMs    uint32
-	KeepAliveSec                  uint32
-	TermTimeoutSec                uint16
+	IncomingConnIdleTimeoutSec uint32
+	SendTimeoutSec             uint32
+	OutConnTimeoutSec          uint32
+	MaxHostReconnectPeriodMs   uint32
+	HostReconnectPeriodDeltaMs uint32
+	KeepAliveSec               uint32
+	TermTimeoutSec             uint16
 	// 0 value turns off buffering
 	TCPOutBufSize int
 	// 0 value turns off flushing
@@ -114,7 +113,6 @@ func MakeDefault() Main {
 		SendTimeoutSec:                   5,
 		OutConnTimeoutSec:                5,
 		MaxHostReconnectPeriodMs:         5000,
-		LBClusterHealthCheckPeriodSec:    10,
 		HostReconnectPeriodDeltaMs:       10,
 		KeepAliveSec:                     1,
 		TermTimeoutSec:                   10,
