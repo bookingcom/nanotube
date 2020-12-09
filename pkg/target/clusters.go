@@ -3,7 +3,6 @@ package target
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
@@ -62,11 +61,6 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 		cls[cl.Name] = cl
 	}
 
-	for _, cl := range cls {
-		if cl.Type == conf.LB {
-			go cl.updateAvailableHostsPeriodically(time.Duration(mainCfg.LBClusterHealthCheckPeriodSec) * time.Second)
-		}
-	}
 	return cls, err
 }
 

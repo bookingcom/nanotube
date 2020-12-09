@@ -3,7 +3,6 @@ package target
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
@@ -114,18 +113,6 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 			close(h.Ch)
 		}
 	}()
-}
-
-// TODO: Move this to host.
-func (cl *Cluster) updateAvailableHostsPeriodically(d time.Duration) {
-	t := time.NewTicker(d)
-	defer t.Stop()
-
-	for ; true; <-t.C {
-		for _, h := range cl.Hosts {
-			go h.checkUpdateHostStatus()
-		}
-	}
 }
 
 // hashing for the rind of hosts in a cluster based on the record path
