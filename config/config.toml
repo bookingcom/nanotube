@@ -74,6 +74,13 @@ LogSpecialRecords = false
 # Absolute path for a pidfile. Not written if left empty.
 PidFilePath = ""
 
+# Initial number of allowed log records during LogLimitWindowSec with same msg and level
+LogLimitInitial = 10
+# Log every LogLimitThereafter record during LogLimitWindowSec after initial set with same msg and level
+LogLimitThereafter = 1000
+# Timeframe for log limiting
+LogLimitWindowSec = 1
+
 # Profiling port. Skip to disable.
 PprofPort = 6000
 # Prometheus port
@@ -91,4 +98,3 @@ HostQueueLengthBuckets = 10
 # Histogram parameters for the processing duration
 ProcessingDurationBucketFactor = 2.0
 ProcessingDurationBuckets = 10
-

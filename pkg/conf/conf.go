@@ -55,6 +55,10 @@ type Main struct {
 
 	PidFilePath string
 
+	LogLimitInitial    int
+	LogLimitThereafter int
+	LogLimitWindowSec  int
+
 	HostQueueLengthBucketFactor float64
 	HostQueueLengthBuckets      int
 
@@ -129,6 +133,10 @@ func MakeDefault() Main {
 		RegexDurationMetric: false,
 
 		PidFilePath: "",
+
+		LogLimitInitial:    10,
+		LogLimitThereafter: 1000,
+		LogLimitWindowSec:  1,
 
 		HostQueueLengthBucketFactor: 3,
 		HostQueueLengthBuckets:      10,
