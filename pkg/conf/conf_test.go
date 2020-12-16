@@ -22,6 +22,11 @@ func TestConfSimple(t *testing.T) {
 	TermTimeoutSec = 11
 	IncomingConnIdleTimeoutSec = 13
 
+	LogLimitInitial = 7
+	LogLimitThereafter = 70
+	LogLimitWindowSec = 7
+
+
 	MainQueueSize = 100
 	HostQueueSize = 10
 	WorkerPoolSize = 10
@@ -62,6 +67,10 @@ func TestConfSimple(t *testing.T) {
 
 		PprofPort: -1,
 		PromPort:  9090,
+
+		LogLimitInitial:    7,
+		LogLimitThereafter: 70,
+		LogLimitWindowSec:  7,
 
 		HostQueueLengthBucketFactor: 3,
 		HostQueueLengthBuckets:      10,
