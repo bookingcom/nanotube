@@ -11,47 +11,41 @@ import (
 )
 
 func TestRewrites(t *testing.T) {
-	rewrites := map[string]conf.Rewrites{
-		"first": {
-			Rewrite: []conf.Rewrite{
-				{
-					From: "a.*bc",
-					To:   "cde",
-					Copy: false,
-				},
-				{
-					From: "def",
-					To:   "acd",
-					Copy: true,
-				},
-				{
-					From: "gh([A-Za-z0-9_-]+)",
-					To:   "[[$1]]",
-					Copy: false,
-				},
+	rewrites := conf.Rewrites{
+		Rewrite: []conf.Rewrite{
+			{
+				From: "a.*bc",
+				To:   "cde",
+				Copy: false,
+			},
+			{
+				From: "def",
+				To:   "acd",
+				Copy: true,
+			},
+			{
+				From: "gh([A-Za-z0-9_-]+)",
+				To:   "[[$1]]",
+				Copy: false,
 			},
 		},
 	}
 
 	tests := []struct {
-		rewrites string
-		in       string
-		out      []string
+		in  string
+		out []string
 	}{
 		{
-			rewrites: "first",
-			in:       "abcxxx",
-			out:      []string{"cdexxx"},
+			in:  "abcxxx",
+			out: []string{"cdexxx"},
 		},
 		{
-			rewrites: "first",
-			in:       "def",
-			out:      []string{"def", "acd"},
+			in:  "def",
+			out: []string{"def", "acd"},
 		},
 		{
-			rewrites: "first",
-			in:       "ghtesttesttest",
-			out:      []string{"[[testtesttest]]"},
+			in:  "ghtesttesttest",
+			out: []string{"[[testtesttest]]"},
 		},
 	}
 
@@ -59,7 +53,7 @@ func TestRewrites(t *testing.T) {
 	ms := metrics.New(&cfg)
 
 	for _, test := range tests {
-		rewrites, err := Build(rewrites[test.rewrites], false, ms)
+		rewrites, err := Build(&rewrites, false, ms)
 		if err != nil {
 			t.Error(err)
 		}
@@ -74,7 +68,7 @@ func TestRewrites(t *testing.T) {
 
 		if !cmp.Equal(result, test.out) {
 			diff := cmp.Diff(test.out, result)
-			t.Errorf("Expected: %s\n received: %s\n rewrites: %s\n diff: %s\n", test.out, result, test.rewrites, diff)
+			t.Errorf("Expected: %s\n received: %s\n diff: %s\n", test.out, result, diff)
 		}
 	}
 

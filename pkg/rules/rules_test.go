@@ -97,11 +97,11 @@ func TestRules(t *testing.T) {
 	for tname, tt := range tests {
 		t.Run(tname, func(t *testing.T) {
 			ms := metrics.New(&cfg)
-			clusters, err := target.NewClusters(cfg, tt.ccls, zap.NewNop(), ms)
+			clusters, err := target.NewClusters(&cfg, &tt.ccls, zap.NewNop(), ms)
 			if err != nil {
 				t.Fatalf("building clusters failed: %v", err)
 			}
-			rs, err := Build(tt.crules, clusters, false, ms)
+			rs, err := Build(&tt.crules, clusters, false, ms)
 			if err != nil {
 				t.Fatalf("rules building failed: %v", err)
 			}

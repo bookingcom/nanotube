@@ -37,7 +37,7 @@ func (cls Clusters) Send(finish chan struct{}) chan struct{} {
 }
 
 // NewClusters builds new set of clusters from config.
-func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metrics.Prom) (Clusters, error) {
+func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *metrics.Prom) (Clusters, error) {
 	// TODO (grzkv): Add duplicate defense
 	cls := make(map[string]*Cluster)
 	var err error
@@ -48,10 +48,10 @@ func NewClusters(mainCfg conf.Main, cfg conf.Clusters, lg *zap.Logger, ms *metri
 		}
 		switch cc.Type {
 		case conf.JumpCluster:
-			cl, err = getJumpCluster(cl, cc, mainCfg, lg, ms)
+			cl, err = getJumpCluster(cl, cc, *mainCfg, lg, ms)
 		case conf.BlackholeCluster, conf.ToallCluster, conf.LB:
 			for _, h := range cc.Hosts {
-				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, mainCfg, h, lg, ms))
+				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, *mainCfg, h, lg, ms))
 			}
 		default:
 			return cls, fmt.Errorf("incorrect cluster type %s for cluster %s",

@@ -187,7 +187,7 @@ func TestContinueRuleProcessing(t *testing.T) {
 	},
 	}
 
-	rules, err := rules.Build(rulesConf, cls, false, ms)
+	rules, err := rules.Build(&rulesConf, cls, false, ms)
 	if err != nil {
 		t.Fatalf("rules building failed: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestStopRuleProcessing(t *testing.T) {
 	},
 	}
 
-	rules, err := rules.Build(rulesConf, cls, false, ms)
+	rules, err := rules.Build(&rulesConf, cls, false, ms)
 	if err != nil {
 		t.Fatalf("rules building failed: %v", err)
 	}
@@ -302,11 +302,11 @@ func TestRewriteNoCopy(t *testing.T) {
 	},
 	}
 
-	rules, err := rules.Build(rulesConf, cls, false, ms)
+	rules, err := rules.Build(&rulesConf, cls, false, ms)
 	if err != nil {
 		t.Fatalf("rules building failed: %v", err)
 	}
-	rewrites, err := rewrites.Build(rewritesConf, false, ms)
+	rewrites, err := rewrites.Build(&rewritesConf, false, ms)
 	if err != nil {
 		t.Fatalf("rewrite rules building failed: %v", err)
 	}
@@ -354,11 +354,11 @@ func TestRewriteCopy(t *testing.T) {
 	},
 	}
 
-	rules, err := rules.Build(rulesConf, cls, false, ms)
+	rules, err := rules.Build(&rulesConf, cls, false, ms)
 	if err != nil {
 		t.Fatalf("rules building failed: %v", err)
 	}
-	rewrites, err := rewrites.Build(rewritesConf, false, ms)
+	rewrites, err := rewrites.Build(&rewritesConf, false, ms)
 	if err != nil {
 		t.Fatalf("rewrite rules building failed: %v", err)
 	}

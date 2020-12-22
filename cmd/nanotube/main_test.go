@@ -46,9 +46,14 @@ func setup(t *testing.T) {
 
 	cfgPath := filepath.Join(fixturesPath, "config.toml")
 
-	cfg, clusters, rules, rewrites, ms, _, err := loadBuildRegister(cfgPath, lg)
+	cfg, clustersConf, rulesConf, rewritesConf, _, err := readConfigs(cfgPath)
 	if err != nil {
-		t.Fatalf("failed to build config: %v", err)
+		t.Fatalf("error reading and compiling config: %v", err)
+	}
+
+	clusters, rules, rewrites, ms, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, lg)
+	if err != nil {
+		t.Fatalf("error building pipline components: %v", err)
 	}
 
 	term := make(chan struct{})

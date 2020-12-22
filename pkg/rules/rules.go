@@ -35,7 +35,7 @@ type Rule struct {
 }
 
 // Build reads rules from config, compiles them.
-func Build(crs conf.Rules, clusters target.Clusters, measureRegex bool, ms *metrics.Prom) (Rules, error) {
+func Build(crs *conf.Rules, clusters target.Clusters, measureRegex bool, ms *metrics.Prom) (Rules, error) {
 	var rs Rules
 
 	rs.measureRegex = measureRegex

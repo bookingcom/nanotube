@@ -31,7 +31,7 @@ type Rewrite struct {
 }
 
 // Build reads rewrite rules from config, compiles them.
-func Build(crw conf.Rewrites, measureRegex bool, metrics *metrics.Prom) (Rewrites, error) {
+func Build(crw *conf.Rewrites, measureRegex bool, metrics *metrics.Prom) (Rewrites, error) {
 	var rw Rewrites
 
 	rw.measureRegex = measureRegex

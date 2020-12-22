@@ -53,10 +53,21 @@ type Connection struct {
 }
 
 // New or updated target connection from existing net.Conn
+// Requires Connection.Mutex lock
 func (c *Connection) New(conn net.Conn, bufSize int) {
 	c.Conn = conn
 	c.LastConnUse = time.Now()
 	c.W = bufio.NewWriterSize(conn, bufSize)
+}
+
+// Close the connection while mainaining correct internal state.
+// Overrides c.Conn.Close().
+// Use instead the default close.
+func (c *Connection) Close() error {
+	err := c.Conn.Close()
+	c.Conn = nil
+
+	return err
 }
 
 // String implements the Stringer interface.
@@ -64,7 +75,7 @@ func (h *Host) String() string {
 	return net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port)))
 }
 
-//NewHost build new host object from config
+// NewHost builds new host object from config.
 func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
@@ -162,8 +173,6 @@ func (h *Host) tryToSend(r *rec.Rec) {
 			// not retrying here, file descriptor may be lost
 			h.Lg.Error("error closing the connection", zap.Error(err))
 		}
-
-		h.Conn.Conn = nil
 	}
 }
 
@@ -184,7 +193,7 @@ func (h *Host) Flush(d time.Duration) {
 	}
 }
 
-// Requires Conn.Mux lock.
+// Requires h.Conn.Mutex lock.
 func (h *Host) tryToFlushIfNecessary() {
 	if h.Conn.W != nil && h.Conn.W.Buffered() != 0 {
 		if h.Conn.Conn == nil {
@@ -202,7 +211,7 @@ func (h *Host) tryToFlushIfNecessary() {
 	}
 }
 
-// Requires Conn.Mux lock.
+// Requires h.Conn.Mutex lock.
 // This function may take a long time.
 func (h *Host) keepConnectionFresh() {
 	// 0 value = don't refresh connections
@@ -220,7 +229,8 @@ func (h *Host) keepConnectionFresh() {
 	}
 }
 
-// Requires Conn.Mux lock.
+// Tries to connect as long as Host.Conn.Conn == nil.
+// Requires h.Conn.Mutex lock.
 // This function may take a long time.
 func (h *Host) ensureConnection() {
 	for reconnectWait, attemptCount := uint32(0), 1; h.Conn.Conn == nil; {
@@ -238,7 +248,7 @@ func (h *Host) ensureConnection() {
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
-// Requires Conn.Mux lock.
+// Requires h.Conn.Mutex lock.
 func (h *Host) Connect(attemptCount int) {
 	conn, err := h.getConnectionToHost()
 	if err != nil {
