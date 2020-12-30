@@ -11,6 +11,10 @@ install:
 	go install ./test/receiver
 	go install ./test/sender
 
+.PHONY: grpc
+grpc:
+	protoc --gofast_out=plugins=grpc:. pkg/linegrpc/line.proto
+
 .PHONY: test
 test:
 	go test -cover -race ./...
