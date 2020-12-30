@@ -32,6 +32,8 @@ func TestConfSimple(t *testing.T) {
 	WorkerPoolSize = 10
 	TCPOutBufSize = 11
 	TCPOutBufFlushPeriodSec = 3
+	GRPCKeepAlivePeriodSec = 4
+	GRPCKeepAlivePingTimeoutSec = 7
 	KeepAliveSec = 3
 	MaxHostReconnectPeriodMs = 777
 	HostReconnectPeriodDeltaMs = 13
@@ -61,6 +63,9 @@ func TestConfSimple(t *testing.T) {
 		KeepAliveSec:               3,
 		MaxHostReconnectPeriodMs:   777,
 		HostReconnectPeriodDeltaMs: 13,
+
+		GRPCKeepAlivePeriodSec:      4,
+		GRPCKeepAlivePingTimeoutSec: 7,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: false,

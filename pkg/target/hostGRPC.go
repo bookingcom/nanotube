@@ -11,6 +11,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/linegrpc"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	"go.uber.org/zap"
 )
@@ -31,14 +32,22 @@ func NewHostGRPC(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *z
 // Stream ...
 // TODO: Add TLS option
 func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
-	opts := []grpc.DialOption{
-		grpc.WithInsecure(),
-		grpc.WithBlock(),
-	}
 
 	// TODO: Add reconnection logic
-	// TODO: Add add keepalive options
-	conn, err := grpc.Dial(net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port))), opts...)
+
+	kacp := keepalive.ClientParameters{
+		// period to send pings regularly if there is no activity
+		Time: time.Duration(h.conf.GRPCKeepAlivePeriodSec) * time.Second,
+		// wait time for ping ack before considering the connection dead
+		Timeout: time.Duration(h.conf.GRPCKeepAlivePingTimeoutSec) * time.Second,
+		// send pings even without active streams
+		PermitWithoutStream: true,
+	}
+
+	conn, err := grpc.Dial(net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port))),
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+		grpc.WithKeepaliveParams(kacp))
 	if err != nil {
 		h.Lg.Warn("error dialing for connection", zap.Error(err))
 	}
