@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
-	"github.com/bookingcom/nanotube/pkg/linegrpc"
+	"github.com/bookingcom/nanotube/pkg/grpcstreamer"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -58,22 +58,20 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 		}
 	}()
 
-	client := linegrpc.NewMainClient(conn)
+	client := grpcstreamer.NewStreamerClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(h.conf.GRPCSendTimeoutSec)*time.Second)
 	defer cancel()
-	stream, err := client.Send(ctx)
+	stream, err := client.Stream(ctx)
 	if err != nil {
-		h.Lg.Warn("could not connect to ")
+		h.Lg.Warn("could not start streaming to target", zap.Error(err))
 	}
 
 	// TODO: Break streaming into chunks
 	counter := 0
 	for r := range h.Ch {
-		pbR := linegrpc.Rec{
-			Path: r.Path,
-			Val:  r.Val,
-			Time: r.Time,
+		pbR := grpcstreamer.Rec{
+			Rec: []byte(r.Serialize()),
 		}
 		err := stream.Send(&pbR)
 		if err != nil {

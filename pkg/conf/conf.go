@@ -19,11 +19,9 @@ type Main struct {
 	TargetPort uint16
 
 	// empty string not to listen
-	ListenTCP string
-	ListenUDP string
-
-	// 0 does not set buffer size
-	// UDPOSBufferSize uint32
+	ListenTCP  string
+	ListenUDP  string
+	ListenGRPC string
 
 	MainQueueSize uint64
 	HostQueueSize uint64
@@ -46,6 +44,7 @@ type Main struct {
 
 	GRPCKeepAlivePeriodSec      uint32
 	GRPCKeepAlivePingTimeoutSec uint32
+	GRPCSendTimeoutSec          uint32
 
 	NormalizeRecords  bool
 	LogSpecialRecords bool
@@ -86,8 +85,8 @@ func ReadMain(r io.Reader) (Main, error) {
 	if cfg.PprofPort != -1 && cfg.PprofPort == cfg.PromPort {
 		return cfg, errors.New("PromPort and PprofPort can't have the same value")
 	}
-	if cfg.ListenTCP == "" && cfg.ListenUDP == "" {
-		return cfg, errors.New("we don't listen neither on TCP nor on UDP")
+	if cfg.ListenTCP == "" && cfg.ListenUDP == "" && cfg.ListenGRPC == "" {
+		return cfg, errors.New("we don't listen one any port and protocol")
 	}
 	if cfg.SendTimeoutSec <= cfg.TCPOutBufFlushPeriodSec {
 		return cfg, errors.New("TCP send timeout is lesser or equal to TCP buffer flush period")
@@ -130,6 +129,7 @@ func MakeDefault() Main {
 
 		GRPCKeepAlivePeriodSec:      5,
 		GRPCKeepAlivePingTimeoutSec: 1,
+		GRPCSendTimeoutSec:          5,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: false,

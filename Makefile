@@ -13,7 +13,7 @@ install:
 
 .PHONY: grpc
 grpc:
-	protoc --gofast_out=plugins=grpc:. pkg/linegrpc/line.proto
+	protoc --gofast_out=plugins=grpc:. pkg/grpcstreamer/streamer.proto
 
 .PHONY: test
 test:

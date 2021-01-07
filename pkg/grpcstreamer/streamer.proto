@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option go_package = "grpcstreamer";
+
+service Streamer {
+    rpc Stream(stream Rec) returns (Result) {}
+}
+
+// TODO: Remove
+// This is a temporary version of the record that completely repeats existing line proto
+message Rec {
+    bytes rec = 1;
+}
+
+// TODO: Move to parsed version
+// message Rec {
+//     bytes path = 1;
+//     double val = 2;
+//     uint32 time = 3;
+// }
+
+message Result {
+    uint32 receivedCount = 1;
+    uint32 errorCount = 2;
+}
