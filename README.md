@@ -30,28 +30,6 @@ Command line options:
     Print version info.
 ```
 
-### Running with docker-compose
-
-Run the full setup including input stack `nanotube` and `go-carbon` with:
-
-```
-docker-compose up
-```
-
-You can feed in sample data with:
-
-```
-echo "test1.test 5 $(date +%s)" | nc localhost 2003
-```
-
-Get it back with:
-
-```
-seq 8080 8081 | xargs -I {port} curl "localhost:{port}/render/?target=test1.test&format=json&from=$(( $(date +%s) - 300 ))&until=$(date +%s)"
-```
-
-To test the second store (alone or in conjunction) change the metric path to `test2.test` or `test1.test2`.
-
 ### Go version
 
 The only supported Go version is `1.15`.
