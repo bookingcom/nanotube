@@ -67,7 +67,7 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 		lg.Info("Launch: Started GRPC server.", zap.String("ListenGRPC", cfg.ListenGRPC))
 
 		connWG.Add(1)
-		go listenGRPC(l, queue, stop, &connWG, ms, lg)
+		go listenGRPC(l, queue, stop, &connWG, cfg.GRPCTracing, ms, lg)
 	}
 
 	go func() {

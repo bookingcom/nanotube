@@ -11,10 +11,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-// TODO: Add HTTP tracing https://blog.golang.org/http-tracing
+// TODO: Add defense against open streams that are never used.
 
 // Blocking. Returns when server returns.
-func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, trace bool, ms *metrics.Prom, lg *zap.Logger) {
+	// TODO: How much overhead does enabling the tracing contribute?
+	grpc.EnableTracing = trace
+
 	// TODO: Check for optimal server options
 	s := streamerServer{
 		queue: queue,

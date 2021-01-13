@@ -24,6 +24,8 @@ type HostGRPC struct {
 // NewHostGRPC builds new host object from config.
 // TODO: Add logger tag to specify protocol
 func NewHostGRPC(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *HostGRPC {
+	grpc.EnableTracing = true
+
 	h := HostGRPC{*NewHost(clusterName, mainCfg, hostCfg, lg, ms)}
 
 	return &h
@@ -36,7 +38,7 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 	// TODO: Add reconnection logic
 
 	kacp := keepalive.ClientParameters{
-		// period to send pings regularly if there is no activity
+		// period to send HTTP2 pings if there is no activity
 		Time: time.Duration(h.conf.GRPCKeepAlivePeriodSec) * time.Second,
 		// wait time for ping ack before considering the connection dead
 		Timeout: time.Duration(h.conf.GRPCKeepAlivePingTimeoutSec) * time.Second,

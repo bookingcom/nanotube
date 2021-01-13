@@ -63,6 +63,16 @@ TCPOutConnectionRefreshPeriodSec = 0
 
 # TODO: Add GRPC options
 
+# GRPC target (client) params
+# GRPC HTTP2 keepalive ping period https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
+GRPCKeepAlivePeriodSec = 5
+# GRPC ping timeout period
+GRPCKeepAlivePingTimeoutSec = 1
+# Wait time for ping ack before considering the connection dead
+GRPCSendTimeoutSec = 5
+
+GRPCTracing = true
+
 # Maximum reconnection period to target host
 MaxHostReconnectPeriodMs = 5000
 # Parameter for exponential backoffs during reconnects

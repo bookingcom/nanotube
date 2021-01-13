@@ -42,9 +42,15 @@ type Main struct {
 	// 0 value turns off connection refresh
 	TCPOutConnectionRefreshPeriodSec uint32
 
+	// GRPC target (client) params
 	GRPCKeepAlivePeriodSec      uint32
 	GRPCKeepAlivePingTimeoutSec uint32
 	GRPCSendTimeoutSec          uint32
+
+	// GRPC listener (server) params
+	// TODO: GRPC server params
+
+	GRPCTracing bool
 
 	NormalizeRecords  bool
 	LogSpecialRecords bool
@@ -130,6 +136,8 @@ func MakeDefault() Main {
 		GRPCKeepAlivePeriodSec:      5,
 		GRPCKeepAlivePingTimeoutSec: 1,
 		GRPCSendTimeoutSec:          5,
+
+		GRPCTracing: true,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: false,
