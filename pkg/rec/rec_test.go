@@ -180,10 +180,10 @@ func TestRec(t *testing.T) {
 				} else {
 					if res == nil {
 						t.Error("unexpectected nil value of parsed rec")
-					}
-
-					if diff := cmp.Diff(*res, tst.res, opt); diff != "" {
-						t.Errorf("diff in rec vals:\n%s", diff)
+					} else {
+						if diff := cmp.Diff(*res, tst.res, opt); diff != "" {
+							t.Errorf("diff in rec vals:\n%s", diff)
+						}
 					}
 				}
 			}
