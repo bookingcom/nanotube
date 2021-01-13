@@ -1,7 +1,11 @@
 .PHONY: all
-all:
+all: build
+
+.PHONY: build
+build:
 	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
+.PHONY: race
 race:
 	go build -race -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
