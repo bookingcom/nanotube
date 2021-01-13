@@ -39,9 +39,9 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	kacp := keepalive.ClientParameters{
 		// period to send HTTP2 pings if there is no activity
-		Time: time.Duration(h.conf.GRPCKeepAlivePeriodSec) * time.Second,
+		Time: time.Duration(h.conf.GRPCOutKeepAlivePeriodSec) * time.Second,
 		// wait time for ping ack before considering the connection dead
-		Timeout: time.Duration(h.conf.GRPCKeepAlivePingTimeoutSec) * time.Second,
+		Timeout: time.Duration(h.conf.GRPCOutKeepAlivePingTimeoutSec) * time.Second,
 		// send pings even without active streams
 		PermitWithoutStream: true,
 	}
@@ -62,7 +62,7 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	client := grpcstreamer.NewStreamerClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(h.conf.GRPCSendTimeoutSec)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(h.conf.GRPCOutSendTimeoutSec)*time.Second)
 	defer cancel()
 	stream, err := client.Stream(ctx)
 	if err != nil {

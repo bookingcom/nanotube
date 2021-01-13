@@ -65,11 +65,11 @@ TCPOutConnectionRefreshPeriodSec = 0
 
 # GRPC target (client) params
 # GRPC HTTP2 keepalive ping period https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
-GRPCKeepAlivePeriodSec = 5
+GRPCOutKeepAlivePeriodSec = 5
 # GRPC ping timeout period
-GRPCKeepAlivePingTimeoutSec = 1
+GRPCOutKeepAlivePingTimeoutSec = 1
 # Wait time for ping ack before considering the connection dead
-GRPCSendTimeoutSec = 5
+GRPCOutSendTimeoutSec = 5
 
 GRPCTracing = true
 

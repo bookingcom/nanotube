@@ -4,21 +4,20 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
+	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/grpcstreamer"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
-// TODO: Add defense against open streams that are never used.
-
 // Blocking. Returns when server returns.
-func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, trace bool, ms *metrics.Prom, lg *zap.Logger) {
-	// TODO: How much overhead does enabling the tracing contribute?
-	grpc.EnableTracing = trace
+func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+	grpc.EnableTracing = cfg.GRPCTracing
 
-	// TODO: Check for optimal server options
 	s := streamerServer{
 		queue: queue,
 		stop:  stop,
@@ -26,7 +25,14 @@ func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG 
 		lg: lg,
 		ms: ms,
 	}
-	gRPCServer := grpc.NewServer()
+	gRPCServer := grpc.NewServer(
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			MaxConnectionIdle:     time.Duration(cfg.GRPCListenMaxConnectionIdleSec) * time.Second,
+			MaxConnectionAge:      time.Duration(cfg.GRPCListenMaxConnectionAgeSec) * time.Second,
+			MaxConnectionAgeGrace: time.Duration(cfg.GRPCListenMaxConnectionIdleSec) * time.Second,
+			Time:                  time.Duration(cfg.GRPCListenMaxConnectionIdleSec) * time.Second,
+			Timeout:               time.Duration(cfg.GRPCListenMaxConnectionIdleSec) * time.Second,
+		}))
 	grpcstreamer.RegisterStreamerServer(gRPCServer, &s)
 	err := gRPCServer.Serve(l)
 	if err != nil {
@@ -63,8 +69,7 @@ loop:
 		rec, err := s.Recv()
 
 		if err == io.EOF {
-			server.lg.Info("got EOF")
-			// TODO: Do we have to do something special to re-start listening?
+			server.lg.Info("got EOF") // TODO: Cleanup
 			err := s.SendAndClose(&res)
 			if err != nil {
 				server.lg.Error("error when sending a response to stream", zap.Error(err))
@@ -76,8 +81,7 @@ loop:
 			// TODO: Is it ok to continue after an error?
 			continue
 		}
-		// TODO: Cleanup
-		server.lg.Info("got record", zap.ByteString("rec", rec.Rec))
+		server.lg.Info("got record", zap.ByteString("rec", rec.Rec)) // TODO: Cleanup
 
 		res.ReceivedCount++
 		server.queue <- string(rec.Rec)

@@ -43,12 +43,16 @@ type Main struct {
 	TCPOutConnectionRefreshPeriodSec uint32
 
 	// GRPC target (client) params
-	GRPCKeepAlivePeriodSec      uint32
-	GRPCKeepAlivePingTimeoutSec uint32
-	GRPCSendTimeoutSec          uint32
+	GRPCOutKeepAlivePeriodSec      uint32
+	GRPCOutKeepAlivePingTimeoutSec uint32
+	GRPCOutSendTimeoutSec          uint32
 
 	// GRPC listener (server) params
-	// TODO: GRPC server params
+	GRPCListenMaxConnectionIdleSec     uint32
+	GRPCListenMaxConnectionAgeSec      uint32
+	GRPCListenMaxConnectionAgeGraceSec uint32
+	GRPCListenTimeSec                  uint32
+	GRPCListenTimeoutSec               uint32
 
 	GRPCTracing bool
 
@@ -133,9 +137,15 @@ func MakeDefault() Main {
 		TCPOutBufFlushPeriodSec:          2,
 		TCPOutConnectionRefreshPeriodSec: 0,
 
-		GRPCKeepAlivePeriodSec:      5,
-		GRPCKeepAlivePingTimeoutSec: 1,
-		GRPCSendTimeoutSec:          5,
+		GRPCOutKeepAlivePeriodSec:      5,
+		GRPCOutKeepAlivePingTimeoutSec: 1,
+		GRPCOutSendTimeoutSec:          20,
+
+		GRPCListenMaxConnectionIdleSec:     1200,
+		GRPCListenMaxConnectionAgeSec:      7200,
+		GRPCListenMaxConnectionAgeGraceSec: 60,
+		GRPCListenTimeSec:                  600,
+		GRPCListenTimeoutSec:               20,
 
 		GRPCTracing: true,
 
