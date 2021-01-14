@@ -70,6 +70,10 @@ GRPCOutKeepAlivePeriodSec = 5
 GRPCOutKeepAlivePingTimeoutSec = 1
 # Wait time for ping ack before considering the connection dead
 GRPCOutSendTimeoutSec = 5
+# Max connect backoff period https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md
+GRPCOutBackoffMaxDelaySec = 30
+# Min time for the connection to complete https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md
+GRPCOutMinConnectTimeoutSec = 5
 
 GRPCTracing = true
 

@@ -11,6 +11,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/grpcstreamer"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/keepalive"
 
 	"go.uber.org/zap"
@@ -32,11 +33,7 @@ func NewHostGRPC(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *z
 }
 
 // Stream ...
-// TODO: Add TLS option
 func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
-
-	// TODO: Add reconnection logic
-
 	kacp := keepalive.ClientParameters{
 		// period to send HTTP2 pings if there is no activity
 		Time: time.Duration(h.conf.GRPCOutKeepAlivePeriodSec) * time.Second,
@@ -46,10 +43,22 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 		PermitWithoutStream: true,
 	}
 
+	// TODO: Mainain correct live status based on gRPC connection health.
+
+	// TODO: Test re-connection action.
+
+	// Dial does not timeout. This is intentional since gRPC will keep trying. (check that)
 	conn, err := grpc.Dial(net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port))),
 		grpc.WithInsecure(),
 		grpc.WithBlock(),
-		grpc.WithKeepaliveParams(kacp))
+		grpc.WithKeepaliveParams(kacp),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				MaxDelay: time.Duration(h.conf.GRPCOutBackoffMaxDelaySec) * time.Second,
+			},
+			MinConnectTimeout: time.Duration(h.conf.GRPCOutMinConnectTimeoutSec) * time.Second,
+		}),
+	)
 	if err != nil {
 		h.Lg.Warn("error dialing for connection", zap.Error(err))
 	}
@@ -69,7 +78,6 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 		h.Lg.Warn("could not start streaming to target", zap.Error(err))
 	}
 
-	// TODO: Break streaming into chunks
 	counter := 0
 	for r := range h.Ch {
 		pbR := grpcstreamer.Rec{
