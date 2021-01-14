@@ -14,5 +14,5 @@ type HostTCP struct {
 
 // NewHostTCP ...
 func NewHostTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *HostTCP {
-	return &HostTCP{*NewHost(clusterName, mainCfg, hostCfg, lg, ms)}
+	return &HostTCP{*ConstructHost(clusterName, mainCfg, hostCfg, lg, ms)}
 }

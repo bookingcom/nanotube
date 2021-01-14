@@ -75,8 +75,16 @@ func (h *Host) String() string {
 	return net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port)))
 }
 
-// NewHost builds new host object from config.
-func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
+// NewHost builds a target host of appropriate type doing the polymorphic construction.
+func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) Target {
+	if hostCfg.GRPC {
+		return NewHostGRPC(clusterName, mainCfg, hostCfg, lg, ms)
+	}
+	return NewHostTCP(clusterName, mainCfg, hostCfg, lg, ms)
+}
+
+// ConstructHost builds new host object from config.
+func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
 		targetPort = hostCfg.Port

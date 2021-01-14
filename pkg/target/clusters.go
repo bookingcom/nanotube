@@ -51,11 +51,7 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 			cl, err = getJumpCluster(cl, cc, *mainCfg, lg, ms)
 		case conf.BlackholeCluster, conf.ToallCluster, conf.LB:
 			for _, h := range cc.Hosts {
-				if h.GRPC {
-					cl.Hosts = append(cl.Hosts, NewHostGRPC(cc.Name, *mainCfg, h, lg, ms))
-				} else {
-					cl.Hosts = append(cl.Hosts, NewHostTCP(cc.Name, *mainCfg, h, lg, ms))
-				}
+				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, *mainCfg, h, lg, ms))
 			}
 		default:
 			return cls, fmt.Errorf("incorrect cluster type %s for cluster %s",
