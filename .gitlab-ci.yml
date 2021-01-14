@@ -1,7 +1,36 @@
-image: docker.artifactory.booking.com/projects/golang/golang-ci:1.14
 
 stages:
+  - validate
   - package
+
+default:
+  image: docker.artifactory.booking.com/projects/golang/golang-ci:1.15
+
+lint:
+  stage: validate
+  script:
+  - make lint
+  tags:
+  - docker
+
+# NOTE: This is a throw-away build; the artifact is not used anywhere.
+build:
+  tags:
+  - docker
+  stage: validate
+  script:
+  - make build
+
+
+package_nanotube:
+  stage: package
+  tags: 
+    - docker
+  only:
+    - tags
+    - /^nanotube-\d+-\d+$/
+  script:
+    - .build/gitlab-package.sh
 
 package_subnanotube:
   stage: package
@@ -9,9 +38,6 @@ package_subnanotube:
     - docker
   only:
     - tags
-    # tag should look like this
     - /^nanotube-\d+-\d+$/
-  # except:
-  #   - branches
   script:
-    - ./.build/package-subnt.sh
+    - .build/gitlab-package.sh subnanotube
