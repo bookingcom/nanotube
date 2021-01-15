@@ -21,23 +21,12 @@ build:
   script:
   - make build
 
-
-package_nanotube:
-  stage: package
-  tags: 
-    - docker
-  only:
-    - tags
-    - /^nanotube-\d+-\d+$/
-  script:
-    - .build/gitlab-package.sh
-
 package_subnanotube:
   stage: package
   tags: 
     - docker
   only:
     - tags
-    - /^nanotube-\d+-\d+$/
+    - /^subnanotube-\d+-\d+$/
   script:
-    - .build/gitlab-package.sh subnanotube
+    - .gitlab-ci/gitlab-package.sh subnanotube
