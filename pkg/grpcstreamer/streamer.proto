@@ -21,5 +21,4 @@ message Rec {
 
 message Result {
     uint32 receivedCount = 1;
-    uint32 errorCount = 2;
 }

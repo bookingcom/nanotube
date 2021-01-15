@@ -34,6 +34,8 @@ func NewHostGRPC(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *z
 
 // Stream ...
 func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	kacp := keepalive.ClientParameters{
 		// period to send HTTP2 pings if there is no activity
 		Time: time.Duration(h.conf.GRPCOutKeepAlivePeriodSec) * time.Second,
@@ -71,7 +73,7 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	client := grpcstreamer.NewStreamerClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(h.conf.GRPCOutSendTimeoutSec)*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stream, err := client.Stream(ctx)
 	if err != nil {
@@ -90,7 +92,6 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 		counter++
 	}
 
-	// TODO: This will be reached when host is stopped
 	summary, err := stream.CloseAndRecv()
 	if err != nil {
 		h.Lg.Error("error closing the connection to target", zap.Error(err))

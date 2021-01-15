@@ -76,10 +76,8 @@ loop:
 			}
 			return nil
 		} else if err != nil {
-			res.ErrorCount++
 			server.lg.Error("error receiving record", zap.Error(err))
-			// TODO: Is it ok to continue after an error?
-			continue
+			break // gRPC docs: "On any non-EOF error, the stream is aborted and the error contains the RPC status."
 		}
 		server.lg.Info("got record", zap.ByteString("rec", rec.Rec)) // TODO: Cleanup
 

@@ -45,9 +45,9 @@ type Main struct {
 	// GRPC target (client) params
 	GRPCOutKeepAlivePeriodSec      uint32
 	GRPCOutKeepAlivePingTimeoutSec uint32
-	GRPCOutSendTimeoutSec          uint32
-	GRPCOutBackoffMaxDelaySec      uint32
-	GRPCOutMinConnectTimeoutSec    uint32
+	//	GRPCOutSendTimeoutSec          uint32
+	GRPCOutBackoffMaxDelaySec   uint32
+	GRPCOutMinConnectTimeoutSec uint32
 
 	// GRPC listener (server) params
 	GRPCListenMaxConnectionIdleSec     uint32
@@ -141,9 +141,9 @@ func MakeDefault() Main {
 
 		GRPCOutKeepAlivePeriodSec:      5,
 		GRPCOutKeepAlivePingTimeoutSec: 1,
-		GRPCOutSendTimeoutSec:          20,
-		GRPCOutBackoffMaxDelaySec:      30,
-		GRPCOutMinConnectTimeoutSec:    5,
+		//		GRPCOutSendTimeoutSec:          20,
+		GRPCOutBackoffMaxDelaySec:   30,
+		GRPCOutMinConnectTimeoutSec: 5,
 
 		GRPCListenMaxConnectionIdleSec:     1200,
 		GRPCListenMaxConnectionAgeSec:      7200,
