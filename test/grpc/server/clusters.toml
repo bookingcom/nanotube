@@ -3,5 +3,5 @@ name = 'local0'
 type = 'jump' # cluster type defines routing inside a cluster
     [[cluster.hosts]]
     name = 'localhost' # FQDN or IP of the host
-    port = 8001 # optional, overrides setting in main config
+    port = 9001 # optional, overrides setting in main config
     index = 0 # index in the hash ring 

@@ -10,12 +10,12 @@ TargetPort = 2004
 # Setting this to ip:port will enable TCP listening on specified address.
 # Use empty string to disable TCP listening.
 # Use empty ip to listen on all addresses.
-ListenTCP = ""
+ListenTCP = ":2003"
 # Setting this to ip:port will enable UDP listening on specified address.
 # Use the empty string to disable UDP listening.
 # Use the empty IP to listen on all addresses.
 ListenUDP = ""
-ListenGRPC = ":2003"
+ListenGRPC = ""
 
 # Size of OS buffer for reading from UDP connction. Buffer not set if zero.
 UDPOSBufferSize = 0
