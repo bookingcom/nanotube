@@ -1,23 +1,21 @@
 syntax = "proto3";
 
+import "pkg/opentelemetry/proto/metrics/v1/metrics.proto";
+
 option go_package = "grpcstreamer";
 
+// TODO: Don't forget nanosec-sec conversion!!!
+
+// Only a small sub-set of OpenTelemtery metric is being used.
+// * data is always a DoubleGauge
+// * DoubleGauge always has only one point!
+// * data mapping:
+//   * path = Metric.name
+//   * value = DoubleDataPoint.value
+//   * time = DoubleDataPoint.time_unix_nano
 service Streamer {
-    rpc Stream(stream Rec) returns (Result) {}
+    rpc Stream(stream opentelemetry.proto.metrics.v1.Metric) returns (Result) {}
 }
-
-// TODO: Remove
-// This is a temporary version of the record that completely repeats existing line proto
-message Rec {
-    bytes rec = 1;
-}
-
-// TODO: Move to parsed version
-// message Rec {
-//     bytes path = 1;
-//     double val = 2;
-//     uint32 time = 3;
-// }
 
 message Result {
     uint32 receivedCount = 1;

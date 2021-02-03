@@ -6,6 +6,7 @@ package grpcstreamer
 import (
 	context "context"
 	fmt "fmt"
+	v1 "github.com/bookingcom/nanotube/pkg/opentelemetry/proto/metrics/v1"
 	proto "github.com/golang/protobuf/proto"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -26,55 +27,6 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
-// TODO: Remove
-// This is a temporary version of the record that completely repeats existing line proto
-type Rec struct {
-	Rec                  []byte   `protobuf:"bytes,1,opt,name=rec,proto3" json:"rec,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *Rec) Reset()         { *m = Rec{} }
-func (m *Rec) String() string { return proto.CompactTextString(m) }
-func (*Rec) ProtoMessage()    {}
-func (*Rec) Descriptor() ([]byte, []int) {
-	return fileDescriptor_649f0c502c082470, []int{0}
-}
-func (m *Rec) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *Rec) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_Rec.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *Rec) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Rec.Merge(m, src)
-}
-func (m *Rec) XXX_Size() int {
-	return m.Size()
-}
-func (m *Rec) XXX_DiscardUnknown() {
-	xxx_messageInfo_Rec.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_Rec proto.InternalMessageInfo
-
-func (m *Rec) GetRec() []byte {
-	if m != nil {
-		return m.Rec
-	}
-	return nil
-}
-
 type Result struct {
 	ReceivedCount        uint32   `protobuf:"varint,1,opt,name=receivedCount,proto3" json:"receivedCount,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -86,7 +38,7 @@ func (m *Result) Reset()         { *m = Result{} }
 func (m *Result) String() string { return proto.CompactTextString(m) }
 func (*Result) ProtoMessage()    {}
 func (*Result) Descriptor() ([]byte, []int) {
-	return fileDescriptor_649f0c502c082470, []int{1}
+	return fileDescriptor_649f0c502c082470, []int{0}
 }
 func (m *Result) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -123,25 +75,25 @@ func (m *Result) GetReceivedCount() uint32 {
 }
 
 func init() {
-	proto.RegisterType((*Rec)(nil), "Rec")
 	proto.RegisterType((*Result)(nil), "Result")
 }
 
 func init() { proto.RegisterFile("pkg/grpcstreamer/streamer.proto", fileDescriptor_649f0c502c082470) }
 
 var fileDescriptor_649f0c502c082470 = []byte{
-	// 163 bytes of a gzipped FileDescriptorProto
+	// 186 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x92, 0x2f, 0xc8, 0x4e, 0xd7,
 	0x4f, 0x2f, 0x2a, 0x48, 0x2e, 0x2e, 0x29, 0x4a, 0x4d, 0xcc, 0x4d, 0x2d, 0xd2, 0x87, 0x31, 0xf4,
-	0x0a, 0x8a, 0xf2, 0x4b, 0xf2, 0x95, 0xc4, 0xb9, 0x98, 0x83, 0x52, 0x93, 0x85, 0x04, 0xb8, 0x98,
-	0x8b, 0x52, 0x93, 0x25, 0x18, 0x15, 0x18, 0x35, 0x78, 0x82, 0x40, 0x4c, 0x25, 0x3d, 0x2e, 0xb6,
-	0xa0, 0xd4, 0xe2, 0xd2, 0x9c, 0x12, 0x21, 0x15, 0x2e, 0xde, 0xa2, 0xd4, 0xe4, 0xd4, 0xcc, 0xb2,
-	0xd4, 0x14, 0xe7, 0xfc, 0xd2, 0xbc, 0x12, 0xb0, 0x2a, 0xde, 0x20, 0x54, 0x41, 0x23, 0x75, 0x2e,
-	0x8e, 0x60, 0xa8, 0xd1, 0x42, 0xd2, 0x5c, 0x6c, 0x10, 0xb6, 0x10, 0x8b, 0x5e, 0x50, 0x6a, 0xb2,
-	0x14, 0xbb, 0x1e, 0xc4, 0x28, 0x25, 0x06, 0x0d, 0x46, 0x27, 0xb9, 0x13, 0x8f, 0xe4, 0x18, 0x2f,
-	0x3c, 0x92, 0x63, 0x7c, 0xf0, 0x48, 0x8e, 0x71, 0xc6, 0x63, 0x39, 0x86, 0x28, 0x1e, 0x64, 0x07,
-	0x26, 0xb1, 0x81, 0x1d, 0x66, 0x0c, 0x08, 0x00, 0x00, 0xff, 0xff, 0xdc, 0x44, 0x80, 0xc2, 0xbb,
-	0x00, 0x00, 0x00,
+	0x0a, 0x8a, 0xf2, 0x4b, 0xf2, 0xa5, 0x0c, 0x40, 0x0a, 0xf2, 0x0b, 0x52, 0xf3, 0x4a, 0x52, 0x73,
+	0x52, 0x73, 0x53, 0x4b, 0x8a, 0x2a, 0xf5, 0xc1, 0x12, 0xfa, 0x20, 0x76, 0x66, 0x72, 0xb1, 0x7e,
+	0x99, 0x21, 0x8c, 0x09, 0xd1, 0xa1, 0xa4, 0xc7, 0xc5, 0x16, 0x94, 0x5a, 0x5c, 0x9a, 0x53, 0x22,
+	0xa4, 0xc2, 0xc5, 0x5b, 0x94, 0x9a, 0x9c, 0x9a, 0x59, 0x96, 0x9a, 0xe2, 0x9c, 0x5f, 0x9a, 0x57,
+	0x22, 0xc1, 0xa8, 0xc0, 0xa8, 0xc1, 0x1b, 0x84, 0x2a, 0x68, 0xe4, 0xc9, 0xc5, 0x11, 0x0c, 0xb5,
+	0x53, 0xc8, 0x96, 0x8b, 0x0d, 0xc2, 0x16, 0x52, 0xd3, 0x43, 0xb1, 0x14, 0x62, 0xb6, 0x1e, 0xcc,
+	0xa6, 0x32, 0x43, 0x3d, 0x5f, 0x30, 0x53, 0x8a, 0x5d, 0x0f, 0x62, 0x99, 0x12, 0x83, 0x06, 0xa3,
+	0x93, 0xdc, 0x89, 0x47, 0x72, 0x8c, 0x17, 0x1e, 0xc9, 0x31, 0x3e, 0x78, 0x24, 0xc7, 0x38, 0xe3,
+	0xb1, 0x1c, 0x43, 0x14, 0x0f, 0xb2, 0xdf, 0x92, 0xd8, 0xc0, 0xa6, 0x18, 0x03, 0x02, 0x00, 0x00,
+	0xff, 0xff, 0x71, 0x73, 0x86, 0x82, 0xf6, 0x00, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -177,7 +129,7 @@ func (c *streamerClient) Stream(ctx context.Context, opts ...grpc.CallOption) (S
 }
 
 type Streamer_StreamClient interface {
-	Send(*Rec) error
+	Send(*v1.Metric) error
 	CloseAndRecv() (*Result, error)
 	grpc.ClientStream
 }
@@ -186,7 +138,7 @@ type streamerStreamClient struct {
 	grpc.ClientStream
 }
 
-func (x *streamerStreamClient) Send(m *Rec) error {
+func (x *streamerStreamClient) Send(m *v1.Metric) error {
 	return x.ClientStream.SendMsg(m)
 }
 
@@ -224,7 +176,7 @@ func _Streamer_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
 
 type Streamer_StreamServer interface {
 	SendAndClose(*Result) error
-	Recv() (*Rec, error)
+	Recv() (*v1.Metric, error)
 	grpc.ServerStream
 }
 
@@ -236,8 +188,8 @@ func (x *streamerStreamServer) SendAndClose(m *Result) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *streamerStreamServer) Recv() (*Rec, error) {
-	m := new(Rec)
+func (x *streamerStreamServer) Recv() (*v1.Metric, error) {
+	m := new(v1.Metric)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -256,40 +208,6 @@ var _Streamer_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Metadata: "pkg/grpcstreamer/streamer.proto",
-}
-
-func (m *Rec) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *Rec) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *Rec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	if len(m.Rec) > 0 {
-		i -= len(m.Rec)
-		copy(dAtA[i:], m.Rec)
-		i = encodeVarintStreamer(dAtA, i, uint64(len(m.Rec)))
-		i--
-		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
 }
 
 func (m *Result) Marshal() (dAtA []byte, err error) {
@@ -335,22 +253,6 @@ func encodeVarintStreamer(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *Rec) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.Rec)
-	if l > 0 {
-		n += 1 + l + sovStreamer(uint64(l))
-	}
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
 func (m *Result) Size() (n int) {
 	if m == nil {
 		return 0
@@ -371,94 +273,6 @@ func sovStreamer(x uint64) (n int) {
 }
 func sozStreamer(x uint64) (n int) {
 	return sovStreamer(uint64((x << 1) ^ uint64((int64(x) >> 63))))
-}
-func (m *Rec) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowStreamer
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: Rec: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: Rec: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Rec", wireType)
-			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowStreamer
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return ErrInvalidLengthStreamer
-			}
-			postIndex := iNdEx + byteLen
-			if postIndex < 0 {
-				return ErrInvalidLengthStreamer
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Rec = append(m.Rec[:0], dAtA[iNdEx:postIndex]...)
-			if m.Rec == nil {
-				m.Rec = []byte{}
-			}
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipStreamer(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if skippy < 0 {
-				return ErrInvalidLengthStreamer
-			}
-			if (iNdEx + skippy) < 0 {
-				return ErrInvalidLengthStreamer
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
 }
 func (m *Result) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
