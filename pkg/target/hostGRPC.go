@@ -10,6 +10,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/grpcstreamer"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	otmetrics "github.com/bookingcom/nanotube/pkg/opentelemetry/proto/metrics/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/keepalive"
@@ -82,8 +83,18 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	counter := 0
 	for r := range h.Ch {
-		pbR := grpcstreamer.Rec{
-			Rec: []byte(r.Serialize()),
+		pbR := otmetrics.Metric{
+			Name: r.Path,
+			Data: &otmetrics.Metric_DoubleGauge{
+				DoubleGauge: &otmetrics.DoubleGauge{
+					DataPoints: [](*otmetrics.DoubleDataPoint){
+						&otmetrics.DoubleDataPoint{
+							TimeUnixNano: uint64(r.Time) * 1000 * 1000 * 1000,
+							Value:        r.Val,
+						},
+					},
+				},
+			},
 		}
 		err := stream.Send(&pbR)
 		if err != nil {

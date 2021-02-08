@@ -9,6 +9,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/grpcstreamer"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rec"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -43,6 +44,8 @@ func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG 
 }
 
 type streamerServer struct {
+	grpcstreamer.UnimplementedStreamerServer
+
 	queue chan string
 	stop  <-chan struct{}
 
@@ -66,7 +69,7 @@ loop:
 			break loop
 		default:
 		}
-		rec, err := s.Recv()
+		m, err := s.Recv()
 
 		if err == io.EOF {
 			server.lg.Info("got EOF") // TODO: Cleanup
@@ -79,10 +82,15 @@ loop:
 			server.lg.Error("error receiving record", zap.Error(err))
 			break // gRPC docs: "On any non-EOF error, the stream is aborted and the error contains the RPC status."
 		}
-		server.lg.Info("got record", zap.ByteString("rec", rec.Rec)) // TODO: Cleanup
 
 		res.ReceivedCount++
-		server.queue <- string(rec.Rec)
+		r := rec.Rec{
+			Path: m.Name,
+			Time: uint32(m.GetDoubleGauge().DataPoints[0].TimeUnixNano / 1000 / 1000 / 1000), // ns -> sec
+			Val:  m.GetDoubleGauge().DataPoints[0].Value,
+		}
+		server.lg.Info("got record", zap.String("rec", r.Serialize())) // TODO: Cleanup
+		server.queue <- r.Serialize()                                  // TODO: Stop using strings, move to parsed structures
 	}
 
 	return nil

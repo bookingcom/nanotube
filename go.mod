@@ -29,4 +29,5 @@ require (
 	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
 	golang.org/x/tools v0.0.0-20201001191422-af0a1b5f3ca7 // indirect
 	google.golang.org/grpc v1.34.0
+	google.golang.org/protobuf v1.25.0
 )

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "pkg/opentelemetry/proto/metrics/v1/metrics.proto";
 
-option go_package = "grpcstreamer";
+option go_package = "pkg/grpcstreamer";
 
 // TODO: Don't forget nanosec-sec conversion!!!
 
