@@ -1,5 +1,12 @@
+
+# a phony target to always have go check and maybe rebuild nanotube
 .PHONY: all
 all: build
+
+# a file target ensuring nanotube is there
+# no rebuilding if present (useful for tests)
+nanotube:
+	go build -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
 .PHONY: build
 build:
@@ -26,6 +33,10 @@ grpc:
 test:
 	go test -cover -race ./...
 
+.PHONY: end-to-end-test
+end-to-end-test: nanotube test/sender/sender test/receiver/receiver
+	cd test && ./run.sh
+
 .PHONY: lint
 lint:
 	golangci-lint run -E golint -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false ./...
@@ -39,9 +50,15 @@ check: all test lint
 
 .PHONY: clean
 clean:
-	rm -f nanotube
+	rm -f nanotube test/sender/sender test/receiver/receiver
 
 .PHONY: fuzz
 fuzz:
 	go-fuzz-build -o test/fuzzing/pkg-rec.zip ./pkg/rec
 	go-fuzz -workdir=test/fuzzing -bin=test/fuzzing/pkg-rec.zip
+
+test/sender/sender: test/sender/sender.go
+	go build -o $@ $<
+
+test/receiver/receiver: test/receiver/receiver.go
+	go build -o $@ $<
