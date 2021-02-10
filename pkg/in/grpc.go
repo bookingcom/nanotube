@@ -1,6 +1,7 @@
 package in
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -89,8 +90,8 @@ loop:
 			Time: uint32(m.GetDoubleGauge().DataPoints[0].TimeUnixNano / 1000 / 1000 / 1000), // ns -> sec
 			Val:  m.GetDoubleGauge().DataPoints[0].Value,
 		}
-		server.lg.Info("got record", zap.String("rec", r.Serialize())) // TODO: Cleanup
-		server.queue <- r.Serialize()                                  // TODO: Stop using strings, move to parsed structures
+		rStr := fmt.Sprintf("%s %e %d", r.Path, r.Val, r.Time)
+		server.queue <- rStr // TODO: Stop using strings, move to parsed structures
 	}
 
 	return nil
