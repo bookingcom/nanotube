@@ -48,8 +48,6 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	// TODO: Mainain correct live status based on gRPC connection health.
 
-	// TODO: Test re-connection action.
-
 	// Dial does not timeout. This is intentional since gRPC will keep trying. (check that)
 	conn, err := grpc.Dial(net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port))),
 		grpc.WithInsecure(),
@@ -76,40 +74,50 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stream, err := client.Stream(ctx)
-	if err != nil {
-		h.Lg.Warn("could not start streaming to target", zap.Error(err))
-	}
 
 	counter := 0
+	var stream grpcstreamer.Streamer_StreamClient
 	for r := range h.Ch {
-		pbR := otmetrics.Metric{
-			Name: r.Path,
-			Data: &otmetrics.Metric_DoubleGauge{
-				DoubleGauge: &otmetrics.DoubleGauge{
-					DataPoints: [](*otmetrics.DoubleDataPoint){
-						&otmetrics.DoubleDataPoint{
-							TimeUnixNano: uint64(r.Time) * 1000 * 1000 * 1000,
-							Value:        r.Val,
+		if stream == nil {
+			stream, err = client.Stream(ctx)
+			if err != nil {
+				h.Lg.Warn("could not start streaming to target", zap.Error(err))
+			}
+		}
+
+		if stream != nil {
+			pbR := otmetrics.Metric{
+				Name: r.Path,
+				Data: &otmetrics.Metric_DoubleGauge{
+					DoubleGauge: &otmetrics.DoubleGauge{
+						DataPoints: [](*otmetrics.DoubleDataPoint){
+							&otmetrics.DoubleDataPoint{
+								TimeUnixNano: uint64(r.Time) * 1000 * 1000 * 1000,
+								Value:        r.Val,
+							},
 						},
 					},
 				},
-			},
+			}
+			err := stream.Send(&pbR)
+			if err != nil {
+				h.Lg.Warn("error while streaming", zap.Error(err))
+				stream = nil
+			}
+			counter++
 		}
-		err := stream.Send(&pbR)
+	}
+
+	if stream != nil {
+		summary, err := stream.CloseAndRecv()
 		if err != nil {
-			h.Lg.Warn("error while streaming", zap.Error(err))
+			h.Lg.Error("error closing the connection to target", zap.Error(err))
 		}
-		counter++
+		// TODO: Replace w/ metrics
+		h.Lg.Info("GRPC summary",
+			zap.Int("sent", counter),
+			zap.Int("received by server", int(summary.GetReceivedCount())))
+
 	}
 
-	summary, err := stream.CloseAndRecv()
-	if err != nil {
-		h.Lg.Error("error closing the connection to target", zap.Error(err))
-	}
-
-	// TODO: Replace w/ metrics
-	h.Lg.Info("GRPC summary",
-		zap.Int("sent", counter),
-		zap.Int("received by server", int(summary.GetReceivedCount())))
 }
