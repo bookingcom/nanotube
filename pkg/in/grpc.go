@@ -34,6 +34,10 @@ func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG 
 			MaxConnectionAgeGrace: time.Duration(cfg.GRPCListenMaxConnectionIdleSec) * time.Second,
 			Time:                  time.Duration(cfg.GRPCListenMaxConnectionIdleSec) * time.Second,
 			Timeout:               time.Duration(cfg.GRPCListenMaxConnectionIdleSec) * time.Second,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime: 5 * time.Second,
+			PermitWithoutStream: true,
 		}))
 	grpcstreamer.RegisterStreamerServer(gRPCServer, &s)
 	err := gRPCServer.Serve(l)
