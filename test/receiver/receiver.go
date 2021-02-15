@@ -78,7 +78,7 @@ func main() {
 		log.Fatal("please supply the ports argument")
 	}
 
-	newLocalApi(*localAPIPortFlag)
+	newLocalAPI(*localAPIPortFlag)
 
 	if *profiler != "" {
 		go func() {
@@ -198,26 +198,26 @@ func main() {
 	portsWG.Wait()
 }
 
-type Status struct {
-	Ready bool
+type status struct {
+	Ready        bool
 	IdleTimeSecs int64
 }
 
-func localApiResponseStatus(w http.ResponseWriter, req *http.Request) {
+func localAPIResponseStatus(w http.ResponseWriter, req *http.Request) {
 	var idletimesecs int64 = 0
 	if dataReceived {
 		idletimesecs = time.Now().Unix() - timestampLastReceived
 	}
-	status := Status{ready, idletimesecs}
+	status := status{ready, idletimesecs}
 	data, err := json.Marshal(status)
 	if err != nil {
 		log.Printf("error when json marshaling status: %v", status)
 	}
-	fmt.Fprintf(w, string(data))
+	fmt.Fprint(w, string(data))
 }
 
-func newLocalApi(port int64) {
-	http.HandleFunc("/status", localApiResponseStatus)
+func newLocalAPI(port int64) {
+	http.HandleFunc("/status", localAPIResponseStatus)
 	go func() {
 		log.Printf("local API setup open port %d", port)
 		err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
