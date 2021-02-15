@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -59,18 +60,25 @@ func parsePorts(portsStr string) []int {
 	return ports
 }
 
+var ready bool = false
+var dataReceived bool = false
+var timestampLastReceived int64 = time.Now().Unix()
+
 func main() {
 	portsStr := flag.String("ports", "", `List of the ports to listen on. Has to be supplied in the from "XXXX YYYY ZZZZ AAAA-BBBB" in quotes.`)
 	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
 	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
 	profiler := flag.String("profiler", "", "Where should the profiler listen?")
 	exitAfter := flag.Duration("exitAfter", time.Second*10, "Exit after not receiving any message for this time. Will work only of outDir == ''. Will not exit if Duration is 0")
+	localAPIPortFlag := flag.Int64("local-api-port", 8024, "specify which port the local HTTP API should be listening on")
 
 	flag.Parse()
 
 	if *portsStr == "" {
 		log.Fatal("please supply the ports argument")
 	}
+
+	newLocalApi(*localAPIPortFlag)
 
 	if *profiler != "" {
 		go func() {
@@ -166,6 +174,8 @@ func main() {
 							if err != nil {
 								log.Printf("failed during data copy: %v", err)
 							}
+							dataReceived = true
+							timestampLastReceived = time.Now().Unix()
 						}
 					}(conn)
 				}
@@ -174,6 +184,7 @@ func main() {
 		}(ls[p], p, stop)
 	}
 
+	ready = true
 	sgn := make(chan os.Signal, 1)
 	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM)
 	<-sgn
@@ -185,4 +196,33 @@ func main() {
 		os.Exit(0)
 	}
 	portsWG.Wait()
+}
+
+type Status struct {
+	Ready bool
+	IdleTimeSecs int64
+}
+
+func localApiResponseStatus(w http.ResponseWriter, req *http.Request) {
+	var idletimesecs int64 = 0
+	if dataReceived {
+		idletimesecs = time.Now().Unix() - timestampLastReceived
+	}
+	status := Status{ready, idletimesecs}
+	data, err := json.Marshal(status)
+	if err != nil {
+		log.Printf("error when json marshaling status: %v", status)
+	}
+	fmt.Fprintf(w, string(data))
+}
+
+func newLocalApi(port int64) {
+	http.HandleFunc("/status", localApiResponseStatus)
+	go func() {
+		log.Printf("local API setup open port %d", port)
+		err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 }

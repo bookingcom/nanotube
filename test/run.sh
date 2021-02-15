@@ -32,7 +32,12 @@ for d in test* ; do
     echo -e "\r. starting receiver: pid ${recPID}"
 
     # wait for receiver to start
-    sleep 1
+    while true; do
+        sleep 1;
+        r=$(curl -sS localhost:8024/status | sed -e 's/.*"Ready":\(.*\),.*/\1/');
+        [[ $r -eq "true" ]] && break;
+    done
+
     if [ -e ${d}/in.bz2 ] && [ ! -f ${d}/in ]; then
         echo -e "\n. decompressing input"
         rm -rf ${d}/in
@@ -47,18 +52,22 @@ for d in test* ; do
 
     echo -e "\n. starting sender"
     ./sender/sender -data "${d}/in" -host localhost -port 2003
+    echo -e "\n. sender finished running"
 
-    # wait for records to propagate through receiver
-    sleep 5
-
+    echo -e "\n. waiting for nanotube"
     kill $ntPID
     wait $ntPID
 
-    sleep 5
+    echo -e "\n. waiting for receiver to process"
+    while true; do
+        sleep 1;
+        t=$(curl -sS localhost:8024/status | sed -e 's/.*"IdleTimeSecs":\(.*\)}/\1/');
+        (( $t > 2 )) && break;
+    done
 
     kill $recPID
     wait $recPID
-    
+
     rm -f ${tmpdir}/in
 
     echo -e "\n. sorting"
