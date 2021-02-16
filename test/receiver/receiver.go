@@ -66,7 +66,7 @@ func main() {
 	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
 	profiler := flag.String("profiler", "", "Where should the profiler listen?")
 	exitAfter := flag.Duration("exitAfter", time.Second*10, "Exit after not receiving any message for this time. Will work only of outDir == ''. Will not exit if Duration is 0")
-	localAPIPortFlag := flag.Int64("local-api-port", 8024, "specify which port the local HTTP API should be listening on")
+	localAPIPort := flag.Int64("local-api-port", 8024, "specify which port the local HTTP API should be listening on")
 
 	flag.Parse()
 
@@ -76,19 +76,19 @@ func main() {
 
 	type status struct {
 		Ready        bool
-		IdleTimeSecs int64
+		IdleTimeSecs float64
 	}
 
 	var ready bool = false
 	var dataReceived bool = false
-	var timestampLastReceived int64 = time.Now().Unix()
+	timestampLastReceived := time.Now()
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
-		var idletimesecs int64 = 0
+		var idleTimeSecs float64 = 0
 		if dataReceived {
-			idletimesecs = time.Now().Unix() - timestampLastReceived
+			idleTimeSecs = time.Since(timestampLastReceived).Seconds()
 		}
-		status := status{ready, idletimesecs}
+		status := status{ready, idleTimeSecs}
 		data, err := json.Marshal(status)
 		if err != nil {
 			log.Printf("error when json marshaling status: %v", status)
@@ -96,8 +96,8 @@ func main() {
 		fmt.Fprint(w, string(data))
 	})
 	go func() {
-		log.Printf("local API setup open port %d", *localAPIPortFlag)
-		err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPortFlag), nil)
+		log.Printf("local API setup open port %d", *localAPIPort)
+		err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPort), nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -198,7 +198,7 @@ func main() {
 								log.Printf("failed during data copy: %v", err)
 							}
 							dataReceived = true
-							timestampLastReceived = time.Now().Unix()
+							timestampLastReceived = time.Now()
 						}
 					}(conn)
 				}

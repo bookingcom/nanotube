@@ -31,7 +31,7 @@ for d in test* ; do
     trap_pid ${recPID}
     echo -e "\r. starting receiver: pid ${recPID}"
 
-    # wait for receiver to start
+    echo -e "\n. wait for receiver to start"
     while true; do
         sleep 1;
         r=$(curl -sS localhost:8024/status | sed -e 's/.*"Ready":\(.*\),.*/\1/');
