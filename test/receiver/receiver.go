@@ -80,13 +80,13 @@ func main() {
 	}
 
 	var ready bool = false
-	var dataReceived bool = false
-	timestampLastReceived := time.Now()
+	var dataProcessed bool = false
+	timestampLastProcessed := time.Now()
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 		var idleTimeSecs float64 = 0
-		if dataReceived {
-			idleTimeSecs = time.Since(timestampLastReceived).Seconds()
+		if dataProcessed {
+			idleTimeSecs = time.Since(timestampLastProcessed).Seconds()
 		}
 		status := status{ready, idleTimeSecs}
 		data, err := json.Marshal(status)
@@ -197,8 +197,8 @@ func main() {
 							if err != nil {
 								log.Printf("failed during data copy: %v", err)
 							}
-							dataReceived = true
-							timestampLastReceived = time.Now()
+							dataProcessed = true
+							timestampLastProcessed = time.Now()
 						}
 					}(conn)
 				}
