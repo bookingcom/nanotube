@@ -1,0 +1,12 @@
+test/sender/sender
+test/receiver/receiver
+
+# Fuzzing artefacts.
+test/fuzzing/corpus
+test/fuzzing/crashers
+test/fuzzing/suppressions
+test/fuzzing/*.zip
+
+# Testing artefacts.
+test/test2/in
+test/test2/out
