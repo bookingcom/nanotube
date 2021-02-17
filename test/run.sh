@@ -61,10 +61,12 @@ for d in test* ; do
     wait $ntPID
 
     echo -e "\n. waiting for receiver to process"
+
     while true; do
         sleep 1;
         t=$(curl -sS localhost:8024/status | ${JQ_BIN} .IdleTimeMilliSecs);
         (( $t > 2000 )) && break;
+
     done
 
     kill $recPID
