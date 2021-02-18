@@ -6,6 +6,8 @@
 # set -e
 
 PIDS=''
+JQ_BIN='jq'
+
 trap_pid() {
     PIDS+="$1 "
     trap '{ echo "*** force-killing $PIDS ***"; kill -9 $PIDS 2>/dev/null; exit 255; }' SIGINT SIGTERM ERR SIGKILL
@@ -40,7 +42,7 @@ for d in test* ; do
     echo -e "\n. wait for receiver to start"
     while true; do
         sleep 1;
-        r=$(curl -sS localhost:8024/status | sed -e 's/.*"Ready":\(.*\),.*/\1/');
+        r=$(curl -sS localhost:8024/status | ${JQ_BIN} .Ready)
         [[ $r -eq "true" ]] && break;
     done
 
@@ -61,8 +63,8 @@ for d in test* ; do
     echo -e "\n. waiting for receiver to process"
     while true; do
         sleep 1;
-        t=$(curl -sS localhost:8024/status | sed -e 's/.*"IdleTimeSecs":\(.*\)}/\1/');
-        (( $t > 2 )) && break;
+        t=$(curl -sS localhost:8024/status | ${JQ_BIN} .IdleTimeMilliSecs);
+        (( $t > 2000 )) && break;
     done
 
     kill $recPID

@@ -74,24 +74,23 @@ func main() {
 		log.Fatal("please supply the ports argument")
 	}
 
-	type status struct {
+	var currentStatus = struct {
+		sync.Mutex
 		Ready        bool
-		IdleTimeSecs float64
-	}
-
-	var ready bool = false
-	var dataProcessed bool = false
-	timestampLastProcessed := time.Now()
-
+		DataProcessed bool
+		timestampLastProcessed time.Time
+		IdleTimeMilliSecs int64
+	} { sync.Mutex{}, false, false, time.Now(), 0}
+	
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
-		var idleTimeSecs float64 = 0
-		if dataProcessed {
-			idleTimeSecs = time.Since(timestampLastProcessed).Seconds()
+		currentStatus.Lock()
+		if currentStatus.DataProcessed {
+			currentStatus.IdleTimeMilliSecs = time.Since(currentStatus.timestampLastProcessed).Milliseconds()
 		}
-		status := status{ready, idleTimeSecs}
-		data, err := json.Marshal(status)
+		currentStatus.Unlock()
+		data, err := json.Marshal(currentStatus)
 		if err != nil {
-			log.Printf("error when json marshaling status: %v", status)
+			log.Printf("error when json marshaling status: %v", currentStatus)
 		}
 		fmt.Fprint(w, string(data))
 	})
@@ -197,8 +196,10 @@ func main() {
 							if err != nil {
 								log.Printf("failed during data copy: %v", err)
 							}
-							dataProcessed = true
-							timestampLastProcessed = time.Now()
+							currentStatus.Lock()
+							currentStatus.DataProcessed = true
+							currentStatus.timestampLastProcessed = time.Now()
+							currentStatus.Unlock()
 						}
 					}(conn)
 				}
@@ -207,7 +208,10 @@ func main() {
 		}(ls[p], p, stop)
 	}
 
-	ready = true
+	currentStatus.Lock()
+	currentStatus.Ready = true
+	currentStatus.Unlock()
+
 	sgn := make(chan os.Signal, 1)
 	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM)
 	<-sgn
