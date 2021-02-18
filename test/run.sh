@@ -25,6 +25,12 @@ for d in test* ; do
     echo -e "\r. starting nanotube: pid ${ntPID}"
     cd ../..
 
+    if [ -e ${d}/out.tar.bz2 ] && [ ! -d ${d}/out ]; then
+        echo -e "\n. decompressing output"
+        rm -rf ${d}/out
+        tar -C ${d} -jxf ${d}/out.tar.bz2
+    fi
+
     echo -en "\n. starting receiver..."
     ./receiver/receiver -ports "$(ls -x "${d}/out")" -outdir "$tmpdir" &
     recPID=$!
@@ -42,12 +48,6 @@ for d in test* ; do
         echo -e "\n. decompressing input"
         rm -rf ${d}/in
         bunzip2 ${d}/in.bz2 -c > ${d}/in
-    fi
-
-    if [ -e ${d}/out.tar.bz2 ] && [ ! -d ${d}/out ]; then
-        echo -e "\n. decompressing output"
-        rm -rf ${d}/out
-        tar -C ${d} -jxf ${d}/out.tar.bz2
     fi
 
     echo -e "\n. starting sender"
