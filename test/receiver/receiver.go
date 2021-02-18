@@ -74,7 +74,7 @@ func main() {
 		log.Fatal("please supply the ports argument")
 	}
 
-	var currentStatus = struct {
+	var currentStatus = &struct {
 		sync.Mutex
 		Ready                  bool
 		DataProcessed          bool
@@ -84,10 +84,10 @@ func main() {
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 		currentStatus.Lock()
+		defer currentStatus.Unlock()
 		if currentStatus.DataProcessed {
 			currentStatus.IdleTimeMilliSecs = time.Since(currentStatus.timestampLastProcessed).Milliseconds()
 		}
-		currentStatus.Unlock()
 		data, err := json.Marshal(currentStatus)
 		if err != nil {
 			log.Printf("error when json marshaling status: %v", currentStatus)
