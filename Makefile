@@ -35,11 +35,15 @@ fmt:
 	gofmt -d -s .
 
 .PHONY: check
-check: all test lint
+check: all test end-to-end-test lint
+
+.PHONY: end-to-end-test
+end-to-end-test: docker-image
+	docker run -it nanotube-test
 
 .PHONY: clean
 clean:
-	rm -rf nanotube test/sender/sender test/receiver/receiver test/test2/{in,out}
+	git clean -Xf
 
 .PHONY: fuzz
 fuzz:
@@ -52,13 +56,12 @@ test/sender/sender: test/sender/sender.go
 test/receiver/receiver: test/receiver/receiver.go
 	go build -o $@ $<
 
-.PHONY: docker-image
-docker-image:
-	docker build -t nanotube-test .
+.dockerignore: .gitignore
+	cat .gitignore | grep -v .dockerignore > .dockerignore
 
-.PHONY: end-to-end-test
-end-to-end-test: docker-image
-	docker run -it nanotube-test
+.PHONY: docker-image
+docker-image: .dockerignore
+	docker build -t nanotube-test .
 
 .PHONY: local-end-to-end-test
 local-end-to-end-test: nanotube test/sender/sender test/receiver/receiver

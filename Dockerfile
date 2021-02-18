@@ -6,12 +6,9 @@ LABEL vendor="Booking.com"
 RUN mkdir /nanotube
 WORKDIR /nanotube
 
-COPY cmd cmd
-COPY pkg pkg
-COPY test test
-COPY Makefile go.mod go.sum .
+COPY . .
 
-RUN apt-get update && apt-get install bzip2
+RUN apt-get -y update && apt-get -y install bzip2 jq
 
 RUN make nanotube
 RUN make test/sender/sender
