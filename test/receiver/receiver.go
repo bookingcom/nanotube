@@ -76,12 +76,12 @@ func main() {
 
 	var currentStatus = struct {
 		sync.Mutex
-		Ready        bool
-		DataProcessed bool
+		Ready                  bool
+		DataProcessed          bool
 		timestampLastProcessed time.Time
-		IdleTimeMilliSecs int64
-	} { sync.Mutex{}, false, false, time.Now(), 0}
-	
+		IdleTimeMilliSecs      int64
+	}{sync.Mutex{}, false, false, time.Now(), 0}
+
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 		currentStatus.Lock()
 		if currentStatus.DataProcessed {
