@@ -11,6 +11,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -36,7 +37,7 @@ import (
 var version string
 
 func main() {
-	cfgPath, _, _, _, validateConfig, versionInfo := parseFlags()
+	cfgPath, validateConfig, versionInfo := parseFlags()
 
 	if versionInfo {
 		fmt.Println(version)
@@ -153,12 +154,9 @@ func main() {
 	}
 }
 
-func parseFlags() (string, string, string, string, bool, bool) {
+func parseFlags() (string, bool, bool) {
 	// TODO (grzkv): Cleanup unused clPath, rulesPath, rewritesPath after migration
 	cfgPath := flag.String("config", "", "Path to config file.")
-	clPath := flag.String("clusters", "", "Path to clusters file.")
-	rulesPath := flag.String("rules", "", "Path to rules file.")
-	rewritesPath := flag.String("rewrites", "", "Path to rewrites file.")
 	testConfig := flag.Bool("validate", false, "Validate configuration files.")
 	versionInfo := flag.Bool("version", false, "Print version info.")
 
@@ -166,14 +164,14 @@ func parseFlags() (string, string, string, string, bool, bool) {
 
 	// if --version is specified, only print the version, nothing else matters
 	if *versionInfo {
-		return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, true
+		return *cfgPath, *testConfig, true
 	}
 
 	if cfgPath == nil || *cfgPath == "" {
 		log.Fatal("config file path not specified")
 	}
 
-	return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, false
+	return *cfgPath, *testConfig, false
 }
 
 func buildLogger(cfg *conf.Main) (*zap.Logger, error) {
@@ -198,7 +196,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(cfg.ClustersConfig)
+	bs, err = ioutil.ReadFile(fixPath(cfgPath, cfg.ClustersConfig))
 	if err != nil {
 		log.Fatal()
 		retErr = errors.Wrap(err, "error reading clusters file")
@@ -210,7 +208,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(cfg.RulesConfig)
+	bs, err = ioutil.ReadFile(fixPath(cfgPath, cfg.RulesConfig))
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading rules file")
 		return
@@ -223,7 +221,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 
 	rewritesConf = nil
 	if cfg.RewritesConfig != "" {
-		bs, err := ioutil.ReadFile(cfg.RewritesConfig)
+		bs, err := ioutil.ReadFile(fixPath(cfgPath, cfg.RewritesConfig))
 		if err != nil {
 			retErr = errors.Wrap(err, "error reading rewrites config")
 			return
@@ -241,6 +239,13 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		retErr = fmt.Errorf("error calculating hash config: %w", err)
 	}
 	return
+}
+
+func fixPath(prefixPath string, path string) string {
+	if !filepath.IsAbs(path) {
+		return filepath.Join(filepath.Dir(prefixPath), path)
+	}
+	return path
 }
 
 func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.Rules, rewritesConf *conf.Rewrites,
