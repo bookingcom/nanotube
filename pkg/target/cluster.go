@@ -13,8 +13,8 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
-// Target is abstract notion of a target to send the records to during processing.
-type Target interface {
+// ClusterTarget is abstract notion of a target to send the records to during processing.
+type ClusterTarget interface {
 	Push(*rec.Rec, *metrics.Prom) error
 	Send(*sync.WaitGroup, chan struct{})
 	GetName() string
@@ -23,15 +23,15 @@ type Target interface {
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
 type Cluster struct {
 	Name  string
-	Hosts []*Host // ordered by index
+	Hosts []Target // ordered by index
 	Hm    sync.RWMutex
 	Type  string
 }
 
-func (cl *Cluster) availHostsList() []*Host {
-	var availHosts []*Host
+func (cl *Cluster) availHostsList() []Target {
+	var availHosts []Target
 	for _, h := range cl.Hosts {
-		if h.Available.Load() {
+		if h.IsAvailable() {
 			availHosts = append(availHosts, h)
 		}
 	}
@@ -64,27 +64,27 @@ func (cl *Cluster) GetName() string {
 }
 
 // resolveHosts does routing inside the cluster.
-func (cl *Cluster) resolveHosts(path string) ([]*Host, error) {
+func (cl *Cluster) resolveHosts(path string) ([]Target, error) {
 	switch cl.Type {
 	case conf.JumpCluster:
-		return []*Host{
+		return []Target{
 			cl.Hosts[jumpHash(path, len(cl.Hosts))],
 		}, nil
 	case conf.LB:
 		availHosts := cl.availHostsList()
 		key := fnv1a.HashString64(path)
 		if len(availHosts) == 0 {
-			return []*Host{
+			return []Target{
 				cl.Hosts[key%uint64(len(cl.Hosts))],
 			}, nil
 		}
-		return []*Host{
+		return []Target{
 			availHosts[key%uint64(len(availHosts))],
 		}, nil
 	case conf.ToallCluster:
 		return cl.Hosts, nil
 	case conf.BlackholeCluster:
-		return make([]*Host, 0), nil
+		return make([]Target, 0), nil
 	default:
 		return nil, fmt.Errorf("resolving hosts for path %s failed", path)
 	}
@@ -110,7 +110,7 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 	go func() {
 		<-finish
 		for _, h := range cl.Hosts {
-			close(h.Ch)
+			h.Stop()
 		}
 	}()
 }

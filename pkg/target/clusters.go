@@ -65,7 +65,7 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 }
 
 func getJumpCluster(cl *Cluster, cc conf.Cluster, mainCfg conf.Main, lg *zap.Logger, ms *metrics.Prom) (*Cluster, error) {
-	cl.Hosts = make([]*Host, len(cc.Hosts))
+	cl.Hosts = make([]Target, len(cc.Hosts))
 	for _, h := range cc.Hosts {
 		if cl.Hosts[h.Index] != nil {
 			return cl, fmt.Errorf("duplicate index value, or index not set for a hashed cluster %s", cc.Name)

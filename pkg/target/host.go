@@ -75,8 +75,16 @@ func (h *Host) String() string {
 	return net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port)))
 }
 
-// NewHost builds new host object from config.
-func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
+// NewHost builds a target host of appropriate type doing the polymorphic construction.
+func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) Target {
+	if hostCfg.GRPC {
+		return NewHostGRPC(clusterName, mainCfg, hostCfg, lg, ms)
+	}
+	return NewHostTCP(clusterName, mainCfg, hostCfg, lg, ms)
+}
+
+// ConstructHost builds new host object from config.
+func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
 		targetPort = hostCfg.Port
@@ -120,11 +128,21 @@ func (h *Host) Push(r *rec.Rec) {
 	}
 }
 
+// IsAvailable tells if the host is alive.
+func (h *Host) IsAvailable() bool {
+	return h.Available.Load()
+}
+
+// Stop brings streaming to a halt.
+func (h *Host) Stop() {
+	close(h.Ch)
+}
+
 // Stream launches the the sending to target host.
 // Exits when queue is closed and sending is finished.
 func (h *Host) Stream(wg *sync.WaitGroup) {
 	if h.conf.TCPOutBufFlushPeriodSec != 0 {
-		go h.Flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec))
+		go h.flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec))
 	}
 	defer func() {
 		wg.Done()
@@ -177,7 +195,7 @@ func (h *Host) tryToSend(r *rec.Rec) {
 }
 
 // Flush periodically flushes the buffer and performs a write.
-func (h *Host) Flush(d time.Duration) {
+func (h *Host) flush(d time.Duration) {
 	t := time.NewTicker(d)
 	defer t.Stop()
 
@@ -242,14 +260,14 @@ func (h *Host) ensureConnection() {
 			reconnectWait = h.conf.MaxHostReconnectPeriodMs
 		}
 
-		h.Connect(attemptCount)
+		h.connect(attemptCount)
 		attemptCount++
 	}
 }
 
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
 // Requires h.Conn.Mutex lock.
-func (h *Host) Connect(attemptCount int) {
+func (h *Host) connect(attemptCount int) {
 	conn, err := h.getConnectionToHost()
 	if err != nil {
 		h.Lg.Warn("connection to host failed")
