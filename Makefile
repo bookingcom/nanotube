@@ -61,7 +61,7 @@ test/receiver/receiver: test/receiver/receiver.go
 
 .PHONY: docker-image
 docker-image: .dockerignore
-	docker build -t nanotube-test .
+	docker build -f test/Dockerfile  -t nanotube-test .
 
 .PHONY: local-end-to-end-test
 local-end-to-end-test: nanotube test/sender/sender test/receiver/receiver
