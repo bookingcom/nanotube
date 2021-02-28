@@ -19,11 +19,9 @@ type Main struct {
 	TargetPort uint16
 
 	// empty string not to listen
-	ListenTCP string
-	ListenUDP string
-
-	// 0 does not set buffer size
-	// UDPOSBufferSize uint32
+	ListenTCP  string
+	ListenUDP  string
+	ListenGRPC string
 
 	MainQueueSize uint64
 	HostQueueSize uint64
@@ -43,6 +41,22 @@ type Main struct {
 	TCPOutBufFlushPeriodSec uint32
 	// 0 value turns off connection refresh
 	TCPOutConnectionRefreshPeriodSec uint32
+
+	// GRPC target (client) params
+	GRPCOutKeepAlivePeriodSec      uint32
+	GRPCOutKeepAlivePingTimeoutSec uint32
+	//	GRPCOutSendTimeoutSec          uint32
+	GRPCOutBackoffMaxDelaySec   uint32
+	GRPCOutMinConnectTimeoutSec uint32
+
+	// GRPC listener (server) params
+	GRPCListenMaxConnectionIdleSec     uint32
+	GRPCListenMaxConnectionAgeSec      uint32
+	GRPCListenMaxConnectionAgeGraceSec uint32
+	GRPCListenTimeSec                  uint32
+	GRPCListenTimeoutSec               uint32
+
+	GRPCTracing bool
 
 	NormalizeRecords  bool
 	LogSpecialRecords bool
@@ -83,8 +97,8 @@ func ReadMain(r io.Reader) (Main, error) {
 	if cfg.PprofPort != -1 && cfg.PprofPort == cfg.PromPort {
 		return cfg, errors.New("PromPort and PprofPort can't have the same value")
 	}
-	if cfg.ListenTCP == "" && cfg.ListenUDP == "" {
-		return cfg, errors.New("we don't listen neither on TCP nor on UDP")
+	if cfg.ListenTCP == "" && cfg.ListenUDP == "" && cfg.ListenGRPC == "" {
+		return cfg, errors.New("we don't listen one any port and protocol")
 	}
 	if cfg.SendTimeoutSec <= cfg.TCPOutBufFlushPeriodSec {
 		return cfg, errors.New("TCP send timeout is lesser or equal to TCP buffer flush period")
@@ -113,16 +127,31 @@ func MakeDefault() Main {
 		HostQueueSize:  1000,
 		WorkerPoolSize: 10,
 
-		IncomingConnIdleTimeoutSec:       90,
-		SendTimeoutSec:                   5,
-		OutConnTimeoutSec:                5,
-		MaxHostReconnectPeriodMs:         5000,
-		HostReconnectPeriodDeltaMs:       10,
-		KeepAliveSec:                     1,
-		TermTimeoutSec:                   10,
+		IncomingConnIdleTimeoutSec: 90,
+		SendTimeoutSec:             5,
+		OutConnTimeoutSec:          5,
+		MaxHostReconnectPeriodMs:   5000,
+		HostReconnectPeriodDeltaMs: 10,
+		KeepAliveSec:               1,
+		TermTimeoutSec:             10,
+
 		TCPOutBufSize:                    0,
 		TCPOutBufFlushPeriodSec:          2,
 		TCPOutConnectionRefreshPeriodSec: 0,
+
+		GRPCOutKeepAlivePeriodSec:      5,
+		GRPCOutKeepAlivePingTimeoutSec: 1,
+		//		GRPCOutSendTimeoutSec:          20,
+		GRPCOutBackoffMaxDelaySec:   30,
+		GRPCOutMinConnectTimeoutSec: 5,
+
+		GRPCListenMaxConnectionIdleSec:     1200,
+		GRPCListenMaxConnectionAgeSec:      7200,
+		GRPCListenMaxConnectionAgeGraceSec: 60,
+		GRPCListenTimeSec:                  600,
+		GRPCListenTimeoutSec:               20,
+
+		GRPCTracing: true,
 
 		NormalizeRecords:  true,
 		LogSpecialRecords: false,

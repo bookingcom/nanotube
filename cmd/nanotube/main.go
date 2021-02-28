@@ -11,11 +11,13 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
@@ -35,7 +37,7 @@ import (
 var version string
 
 func main() {
-	cfgPath, _, _, _, validateConfig, versionInfo := parseFlags()
+	cfgPath, validateConfig, versionInfo := parseFlags()
 
 	if versionInfo {
 		fmt.Println(version)
@@ -100,12 +102,13 @@ func main() {
 
 	stop := make(chan struct{})
 	n := gracenet.Net{}
-	queue, err := Listen(&n, &cfg, stop, lg, ms)
+	queue, err := in.Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}
 
-	gaugeQueues(queue, clusters, ms)
+	// TODO: Bring back
+	// gaugeQueues(queue, clusters, ms)
 	procDone := Process(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
 	done := clusters.Send(procDone)
 
@@ -115,6 +118,7 @@ func main() {
 	sgn := make(chan os.Signal, 1)
 	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR2)
 
+	// TODO: Make seamless restart work for GRPC
 	for {
 		s := <-sgn
 
@@ -150,12 +154,9 @@ func main() {
 	}
 }
 
-func parseFlags() (string, string, string, string, bool, bool) {
+func parseFlags() (string, bool, bool) {
 	// TODO (grzkv): Cleanup unused clPath, rulesPath, rewritesPath after migration
 	cfgPath := flag.String("config", "", "Path to config file.")
-	clPath := flag.String("clusters", "", "Path to clusters file.")
-	rulesPath := flag.String("rules", "", "Path to rules file.")
-	rewritesPath := flag.String("rewrites", "", "Path to rewrites file.")
 	testConfig := flag.Bool("validate", false, "Validate configuration files.")
 	versionInfo := flag.Bool("version", false, "Print version info.")
 
@@ -163,14 +164,14 @@ func parseFlags() (string, string, string, string, bool, bool) {
 
 	// if --version is specified, only print the version, nothing else matters
 	if *versionInfo {
-		return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, true
+		return *cfgPath, *testConfig, true
 	}
 
 	if cfgPath == nil || *cfgPath == "" {
 		log.Fatal("config file path not specified")
 	}
 
-	return *cfgPath, *clPath, *rulesPath, *rewritesPath, *testConfig, false
+	return *cfgPath, *testConfig, false
 }
 
 func buildLogger(cfg *conf.Main) (*zap.Logger, error) {
@@ -195,7 +196,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(cfg.ClustersConfig)
+	bs, err = ioutil.ReadFile(fixPath(cfgPath, cfg.ClustersConfig))
 	if err != nil {
 		log.Fatal()
 		retErr = errors.Wrap(err, "error reading clusters file")
@@ -207,7 +208,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(cfg.RulesConfig)
+	bs, err = ioutil.ReadFile(fixPath(cfgPath, cfg.RulesConfig))
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading rules file")
 		return
@@ -220,7 +221,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 
 	rewritesConf = nil
 	if cfg.RewritesConfig != "" {
-		bs, err := ioutil.ReadFile(cfg.RewritesConfig)
+		bs, err := ioutil.ReadFile(fixPath(cfgPath, cfg.RewritesConfig))
 		if err != nil {
 			retErr = errors.Wrap(err, "error reading rewrites config")
 			return
@@ -238,6 +239,13 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		retErr = fmt.Errorf("error calculating hash config: %w", err)
 	}
 	return
+}
+
+func fixPath(prefixPath string, path string) string {
+	if !filepath.IsAbs(path) {
+		return filepath.Join(filepath.Dir(prefixPath), path)
+	}
+	return path
 }
 
 func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.Rules, rewritesConf *conf.Rewrites,
@@ -269,18 +277,19 @@ func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.
 }
 
 // gaugeQueue starts and maintains a goroutine to measure the main queue size.
-func gaugeQueues(queue chan string, clusters target.Clusters, metrics *metrics.Prom) {
-	queueGaugeIntervalMs := 1000
+// TODO: Fix and bring back
+// func gaugeQueues(queue chan string, clusters target.Clusters, metrics *metrics.Prom) {
+// 	queueGaugeIntervalMs := 1000
 
-	ticker := time.NewTicker(time.Duration(queueGaugeIntervalMs) * time.Millisecond)
-	go func() {
-		for range ticker.C {
-			metrics.MainQueueLength.Set(float64(len(queue)))
-			for _, cl := range clusters {
-				for _, h := range cl.Hosts {
-					metrics.HostQueueLength.Observe(float64(len(h.Ch)))
-				}
-			}
-		}
-	}()
-}
+// 	ticker := time.NewTicker(time.Duration(queueGaugeIntervalMs) * time.Millisecond)
+// 	go func() {
+// 		for range ticker.C {
+// 			metrics.MainQueueLength.Set(float64(len(queue)))
+// 			for _, cl := range clusters {
+// 				for _, h := range cl.Hosts {
+// 					metrics.HostQueueLength.Observe(float64(len(h.Ch)))
+// 				}
+// 			}
+// 		}
+// 	}()
+// }

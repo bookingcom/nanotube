@@ -22,6 +22,13 @@ install:
 	go install ./test/receiver
 	go install ./test/sender
 
+.PHONY: grpc
+grpc:
+	protoc --go_out=. --go-grpc_out=. pkg/grpcstreamer/streamer.proto
+	protoc --go_out=. --go_opt=paths=source_relative pkg/opentelemetry/proto/common/v1/common.proto
+	protoc --go_out=. --go_opt=paths=source_relative pkg/opentelemetry/proto/metrics/v1/metrics.proto
+	protoc --go_out=. --go_opt=paths=source_relative pkg/opentelemetry/proto/resource/v1/resource.proto
+
 .PHONY: test
 test:
 	go test -cover -race ./...
