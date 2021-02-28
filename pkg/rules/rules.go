@@ -28,7 +28,7 @@ type Rules struct {
 type Rule struct {
 	Regexs        []string
 	Prefixes      []string
-	Targets       []target.Target
+	Targets       []target.ClusterTarget
 	Continue      bool
 	CompiledRE    []*regexp.Regexp
 	regexDuration []prometheus.Observer
@@ -93,7 +93,7 @@ func (rs Rules) compile() error {
 
 // RouteRec a record by following the rules
 func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
-	pushedTo := make(map[target.Target]struct{})
+	pushedTo := make(map[target.ClusterTarget]struct{})
 
 	for _, rl := range rs.rules {
 		matchedRule := rl.Match(r, rs.measureRegex)

@@ -99,6 +99,10 @@ Nanotube supports zero-downtime reload that can be triggered with `USR2` signal.
 
 Design details are in the design [doc](docs/design.md).
 
+## OpenTelemetry
+
+We support OpenTelemetry by using [v0.7.0 of protobuf protocol](https://github.com/open-telemetry/opentelemetry-proto/releases/tag/v0.7.0).
+
 
 ## Acknowledgment
 
