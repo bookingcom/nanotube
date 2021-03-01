@@ -94,15 +94,15 @@ func main() {
 		}
 		fmt.Fprint(w, string(data))
 	})
-	go func() {
-		log.Printf("local API setup open port %d", *localAPIPort)
-		if *localAPIPort != 0 {
+	if *localAPIPort != 0 {
+		go func() {
+			log.Printf("local API setup on port %d", *localAPIPort)
 			err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPort), nil)
 			if err != nil {
 				log.Fatal(err)
 			}
-		}
-	}()
+		}()
+	}
 
 	if *profiler != "" {
 		go func() {
