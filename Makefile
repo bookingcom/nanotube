@@ -50,7 +50,7 @@ end-to-end-test: docker-image
 
 .PHONY: clean
 clean:
-	git clean -Xf
+	rm -rf nanotube test/sender/sender test/receiver/receiver test/test2/{in,out}
 
 .PHONY: fuzz
 fuzz:
