@@ -25,3 +25,8 @@ type = 'jump'
     name = 'localhost'
     port = 8103
     index = 2
+    [[cluster.hosts]]
+    name = 'localhost'
+    port = 8104
+    index = 3
+    grpc = true # sets the target host to use GRPC protocol

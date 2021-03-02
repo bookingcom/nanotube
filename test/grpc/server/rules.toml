@@ -1,0 +1,7 @@
+[[rule]]
+    regexs = [
+        '.*',
+    ]
+    clusters = [
+        'local0'
+    ]

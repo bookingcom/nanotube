@@ -1,6 +1,6 @@
-ClustersConfig = "testdata/clusters.toml" 
-RulesConfig = "testdata/rules.toml"
-RewritesConfig = "testdata/rewrites.toml"
+ClustersConfig = "clusters.toml" 
+RulesConfig = "rules.toml"
+RewritesConfig = "rewrites.toml"
 
 # The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 12003

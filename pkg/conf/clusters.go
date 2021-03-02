@@ -50,6 +50,8 @@ type Host struct {
 	Index int `toml:"index"`
 	// Optional, can be taken from default config.
 	Port uint16 `toml:"port"`
+	// Optional, TCP by default
+	GRPC bool `toml:"grpc"`
 }
 
 // ReadClustersConfig reads clusters set from a reader.

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -58,7 +59,7 @@ func setup(t *testing.T) {
 
 	term := make(chan struct{})
 	n := gracenet.Net{}
-	pipe, err := Listen(&n, &cfg, term, lg, ms)
+	pipe, err := in.Listen(&n, &cfg, term, lg, ms)
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}
