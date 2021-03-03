@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -65,12 +66,41 @@ func main() {
 	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
 	profiler := flag.String("profiler", "", "Where should the profiler listen?")
 	exitAfter := flag.Duration("exitAfter", time.Second*10, "Exit after not receiving any message for this time. Will work only of outDir == ''. Will not exit if Duration is 0")
+	localAPIPort := flag.Int64("local-api-port", 8024, "specify which port the local HTTP API should be listening on")
 
 	flag.Parse()
 
 	if *portsStr == "" {
 		log.Fatal("please supply the ports argument")
 	}
+
+	var currentStatus = &struct {
+		sync.Mutex
+		Ready                  bool
+		DataProcessed          bool
+		timestampLastProcessed time.Time
+		IdleTimeMilliSecs      int64
+	}{sync.Mutex{}, false, false, time.Now(), 0}
+
+	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
+		currentStatus.Lock()
+		defer currentStatus.Unlock()
+		if currentStatus.DataProcessed {
+			currentStatus.IdleTimeMilliSecs = time.Since(currentStatus.timestampLastProcessed).Milliseconds()
+		}
+		data, err := json.Marshal(currentStatus)
+		if err != nil {
+			log.Printf("error when json marshaling status: %v", currentStatus)
+		}
+		fmt.Fprint(w, string(data))
+	})
+	go func() {
+		log.Printf("local API setup open port %d", *localAPIPort)
+		err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPort), nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	if *profiler != "" {
 		go func() {
@@ -166,6 +196,10 @@ func main() {
 							if err != nil {
 								log.Printf("failed during data copy: %v", err)
 							}
+							currentStatus.Lock()
+							currentStatus.DataProcessed = true
+							currentStatus.timestampLastProcessed = time.Now()
+							currentStatus.Unlock()
 						}
 					}(conn)
 				}
@@ -173,6 +207,10 @@ func main() {
 			connectionWG.Wait()
 		}(ls[p], p, stop)
 	}
+
+	currentStatus.Lock()
+	currentStatus.Ready = true
+	currentStatus.Unlock()
 
 	sgn := make(chan os.Signal, 1)
 	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM)
