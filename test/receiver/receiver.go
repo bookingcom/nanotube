@@ -78,6 +78,7 @@ func main() {
 		sync.Mutex
 		Ready                  bool
 		dataProcessed          bool
+
 		timestampLastProcessed time.Time
 		IdleTimeMilliSecs      int64
 	}{sync.Mutex{}, false, false, time.Now(), 0}
