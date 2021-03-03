@@ -76,8 +76,8 @@ func main() {
 
 	var currentStatus = &struct {
 		sync.Mutex
-		Ready                  bool
-		dataProcessed          bool
+		Ready         bool
+		dataProcessed bool
 
 		timestampLastProcessed time.Time
 		IdleTimeMilliSecs      int64
