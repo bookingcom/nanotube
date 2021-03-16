@@ -66,7 +66,7 @@ func main() {
 	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
 	profiler := flag.String("profiler", "", "Where should the profiler listen?")
 	exitAfter := flag.Duration("exitAfter", time.Second*10, "Exit after not receiving any message for this time. Will work only of outDir == ''. Will not exit if Duration is 0")
-	localAPIPort := flag.Int64("local-api-port", 8024, "specify which port the local HTTP API should be listening on")
+	localAPIPort := flag.Int64("local-api-port", 0, "specify which port the local HTTP API should be listening on")
 
 	flag.Parse()
 
@@ -76,8 +76,9 @@ func main() {
 
 	var currentStatus = &struct {
 		sync.Mutex
-		Ready                  bool
-		DataProcessed          bool
+		Ready         bool
+		dataProcessed bool
+
 		timestampLastProcessed time.Time
 		IdleTimeMilliSecs      int64
 	}{sync.Mutex{}, false, false, time.Now(), 0}
@@ -85,7 +86,7 @@ func main() {
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 		currentStatus.Lock()
 		defer currentStatus.Unlock()
-		if currentStatus.DataProcessed {
+		if currentStatus.dataProcessed {
 			currentStatus.IdleTimeMilliSecs = time.Since(currentStatus.timestampLastProcessed).Milliseconds()
 		}
 		data, err := json.Marshal(currentStatus)
@@ -94,13 +95,15 @@ func main() {
 		}
 		fmt.Fprint(w, string(data))
 	})
-	go func() {
-		log.Printf("local API setup open port %d", *localAPIPort)
-		err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPort), nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
+	if *localAPIPort != 0 {
+		go func() {
+			log.Printf("local API setup on port %d", *localAPIPort)
+			err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPort), nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}()
+	}
 
 	if *profiler != "" {
 		go func() {
@@ -197,7 +200,7 @@ func main() {
 								log.Printf("failed during data copy: %v", err)
 							}
 							currentStatus.Lock()
-							currentStatus.DataProcessed = true
+							currentStatus.dataProcessed = true
 							currentStatus.timestampLastProcessed = time.Now()
 							currentStatus.Unlock()
 						}

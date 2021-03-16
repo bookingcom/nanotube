@@ -34,7 +34,7 @@ for d in test* ; do
     fi
 
     echo -en "\n. starting receiver..."
-    ./receiver/receiver -ports "$(ls -x "${d}/out")" -outdir "$tmpdir" &
+    ./receiver/receiver -local-api-port 8024 -ports "$(ls -x "${d}/out")" -outdir "$tmpdir" &
     recPID=$!
     trap_pid ${recPID}
     echo -e "\r. starting receiver: pid ${recPID}"
@@ -61,6 +61,7 @@ for d in test* ; do
     wait $ntPID
 
     echo -e "\n. waiting for receiver to process"
+
     while true; do
         sleep 1;
         t=$(curl -sS localhost:8024/status | ${JQ_BIN} .IdleTimeMilliSecs);

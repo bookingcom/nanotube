@@ -33,10 +33,6 @@ grpc:
 test:
 	go test -cover -race ./...
 
-.PHONY: end-to-end-test
-end-to-end-test: nanotube test/sender/sender test/receiver/receiver
-	cd test && ./run.sh
-
 .PHONY: lint
 lint:
 	golangci-lint run -E golint -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false ./...
@@ -46,11 +42,15 @@ fmt:
 	gofmt -d -s .
 
 .PHONY: check
-check: all test lint
+check: all test end-to-end-test lint
+
+.PHONY: end-to-end-test
+end-to-end-test: docker-image
+	docker run -it nanotube-test
 
 .PHONY: clean
 clean:
-	rm -f nanotube test/sender/sender test/receiver/receiver
+	rm -rf nanotube test/sender/sender test/receiver/receiver test/test2/{in,out}
 
 .PHONY: fuzz
 fuzz:
@@ -62,3 +62,14 @@ test/sender/sender: test/sender/sender.go
 
 test/receiver/receiver: test/receiver/receiver.go
 	go build -o $@ $<
+
+.dockerignore: .gitignore
+	cat .gitignore | grep -v .dockerignore > .dockerignore
+
+.PHONY: docker-image
+docker-image: .dockerignore
+	docker build -f test/Dockerfile  -t nanotube-test .
+
+.PHONY: local-end-to-end-test
+local-end-to-end-test: nanotube test/sender/sender test/receiver/receiver
+	cd test && ./run.sh
