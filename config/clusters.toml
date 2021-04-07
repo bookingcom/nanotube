@@ -1,3 +1,4 @@
+# Cluster is the routing unit and defines a set of targets.
 [[cluster]]
 name = 'local0'
 type = 'jump' # cluster type defines routing inside a cluster
