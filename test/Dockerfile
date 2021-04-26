@@ -1,4 +1,4 @@
-FROM golang:1.15
+FROM golang:1.16
 LABEL authors="Booking.com"
 LABEL name="nanotube-test-receiver"
 LABEL vendor="Booking.com"
