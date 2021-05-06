@@ -10,5 +10,9 @@ test/fuzzing/corpus
 test/fuzzing/crashers
 test/fuzzing/suppressions
 test/fuzzing/*.zip
+
+# tests artefacts
 test/test2/out
 test/test2/in
+
+.dockerignore
