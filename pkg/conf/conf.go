@@ -16,6 +16,10 @@ type Main struct {
 	RulesConfig    string
 	RewritesConfig string
 
+	K8sMode          bool
+	K8sInjectPortTCP uint16
+	K8sFilterLabel   string
+
 	TargetPort uint16
 
 	// empty string not to listen
@@ -118,6 +122,10 @@ func MakeDefault() Main {
 		ClustersConfig: "",
 		RulesConfig:    "",
 		RewritesConfig: "",
+
+		K8sMode:          false,
+		K8sInjectPortTCP: 2003,
+		K8sFilterLabel:   "",
 
 		TargetPort: 2004,
 
