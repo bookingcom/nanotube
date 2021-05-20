@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-nt
+  labels:
+    k8s-app: kube-nt
+spec:
+  selector:
+    matchLabels:
+      name: kube-nt
+  template:
+    metadata:
+      labels:
+        name: kube-nt
+    spec:
+      containers:
+        - name: nt
+          image: nt
+      terminationGracePeriodSeconds: 30
