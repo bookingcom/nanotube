@@ -1,0 +1,49 @@
+[[rule]]
+    # Only one regex has to match to send the record. Order does not matter.
+    regexs = [
+        '.*a.*',
+        '^abc\.def\.'
+    ]
+    clusters = [
+        # Matching records will be sent here.
+        'local0'
+    ]
+    # If true, even if there is a match, we continue to the next rule.
+    continue = true
+
+[[rule]]
+    # Prefix matching can be used instead of regex to match prefixes.
+    # Prefix matching is faster than regex matching.
+    prefixes = [
+        'abc',
+        'xyz',
+        'poi'
+    ]
+    clusters = [
+        'local1'
+    ]
+
+[[rule]]
+    # This does the same as the previous regex, but is slower.
+    regexs = [
+        '^abc.*',
+        '^xyz.*',
+        '^poi.*'
+    ]
+    clusters = [
+        'local1'
+    ]
+
+# Prefixes and regexs can be mixed. Either has to match, i.e. they use OR logic.
+# Order does not matter.
+[[rule]]
+    prefixes = [
+        'xyz',
+        'poi'
+    ]
+    regexs = [
+        '^abc.*'
+    ]
+    clusters = [
+        'local1'
+    ]

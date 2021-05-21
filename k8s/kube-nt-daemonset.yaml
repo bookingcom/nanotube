@@ -15,5 +15,6 @@ spec:
     spec:
       containers:
         - name: nt
-          image: nt
+          image: nt:latest
+          imagePullPolicy: IfNotPresent
       terminationGracePeriodSeconds: 30

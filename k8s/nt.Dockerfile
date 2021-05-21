@@ -8,7 +8,7 @@ FROM alpine:3.13
 WORKDIR /nt
 
 COPY --from=builder /nt/nanotube /nt
-COPY ./config /nt/config
+COPY ./k8s/config /nt/config
 
 # main listening port
 EXPOSE 2003

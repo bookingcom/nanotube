@@ -5,12 +5,12 @@ build-from-scratch: kind-create-cluster use-kind-cluster launch-nt launch-sender
 launch-nt: build-nt-image load-nt-image apply-nt-daemonset
 
 build-nt-image:
-	docker build --no-cache --tag nt k8s/nt.Dockerfile .
+	docker build --no-cache --tag nt -f k8s/nt.Dockerfile .
 
 load-nt-image:
 	kind load docker-image nt --name nttest
 
-apply-net-daemonset:
+apply-nt-daemonset:
 	kubectl apply -f k8s/kube-nt-daemonset.yaml
 
 launch-sender: build-sender-image load-sender-image apply-sender-deployment
