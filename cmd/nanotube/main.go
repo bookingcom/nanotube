@@ -17,6 +17,7 @@ import (
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/in"
+	"github.com/bookingcom/nanotube/pkg/k8s"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
@@ -73,6 +74,14 @@ func main() {
 	metrics.Register(ms, &cfg)
 	ms.Version.WithLabelValues(version).Inc()
 	ms.ConfVersion.WithLabelValues(hash).Inc()
+
+	if cfg.K8sMode {
+		// TODO: Add graceful shutdown.
+		err := k8s.Observe(&cfg, lg, ms)
+		if err != nil {
+			log.Fatalf("error starting k8s observation and forwarding: %v", err)
+		}
+	}
 
 	if cfg.PprofPort != -1 {
 		go func() {
