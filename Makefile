@@ -35,7 +35,7 @@ test:
 
 .PHONY: lint
 lint:
-	golangci-lint run -E golint -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false ./...
+	golangci-lint run -E golint -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false --timeout 2m0s ./...
 
 .PHONY: fmt
 fmt:
