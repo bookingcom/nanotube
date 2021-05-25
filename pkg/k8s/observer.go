@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// Observe is a stub for function to observe and check for labeled pods via k8s API server.
 func Observe(cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) error {
 	conf, err := rest.InClusterConfig()
 	if err != nil {

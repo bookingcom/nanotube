@@ -20,6 +20,7 @@ require (
 	github.com/prometheus/client_golang v1.0.0
 	github.com/segmentio/fasthash v1.0.0
 	github.com/stephens2424/writerset v1.0.2 // indirect
+	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f
 	go.uber.org/atomic v1.4.0
 	go.uber.org/automaxprocs v1.3.0
 	go.uber.org/multierr v1.1.0 // indirect
