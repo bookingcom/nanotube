@@ -8,5 +8,6 @@ FROM alpine:3.13
 WORKDIR /nt
 
 COPY --from=builder /nt/sender /nt
+COPY --from=builder /nt/k8s/in /nt/in
 
-ENTRYPOINT ["./sender", "-config", "config/config.toml"]
+ENTRYPOINT ["./sender", "-data", "in", "-host", "localhost", "-port", "2003", "-rate", "10", "-cycle"]
