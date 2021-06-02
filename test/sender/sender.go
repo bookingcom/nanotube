@@ -17,7 +17,7 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-func connectAndSend(destination string, useUDP bool, cycle bool, ncycles int, messages [][]byte, limiter ratelimit.Limiter,
+func connectAndSend(destination string, useUDP bool, retryTCP bool, cycle bool, ncycles int, messages [][]byte, limiter ratelimit.Limiter,
 	wg *sync.WaitGroup, s *stats.Stats) {
 
 	var conn net.Conn
@@ -25,13 +25,29 @@ func connectAndSend(destination string, useUDP bool, cycle bool, ncycles int, me
 
 	if useUDP {
 		conn, err = net.Dial("udp", destination)
+		if err != nil {
+			log.Fatalf("could not connect to target host : %v", err)
+		}
+
 	} else {
 		conn, err = net.Dial("tcp", destination)
+		if retryTCP {
+			for {
+				if err != nil {
+					log.Printf("could open TCP connection to NT on %s, error %v. Retrying...", destination, err)
+				} else {
+					break
+				}
+				time.Sleep(time.Second * 10)
+				conn, err = net.Dial("tcp", destination)
+			}
+		} else {
+			if err != nil {
+				log.Fatalf("could not connect to target host : %v", err)
+			}
+		}
 	}
 
-	if err != nil {
-		log.Fatalf("could not connect to target host : %v", err)
-	}
 	defer func() {
 		err = conn.Close()
 		if err != nil {
@@ -68,6 +84,7 @@ func main() {
 	targetHost := flag.String("host", "", "target hostname")
 	targetPort := flag.Int("port", 0, "target port")
 	useUDP := flag.Bool("udp", false, "use UDP instead of TCP? Default - false.")
+	retryTCP := flag.Bool("retryTCP", false, "retry connection for TCP - do not fail if connection fails")
 	rate := flag.Int("rate", 1000, "rate to send messages(number/sec)")
 	cycle := flag.Bool("cycle", false, "cycle through the traffic file indefinitely?")
 	nCycles := flag.Int("ncycles", 0, "number of cycles over the data for each connection. 0 by default. 0 means infinity.")
@@ -113,7 +130,7 @@ func main() {
 	destination := net.JoinHostPort(*targetHost, strconv.Itoa(*targetPort))
 	for i := 0; i < *connections; i++ {
 		wg.Add(1)
-		go connectAndSend(destination, *useUDP, *cycle, *nCycles, messages, limiter, &wg, s)
+		go connectAndSend(destination, *useUDP, *retryTCP, *cycle, *nCycles, messages, limiter, &wg, s)
 	}
 
 	wg.Wait()
