@@ -77,10 +77,22 @@ func main() {
 
 	if cfg.K8sMode {
 		// TODO: Add graceful shutdown.
-		err := k8s.Observe(&cfg, lg, ms)
-		if err != nil {
-			log.Fatalf("error starting k8s observation and forwarding: %v", err)
-		}
+		tick := time.NewTicker(time.Second * 10)
+
+		go func() {
+			for {
+				<-tick.C
+				err := k8s.ObserveK8s(&cfg, lg, ms)
+				if err != nil {
+					log.Fatalf("error starting k8s observation and forwarding: %v", err)
+				}
+			}
+		}()
+		// if cfg.K8sContainerd {
+		// 	k8s.ObserveContainerd(lg)
+		// } else {
+		// 	k8s.ObserveDocker(lg)
+		// }
 	}
 
 	if cfg.PprofPort != -1 {

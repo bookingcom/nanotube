@@ -19,6 +19,8 @@ type Main struct {
 	K8sMode          bool
 	K8sInjectPortTCP uint16
 	K8sFilterLabel   string
+	// Use containerd instead of docker runtime?
+	K8sContainerd bool
 
 	TargetPort uint16
 
@@ -126,6 +128,7 @@ func MakeDefault() Main {
 		K8sMode:          false,
 		K8sInjectPortTCP: 2003,
 		K8sFilterLabel:   "",
+		K8sContainerd:    false,
 
 		TargetPort: 2004,
 

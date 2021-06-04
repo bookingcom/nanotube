@@ -10,7 +10,8 @@
         name: nt
         source: build
         build:
-          path: nt.Dockerfile
+          dockerfile: k8s/nt.Dockerfile
+          path: ..
           pull: no
         state: present
 
@@ -19,7 +20,8 @@
         name: sender
         source: build
         build:
-          path: sender.Dockerfile
+          dockerfile: k8s/sender.Dockerfile
+          path: ..
           pull: no
         state: present
 
@@ -42,6 +44,17 @@
       command: kind load docker-image sender --name nttest
 
     # k8s setup
+    - name: Pod reader role.
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: pod-reader-role.yaml
+
+    - name: Bind pod reader role.
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: pod-reader-rolebinding.yaml
 
     - name: Deploy NT daemonset
       community.kubernetes.k8s:

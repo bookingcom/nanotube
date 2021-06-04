@@ -1,6 +1,4 @@
-# Clusters config path. Mandatory.
 ClustersConfig = "config/clusters.toml"
-# Clusters config path. Mandatory.
 RulesConfig = "config/rules.toml"
 
 # Launch NT as a k8s daemonset forwarding metrics from pods. kubeNT!
@@ -12,86 +10,36 @@ K8sInjectPortTCP = 2003
 # the port injection.
 # Empty string means no filtering on label.
 K8sFilterLabel = ""
+K8sContainerd = true
 
-# The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 2004
 
-# Setting this to ip:port will enable TCP listening on specified address.
-# Use empty string to disable TCP listening.
-# Use empty ip to listen on all addresses.
 ListenTCP = ":2003"
-# Setting this to ip:port will enable UDP listening on specified address.
-# Use the empty string to disable UDP listening.
-# Use the empty IP to listen on all addresses.
 ListenUDP = ""
 
-# The size on main queue between listen and routing. Refer to docs for details.
 MainQueueSize = 100000
-# Each host has it's own queue that contains records to be sent to it. This is the size of it.
-# Refer to docs for more insight.
 HostQueueSize = 50000
 
-# Number of workers processing main queue and putting records into host queues
 WorkerPoolSize = 50
 
-# Timeout for dropping an incoming connection if no data is sent in.
 IncomingConnIdleTimeoutSec = 90
-# Timeout for sending data to target host via TCP connection.
-# Has to be > TCPOutBufFlushPeriodSec to allow enough time for the buffered records to be sent.
 SendTimeoutSec = 5
-# Timeout for connecting to a target host. Does not influence re-connections with exponential backoffs.
 OutConnTimeoutSec = 5
-# Time to wait for the processing pipeline to terminate when quitting. After this timeout is passed,
-# forced termination is done. This helps when graceful shutdown is stuck or slow.
 TermTimeoutSec = 10
 
-# The size of the buffer for sending data to a target host via a TCP connections.
 TCPOutBufSize = 4096
-
-# The period over which the out TCP buffer for the connections sending to target hosts is flushed.
-# This helps if the traffic is low and records get stuck in the buffer.
-# The value of zero means no flushing.
 TCPOutBufFlushPeriodSec = 2
 
-# The period to refresh the outgoing TCP connection.
-# This solves the following problem. If nothing is sent for a prolonged period of time to a client
-# it may drop the connection because of read i/o timeout. This will go unnoticed until the first
-# write attempt that will fail and data will be lost. To prevent this situation and data loss, connection
-# can be dropped and esteblished from scratch.
-# 0 = no connection refresh.
-TCPOutConnectionRefreshPeriodSec = 0
-
-# Maximum reconnection period to target host
 MaxHostReconnectPeriodMs = 5000
-# Parameter for exponential backoffs during reconnects
 HostReconnectPeriodDeltaMs = 10
 
-# Turns on and off the normalization of records path. Described in the docs in detail.
 NormalizeRecords = true
-# Turns on logging for special kinds of records. For now it's recrods with fractional timestamps.
 LogSpecialRecords = false
 
-# Initial number of allowed log records during LogLimitWindowSec with same msg and level
-LogLimitInitial = 10
-# Log every LogLimitThereafter record during LogLimitWindowSec after initial set with same msg and level
-LogLimitThereafter = 1000
-# Timeframe for log limiting
-LogLimitWindowSec = 1
-
-# Profiling port. Skip to disable.
 PprofPort = 6000
-# Prometheus port
 PromPort = 9090
-# Switch to expose only small subset of essential metrics.
-# (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
-LessMetrics = false
-# Explose prometheus metrcs with the total time for running each regex from config.
-# Can be used to understand what regexs from config are more 'expensive'
-RegexDurationMetric = false
-# Histogram parameters for the host queue size
+
 HostQueueLengthBucketFactor = 3.0
 HostQueueLengthBuckets = 10
-
-# Histogram parameters for the processing duration
 ProcessingDurationBucketFactor = 2.0
 ProcessingDurationBuckets = 10

@@ -20,4 +20,9 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
+          env:
+            - name: OWN_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
       terminationGracePeriodSeconds: 30
