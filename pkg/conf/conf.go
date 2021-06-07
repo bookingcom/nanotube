@@ -16,11 +16,15 @@ type Main struct {
 	RulesConfig    string
 	RewritesConfig string
 
-	K8sMode          bool
+	// Start NT as a metrics forwarder in k8s?
+	K8sMode bool
+	// The port to listen on when forwarding metrics from containers.
 	K8sInjectPortTCP uint16
-	K8sFilterLabel   string
-	// Use containerd instead of docker runtime?
-	K8sContainerd bool
+	// The label to use in order to turn on forwarding from a pod. Label value should be "yes".
+	// If left unset or "", all pods get metrics forwarding.
+	K8sSwitchLabel string
+	// The period for updating the containers for metrics forwarding in k8s.
+	K8sContainerUpdPeriodSec int
 
 	TargetPort uint16
 
@@ -125,10 +129,10 @@ func MakeDefault() Main {
 		RulesConfig:    "",
 		RewritesConfig: "",
 
-		K8sMode:          false,
-		K8sInjectPortTCP: 2003,
-		K8sFilterLabel:   "",
-		K8sContainerd:    false,
+		K8sMode:                  false,
+		K8sInjectPortTCP:         2003,
+		K8sSwitchLabel:           "",
+		K8sContainerUpdPeriodSec: 30,
 
 		TargetPort: 2004,
 

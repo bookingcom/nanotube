@@ -75,26 +75,6 @@ func main() {
 	ms.Version.WithLabelValues(version).Inc()
 	ms.ConfVersion.WithLabelValues(hash).Inc()
 
-	if cfg.K8sMode {
-		// TODO: Add graceful shutdown.
-		tick := time.NewTicker(time.Second * 10)
-
-		go func() {
-			for {
-				<-tick.C
-				err := k8s.ObserveK8s(&cfg, lg, ms)
-				if err != nil {
-					log.Fatalf("error starting k8s observation and forwarding: %v", err)
-				}
-			}
-		}()
-		// if cfg.K8sContainerd {
-		// 	k8s.ObserveContainerd(lg)
-		// } else {
-		// 	k8s.ObserveDocker(lg)
-		// }
-	}
-
 	if cfg.PprofPort != -1 {
 		go func() {
 			l, err := reuseport.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(cfg.PprofPort)))
@@ -121,7 +101,16 @@ func main() {
 	}()
 
 	stop := make(chan struct{})
+
+	if cfg.K8sMode {
+		// TODO: Add graceful shutdown.
+		k8s.ObserveK8s(&cfg, stop, lg, ms)
+		// k8s.ObserveContainerd(lg)
+		// k8s.ObserveDocker(lg)
+	}
+
 	n := gracenet.Net{}
+
 	queue, err := in.Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)

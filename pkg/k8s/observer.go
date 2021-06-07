@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
-	"github.com/containerd/containerd"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,116 +18,113 @@ import (
 
 // ObserveK8s is a stub for function to observe and check for labeled pods via k8s API server.
 // Non-blocking. Starts own goroutine.
-func ObserveK8s(cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) error {
+func ObserveK8s(cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) {
+	cs := map[string]Cont{}
 
+	go func() {
+		tick := time.NewTicker(time.Second * time.Duration(cfg.K8sContainerUpdPeriodSec))
+		defer tick.Stop()
+
+		for {
+			<-tick.C
+			err := updateWatchedContainers(cfg, cs, lg)
+			if err != nil {
+				lg.Error("error updating watched containers", zap.Error(err))
+			}
+		}
+	}()
+}
+
+func updateWatchedContainers(cfg *conf.Main, cs map[string]Cont, lg *zap.Logger) error {
 	conf, err := rest.InClusterConfig()
 	if err != nil {
 		return errors.Wrapf(err, "error getting in-cluster config")
 	}
 
+	// client is built from scratch every time to prevent problems with connection keep-alive and config changes
 	clientset, err := kubernetes.NewForConfig(conf)
 	if err != nil {
 		return errors.Wrapf(err, "could not build k8s clientset from config")
 	}
 
-	// nodesList, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return errors.Wrapf(err, "could not obtain nodes list")
-	}
-	// node := nodesList.Items[0].GetName()
 	node := os.Getenv("OWN_NODE_NAME")
-	lg.Info("own node name", zap.String("OWN_NODE_NAME", node))
 
-	// labelSel := metav1.LabelSelector{
-	// 	MatchLabels: map[string]string{"use_graphite_line": "yes"},
-	// }
-	// fieldSel := fields.OneTermEqualSelector("spec.nodeName", node)
+	listOpts := metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", node),
+	}
+	if cfg.K8sSwitchLabel != "" {
+		listOpts.LabelSelector = fmt.Sprintf("%s=yes", cfg.K8sSwitchLabel)
+	}
+
 	// TODO: Try to use Watch.
+	// TODO: Check timeouts etc.
 	pods, err := clientset.CoreV1().Pods("default").List(
 		context.TODO(),
-		metav1.ListOptions{
-
-			LabelSelector: "use_graphite_line=yes",
-			FieldSelector: fmt.Sprintf("spec.nodeName=%s", node),
-		},
+		listOpts,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "could not list pods")
 	}
 
 	podIDs := []string{}
+	freshContainerIDs := map[string]bool{} // id -> is containerd?
 	for _, pod := range pods.Items {
 		podIDs = append(podIDs, string(pod.GetUID()))
+		for _, contStatus := range pod.Status.ContainerStatuses {
+			// contStatus looks like docker://<id>
+			parts := strings.Split(contStatus.ContainerID, "://")
+			if len(parts) != 2 {
+				return errors.Wrap(
+					fmt.Errorf("container id: %s, should look like docker://<id>", contStatus.ContainerID),
+					"error when splitting container status")
+			}
+			if parts[0] == "containerd" {
+				freshContainerIDs[parts[1]] = true
+			} else if parts[0] == "docker" {
+				freshContainerIDs[parts[1]] = false
+			} else {
+				return errors.Wrapf(
+					fmt.Errorf("container type in id: %s, should be either containerd or docker", parts[0]),
+					"error when parsing container id: %s", contStatus.ContainerID)
+			}
+		}
 	}
 
-	lg.Info("list of pods", zap.String("node", node), zap.Strings("pod UIDs", podIDs))
-	
+	// TODO: Forwarding setups are potentially long and blocking.
+	// TODO: Docker and containerd IDs can potentially be duplicated.
+
+	// check intersection of fresh and old containers
+	for id, c := range cs {
+		if _, ok := freshContainerIDs[id]; !ok {
+			// if container disappeared, stop forwarding from it
+			err := c.StopForwarding()
+			if err != nil {
+				return errors.Wrap(err, "failed to stop forwarding from container")
+			}
+			delete(cs, id)
+		}
+	}
+
+	for id, typ := range freshContainerIDs {
+		if _, ok := cs[id]; !ok {
+			// if new container appears, start forwarding from it
+			if typ {
+				// true means containerd
+				cs[id] = NewContainerdCont(id, lg)
+			} else {
+				// false means docker
+				cs[id] = NewDockerCont(id, lg)
+			}
+
+			err := cs[id].StartForwarding()
+			if err != nil {
+				return errors.Wrap(err, "failed to start forwarding from container")
+			}
+		}
+	}
+
+	lg.Debug("list of pods", zap.String("node", node), zap.Strings("pod UIDs", podIDs))
+	lg.Debug("list of containers", zap.String("node", node), zap.Any("container IDs", freshContainerIDs))
 
 	return nil
-}
-
-// ObserveDocker launches local Docker containers observation on the node w/ docker runtime.
-// Non-blocking. Starts own goroutine.
-func ObserveDocker(lg *zap.Logger) {
-	// TODO Connection is never refreshed. This may cause problems. What are client guarantees?
-	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		lg.Error("error creating docker client", zap.Error(err))
-	}
-	defer func() {
-		err := cli.Close()
-		lg.Error("error closing docker client", zap.Error(err))
-	}()
-
-	go func() {
-		timer := time.NewTimer(10 * time.Second)
-
-		for {
-			<-timer.C
-			containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
-			if err != nil {
-				lg.Error("error listing containers", zap.Error(err))
-			}
-
-			ss := []string{}
-			for _, container := range containers {
-				ss = append(ss, container.ID)
-			}
-			lg.Info("Local node containers", zap.Strings("IDs", ss))
-		}
-	}()
-}
-
-// ObserveContainerd launches local Docker containers observation on the node w/ containerd runtime.
-// Non-blocking. Starts own goroutine.
-func ObserveContainerd(lg *zap.Logger) {
-	ctx := context.Background()
-	client, err := containerd.New("/run/containerd/containerd.sock")
-	if err != nil {
-		lg.Error("error creating containerd client", zap.Error(err))
-		return
-	}
-	defer func() {
-		err := client.Close()
-		lg.Error("error closing containerd client", zap.Error(err))
-	}()
-
-	go func() {
-		timer := time.NewTimer(10 * time.Second)
-
-		for {
-			<-timer.C
-			containers, err := client.Containers(ctx)
-			if err != nil {
-				lg.Error("error listing containerd containers", zap.Error(err))
-			}
-
-			ss := []string{}
-			for _, container := range containers {
-				ss = append(ss, container.ID())
-			}
-			lg.Info("Local node containers", zap.Strings("IDs", ss))
-		}
-	}()
 }

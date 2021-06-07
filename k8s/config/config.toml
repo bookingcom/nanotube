@@ -1,15 +1,9 @@
 ClustersConfig = "config/clusters.toml"
 RulesConfig = "config/rules.toml"
 
-# Launch NT as a k8s daemonset forwarding metrics from pods. kubeNT!
 K8sMode = true
-# Pods to inject for TCP listening on selected pods. Metics sent to that port will be forwarded
-# to the running daemon-set.
 K8sInjectPortTCP = 2003
-# Label to filter pods on. Only labeled pods running on the same node as NT daemon-set will get
-# the port injection.
-# Empty string means no filtering on label.
-K8sFilterLabel = ""
+K8sSwitchLabel = "use_graphite_line"
 K8sContainerd = true
 
 TargetPort = 2004

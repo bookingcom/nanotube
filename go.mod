@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/burntsushi/toml v0.3.1
-	github.com/containerd/containerd v1.5.2 // indirect
+	github.com/containerd/containerd v1.5.2
 	github.com/dgryski/go-jump v0.0.0-20170409065014-e1f439676b57
 	github.com/docker/docker v20.10.6+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
