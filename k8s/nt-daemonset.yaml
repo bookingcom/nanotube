@@ -25,4 +25,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+          volumeMounts:
+            - mountPath: /run
+              name: container-socket
+            - mountPath: /var/run
+              name: container-socket
       terminationGracePeriodSeconds: 30
+      volumes:
+        - hostPath:
+            path: /run
+          name: container-socket

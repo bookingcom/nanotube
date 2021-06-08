@@ -91,7 +91,7 @@ func updateWatchedContainers(cfg *conf.Main, cs map[string]Cont, lg *zap.Logger)
 	}
 
 	// TODO: Forwarding setups are potentially long and blocking.
-	// TODO: Docker and containerd IDs can potentially be duplicated.
+	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
 
 	// check intersection of fresh and old containers
 	for id, c := range cs {
@@ -110,7 +110,7 @@ func updateWatchedContainers(cfg *conf.Main, cs map[string]Cont, lg *zap.Logger)
 			// if new container appears, start forwarding from it
 			if typ {
 				// true means containerd
-				cs[id] = NewContainerdCont(id, lg)
+				cs[id] = NewContainerdCont(id, lg, cfg.K8sInjectPortTCP)
 			} else {
 				// false means docker
 				cs[id] = NewDockerCont(id, lg)

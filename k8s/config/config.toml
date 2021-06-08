@@ -19,7 +19,7 @@ WorkerPoolSize = 50
 IncomingConnIdleTimeoutSec = 90
 SendTimeoutSec = 5
 OutConnTimeoutSec = 5
-TermTimeoutSec = 10
+TermTimeoutSec = 1
 
 TCPOutBufSize = 4096
 TCPOutBufFlushPeriodSec = 2
