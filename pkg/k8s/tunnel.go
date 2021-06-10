@@ -6,19 +6,77 @@ import (
 	"runtime"
 
 	"github.com/pkg/errors"
-	// TODO Replace w/ https://github.com/moby/libnetwork if possible
 	"github.com/vishvananda/netns"
 )
 
-// OpenTCPTunnel opens an injected TCP port for listening in a container.
-func OpenTCPTunnel(containerID string, port uint16) (listener *net.TCPListener, returnErr error) {
-	listener = nil  // return default
-	returnErr = nil // return default
+// OpenTCPTunnelToContainerd opens an injected TCP port for listening in a container.
+func OpenTCPTunnelToContainerd(pid uint32, port uint16) (listener *net.TCPListener, returnErr error) {
+	listener = nil
+	returnErr = nil
 
-	// The setns syscall applies to the calling thread only,
-	// not the whole process. Doing LockOSThread will guarantee
-	// that the rest of the code till the restoration of the
-	// original network namespace runs in the same OS thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	ownNetns, err := netns.Get()
+	if err != nil {
+		returnErr = errors.Wrap(err, "failed to get own networking namespace")
+		return
+	}
+
+	defer func() {
+		err := ownNetns.Close()
+		if err != nil {
+			// TODO Add recursive wrapping
+			returnErr = errors.Wrap(err, "error while closing own network namespace")
+		}
+	}()
+
+	newns, err := netns.GetFromPid(int(pid))
+	if err != nil {
+		returnErr = errors.Wrap(err, "failed to get docker network namespace")
+		return
+	}
+
+	defer func() {
+		err := newns.Close()
+		if err != nil {
+			// TODO Add recursive wrapping
+			returnErr = errors.Wrap(err, "error while closing docker net namespace")
+		}
+	}()
+
+	if err = netns.Set(newns); err != nil {
+		return nil, err
+	}
+	defer func() {
+		err := netns.Set(ownNetns)
+		if err != nil {
+			// TODO This should probably cause a panic. All subsequent net operations will be faulty.
+			returnErr = errors.Wrap(err, "error while setting back to the original net namespace")
+		}
+	}()
+
+	addrStr := fmt.Sprintf("127.0.0.1:%d", port)
+	addr, err := net.ResolveTCPAddr("tcp", addrStr)
+	if err != nil {
+		returnErr = errors.Wrapf(err, "error resolving TCP address from string %s", addrStr)
+		return
+	}
+
+	listener, err = net.ListenTCP("tcp", addr)
+	if err != nil {
+		returnErr = errors.Wrapf(err, "error opening injected TCP port %d for listening", port)
+		return
+	}
+
+	return
+}
+
+// OpenTCPTunnelToDocker opens an injected TCP port for listening in a container.
+func OpenTCPTunnelToDocker(containerID string, port uint16) (listener *net.TCPListener, returnErr error) {
+	listener = nil
+	returnErr = nil
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 

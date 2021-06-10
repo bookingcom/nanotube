@@ -116,7 +116,7 @@ func main() {
 
 	s := &stats.Stats{}
 	if *outDir == "" {
-		s = stats.NewStats(time.Second, *exitAfter, "receiver", func() {
+		s = stats.NewStats(time.Second, *exitAfter, func() {
 			log.Printf("Exiting after %s duration of inactivity", *exitAfter)
 			os.Exit(0)
 		})

@@ -1,11 +1,15 @@
 package k8s
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -21,6 +25,7 @@ type Cont interface {
 
 type baseCont struct {
 	ID   string
+	Name string
 	Lg   *zap.Logger
 	Port uint16
 
@@ -33,19 +38,24 @@ type ContainerdCont struct {
 }
 
 // NewContainerdCont is a constructor.
-func NewContainerdCont(id string, lg *zap.Logger, port uint16) *ContainerdCont {
+func NewContainerdCont(id string, name string, lg *zap.Logger, port uint16) *ContainerdCont {
 	return &ContainerdCont{baseCont{
 		ID:   id,
-		Lg:   lg.With(zap.String("container ID", id), zap.String("container type", "containerd")),
+		Name: name,
+		Lg:   lg.With(zap.String("ID", id), zap.String("name", name), zap.String("type", "containerd")),
 		Port: port,
 	}}
 }
 
 // StartForwarding starts forwarding Graphite line data from container.
 func (c *ContainerdCont) StartForwarding() error {
-	c.Lg.Info("Pretend to start forwarding...")
+	c.Lg.Info("Forward start...")
 
-	listener, err := OpenTCPTunnel(c.ID, c.Port)
+	pid, err := CointainerdPidFromID(c.ID)
+	if err != nil {
+		return errors.Wrap(err, "could not get pid for container by ID")
+	}
+	listener, err := OpenTCPTunnelToContainerd(pid, c.Port)
 	if err != nil {
 		return errors.Wrap(err, "error opening TCP tunnel into container")
 	}
@@ -63,7 +73,6 @@ func (c *ContainerdCont) StartForwarding() error {
 			c.Lg.Error("erroror reading from conn", zap.Error(err))
 		}
 		c.Lg.Info("read from container", zap.Int("n bytes", nb), zap.ByteString("content", buf))
-
 	}()
 
 	return nil
@@ -71,9 +80,55 @@ func (c *ContainerdCont) StartForwarding() error {
 
 // StopForwarding stops the forwarding.
 func (c *ContainerdCont) StopForwarding() error {
-	c.Lg.Info("Pretend to stop forwarding...")
+	c.Lg.Info("Stopping forwarding...")
 
 	return nil
+}
+
+func CointainerdPidFromID(id string) (pid uint32, retErr error) {
+	pid = 0
+	retErr = nil
+
+	ctx := namespaces.WithNamespace(context.Background(), "k8s.io")
+	client, err := containerd.New("/run/containerd/containerd.sock")
+	if err != nil {
+		return 0, errors.Wrap(err, "error creating containerd client")
+	}
+	defer func() {
+		err := client.Close()
+		if retErr != nil {
+			retErr = errors.Wrap(retErr, fmt.Sprintf("error closing containerd client: %v", err))
+		} else {
+			retErr = errors.Wrap(err, "error closing containerd client")
+		}
+	}()
+
+	containers, err := client.Containers(ctx)
+	if err != nil {
+		retErr = errors.Wrap(err, "error listing containerd containers")
+		return
+	}
+
+	for _, container := range containers {
+		if container.ID() == id {
+			in := strings.NewReader("")
+			var outBuf bytes.Buffer
+			var errBuf bytes.Buffer
+			tsk, err := container.Task(ctx, cio.NewAttach(cio.WithStreams(in, &outBuf, &errBuf)))
+			if err != nil {
+				retErr = errors.Wrap(err, "error getting task of container")
+				return
+			}
+			pid = tsk.Pid()
+			tsk.CloseIO(ctx)
+		}
+	}
+
+	if pid == 0 {
+		retErr = errors.New("could not find pid for container; no container with such id found")
+	}
+
+	return
 }
 
 // DockerCont is a container on docker runtime.
@@ -82,23 +137,24 @@ type DockerCont struct {
 }
 
 // NewDockerCont is a constructor.
-func NewDockerCont(id string, lg *zap.Logger) *DockerCont {
+func NewDockerCont(id string, name string, lg *zap.Logger) *DockerCont {
 	return &DockerCont{baseCont{
-		ID: id,
-		Lg: lg.With(zap.String("container ID", id), zap.String("container type", "docker")),
+		ID:   id,
+		Name: name,
+		Lg:   lg.With(zap.String("ID", id), zap.String("name", name), zap.String("type", "docker")),
 	}}
 }
 
 // StartForwarding starts forwarding Graphite line data from container.
 func (c *DockerCont) StartForwarding() error {
-	c.Lg.Info("Pretend to start forwarding...")
+	c.Lg.Info("Forward start...")
 
 	return nil
 }
 
 // StopForwarding stops the forwarding.
 func (c *DockerCont) StopForwarding() error {
-	c.Lg.Info("Pretend to stop forwarding...")
+	c.Lg.Info("Stopping forwarding...")
 
 	return nil
 }
@@ -158,11 +214,14 @@ func ObserveContainerd(lg *zap.Logger) {
 				lg.Error("error listing containerd containers", zap.Error(err))
 			}
 
-			ss := []string{}
 			for _, container := range containers {
-				ss = append(ss, container.ID())
+				tsk, err := container.Task(ctx, cio.NewAttach())
+				if err != nil {
+					lg.Error("error getting task of container", zap.Error(err), zap.String("container ID", container.ID()))
+				}
+				lg.Info("container info", zap.String("ID", container.ID()), zap.Uint32("pid", tsk.Pid()))
 			}
-			lg.Info("Local node containers", zap.Strings("IDs", ss))
+
 			<-tick.C
 		}
 	}()

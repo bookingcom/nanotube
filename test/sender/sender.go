@@ -17,35 +17,15 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-func connectAndSend(destination string, useUDP bool, retryTCP bool, cycle bool, ncycles int, messages [][]byte, limiter ratelimit.Limiter,
+func connectAndSendUDP(destination string, cycle bool, ncycles int, messages [][]byte, limiter ratelimit.Limiter,
 	wg *sync.WaitGroup, s *stats.Stats) {
 
 	var conn net.Conn
 	var err error
 
-	if useUDP {
-		conn, err = net.Dial("udp", destination)
-		if err != nil {
-			log.Fatalf("could not connect to target host : %v", err)
-		}
-
-	} else {
-		conn, err = net.Dial("tcp", destination)
-		if retryTCP {
-			for {
-				if err != nil {
-					log.Printf("could open TCP connection to NT on %s, error %v. Retrying...", destination, err)
-				} else {
-					break
-				}
-				time.Sleep(time.Second * 10)
-				conn, err = net.Dial("tcp", destination)
-			}
-		} else {
-			if err != nil {
-				log.Fatalf("could not connect to target host : %v", err)
-			}
-		}
+	conn, err = net.Dial("udp", destination)
+	if err != nil {
+		log.Fatalf("could not connect to target host : %v", err)
 	}
 
 	defer func() {
@@ -60,7 +40,7 @@ func connectAndSend(destination string, useUDP bool, retryTCP bool, cycle bool, 
 			limiter.Take()
 			_, err := conn.Write(message)
 			if err != nil {
-				log.Fatalf("error sending data: %v", err)
+				log.Printf("error sending data: %v", err)
 			}
 			s.Inc()
 		}
@@ -77,6 +57,66 @@ func connectAndSend(destination string, useUDP bool, retryTCP bool, cycle bool, 
 	}
 
 	wg.Done()
+}
+
+func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles int, messages [][]byte, limiter ratelimit.Limiter,
+	wg *sync.WaitGroup, s *stats.Stats) {
+
+	conn := openTCPConnection(destination, retryTCP)
+
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			log.Fatalf("error closing connection: %v", err)
+		}
+	}()
+
+	for i := 0; ; i++ {
+		for _, message := range messages {
+			limiter.Take()
+			_, err := conn.Write(message)
+			if err != nil {
+				log.Printf("error sending data: %v", err)
+				conn.Close()
+				conn = openTCPConnection(destination, retryTCP)
+			}
+			s.Inc()
+		}
+
+		if !cycle {
+			break
+		} else {
+			if ncycles != 0 && i >= ncycles-1 {
+				break
+			}
+		}
+
+		log.Printf("Finished passage through the file for cycle %d. Cycling...\n", i)
+	}
+
+	wg.Done()
+}
+
+func openTCPConnection(destination string, retryTCP bool) net.Conn {
+	conn, err := net.Dial("tcp", destination)
+
+	if retryTCP {
+		for {
+			if err != nil {
+				log.Printf("could open TCP connection to NT on %s, error %v. Retrying...", destination, err)
+			} else {
+				break
+			}
+			time.Sleep(time.Second * 10)
+			conn, err = net.Dial("tcp", destination)
+		}
+	} else {
+		if err != nil {
+			log.Fatalf("could not connect to target host : %v", err)
+		}
+	}
+
+	return conn
 }
 
 func main() {
@@ -121,16 +161,21 @@ func main() {
 	for _, m := range messageStrings {
 		messages = append(messages, []byte(m))
 	}
-	s := stats.NewStats(time.Second, 0, "sender", func() {})
+	s := stats.NewStats(time.Second, 0, func() {})
 	limiter := ratelimit.NewUnlimited()
 	if *rate != 0 {
 		limiter = ratelimit.New(*rate)
 	}
 	var wg sync.WaitGroup
-	destination := net.JoinHostPort(*targetHost, strconv.Itoa(*targetPort))
+
 	for i := 0; i < *connections; i++ {
 		wg.Add(1)
-		go connectAndSend(destination, *useUDP, *retryTCP, *cycle, *nCycles, messages, limiter, &wg, s)
+		destination := net.JoinHostPort(*targetHost, strconv.Itoa(*targetPort))
+		if *useUDP {
+			go connectAndSendUDP(destination, *cycle, *nCycles, messages, limiter, &wg, s)
+		} else {
+			go connectAndSendTCP(destination, *retryTCP, *cycle, *nCycles, messages, limiter, &wg, s)
+		}
 	}
 
 	wg.Wait()

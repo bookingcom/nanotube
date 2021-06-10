@@ -5,6 +5,10 @@
   gather_facts: no
 
   tasks:
+    - name: Build NT
+      make:
+        chdir: ..
+        target: build
     - name: Ensure the NT image is built
       docker_image:
         name: nt
@@ -44,13 +48,13 @@
       command: kind load docker-image sender --name nttest
 
     # k8s setup
-    - name: Pod reader role.
+    - name: Pod reader role
       community.kubernetes.k8s:
         context: kind-nttest
         state: present
         src: pod-reader-role.yaml
 
-    - name: Bind pod reader role.
+    - name: Bind pod reader role
       community.kubernetes.k8s:
         context: kind-nttest
         state: present

@@ -66,10 +66,9 @@ func updateWatchedContainers(cfg *conf.Main, cs map[string]Cont, lg *zap.Logger)
 		return errors.Wrapf(err, "could not list pods")
 	}
 
-	podIDs := []string{}
 	freshContainerIDs := map[string]bool{} // id -> is containerd?
+	contNames := map[string]string{}       // TODO may leak mem
 	for _, pod := range pods.Items {
-		podIDs = append(podIDs, string(pod.GetUID()))
 		for _, contStatus := range pod.Status.ContainerStatuses {
 			// contStatus looks like docker://<id>
 			parts := strings.Split(contStatus.ContainerID, "://")
@@ -78,6 +77,7 @@ func updateWatchedContainers(cfg *conf.Main, cs map[string]Cont, lg *zap.Logger)
 					fmt.Errorf("container id: %s, should look like docker://<id>", contStatus.ContainerID),
 					"error when splitting container status")
 			}
+			contNames[parts[1]] = contStatus.Name
 			if parts[0] == "containerd" {
 				freshContainerIDs[parts[1]] = true
 			} else if parts[0] == "docker" {
@@ -110,10 +110,10 @@ func updateWatchedContainers(cfg *conf.Main, cs map[string]Cont, lg *zap.Logger)
 			// if new container appears, start forwarding from it
 			if typ {
 				// true means containerd
-				cs[id] = NewContainerdCont(id, lg, cfg.K8sInjectPortTCP)
+				cs[id] = NewContainerdCont(id, contNames[id], lg, cfg.K8sInjectPortTCP)
 			} else {
 				// false means docker
-				cs[id] = NewDockerCont(id, lg)
+				cs[id] = NewDockerCont(id, contNames[id], lg)
 			}
 
 			err := cs[id].StartForwarding()
@@ -122,9 +122,6 @@ func updateWatchedContainers(cfg *conf.Main, cs map[string]Cont, lg *zap.Logger)
 			}
 		}
 	}
-
-	lg.Debug("list of pods", zap.String("node", node), zap.Strings("pod UIDs", podIDs))
-	lg.Debug("list of containers", zap.String("node", node), zap.Any("container IDs", freshContainerIDs))
 
 	return nil
 }

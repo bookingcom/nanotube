@@ -14,12 +14,15 @@ spec:
       labels:
         name: kube-nt
     spec:
+      hostNetwork: true
+      hostPID: true
       containers:
         - name: nt
           image: nt
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
+            privileged: true
           env:
             - name: OWN_NODE_NAME
               valueFrom:

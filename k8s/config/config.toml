@@ -4,7 +4,7 @@ RulesConfig = "config/rules.toml"
 K8sMode = true
 K8sInjectPortTCP = 2003
 K8sSwitchLabel = "use_graphite_line"
-K8sContainerd = true
+K8sContainerUpdPeriodSec = 10
 
 TargetPort = 2004
 
