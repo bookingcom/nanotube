@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/in"
+	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
@@ -27,9 +31,14 @@ type baseCont struct {
 	ID   string
 	Name string
 	Lg   *zap.Logger
+	Ms   *metrics.Prom
 	Port uint16
+	Q    chan string
+	Cfg  *conf.Main
 
-	listener *net.TCPListener
+	// linter false positive
+	listener *net.TCPListener // nolint:structcheck
+	stop     chan struct{}
 }
 
 // ContainerdCont represents container on containerd runtime.
@@ -38,11 +47,14 @@ type ContainerdCont struct {
 }
 
 // NewContainerdCont is a constructor.
-func NewContainerdCont(id string, name string, lg *zap.Logger, port uint16) *ContainerdCont {
+func NewContainerdCont(id string, name string, lg *zap.Logger, port uint16, q chan string, cfg *conf.Main, ms *metrics.Prom) *ContainerdCont {
 	return &ContainerdCont{baseCont{
 		ID:   id,
 		Name: name,
 		Lg:   lg.With(zap.String("ID", id), zap.String("name", name), zap.String("type", "containerd")),
+		Ms:   ms,
+		Q:    q,
+		Cfg:  cfg,
 		Port: port,
 	}}
 }
@@ -59,21 +71,12 @@ func (c *ContainerdCont) StartForwarding() error {
 	if err != nil {
 		return errors.Wrap(err, "error opening TCP tunnel into container")
 	}
-	c.listener = listener
 
-	go func() {
-		conn, err := c.listener.AcceptTCP()
-		if err != nil {
-			c.Lg.Error("error accepting connection from inside the pod", zap.Error(err))
-		}
-		c.Lg.Info("accepted TCP connection")
-		var buf []byte
-		nb, err := conn.Read(buf)
-		if err != nil {
-			c.Lg.Error("erroror reading from conn", zap.Error(err))
-		}
-		c.Lg.Info("read from container", zap.Int("n bytes", nb), zap.ByteString("content", buf))
-	}()
+	c.listener = listener
+	c.stop = make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go in.AcceptAndListenTCP(listener, c.Q, c.stop, c.Cfg, &wg, c.Ms, c.Lg)
 
 	return nil
 }
@@ -81,10 +84,11 @@ func (c *ContainerdCont) StartForwarding() error {
 // StopForwarding stops the forwarding.
 func (c *ContainerdCont) StopForwarding() error {
 	c.Lg.Info("Stopping forwarding...")
-
+	close(c.stop)
 	return nil
 }
 
+// CointainerdPidFromID returns PID for container
 func CointainerdPidFromID(id string) (pid uint32, retErr error) {
 	pid = 0
 	retErr = nil
@@ -120,7 +124,11 @@ func CointainerdPidFromID(id string) (pid uint32, retErr error) {
 				return
 			}
 			pid = tsk.Pid()
-			tsk.CloseIO(ctx)
+			err = tsk.CloseIO(ctx)
+			if err != nil {
+				retErr = errors.Wrap(err, "error closing container task")
+				return
+			}
 		}
 	}
 
@@ -149,12 +157,23 @@ func NewDockerCont(id string, name string, lg *zap.Logger) *DockerCont {
 func (c *DockerCont) StartForwarding() error {
 	c.Lg.Info("Forward start...")
 
+	listener, err := OpenTCPTunnelToDocker(c.ID, c.Port)
+	if err != nil {
+		return errors.Wrap(err, "error opening TCP tunnel into container")
+	}
+	c.listener = listener
+	c.stop = make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go in.AcceptAndListenTCP(listener, c.Q, c.stop, c.Cfg, &wg, c.Ms, c.Lg)
+
 	return nil
 }
 
 // StopForwarding stops the forwarding.
 func (c *DockerCont) StopForwarding() error {
 	c.Lg.Info("Stopping forwarding...")
+	close(c.stop)
 
 	return nil
 }
@@ -162,7 +181,6 @@ func (c *DockerCont) StopForwarding() error {
 // ObserveDocker is used for testing Docker client.
 func ObserveDocker(lg *zap.Logger) {
 	go func() {
-		// TODO Connection is never refreshed. This may cause problems. What are client guarantees?
 		ctx := context.Background()
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		if err != nil {

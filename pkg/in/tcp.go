@@ -11,7 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func acceptAndListenTCP(l net.Listener, queue chan string, term <-chan struct{},
+// AcceptAndListenTCP listens for incoming TCP connections.
+func AcceptAndListenTCP(l net.Listener, queue chan string, term <-chan struct{},
 	cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	var wg sync.WaitGroup
 
@@ -107,5 +108,14 @@ loop:
 			// give the reader the ability to drain the queue and close afterwards
 			break loop // break both from select and from for
 		}
+	}
+}
+
+func sendToMainQ(rec string, q chan<- string, ms *metrics.Prom) {
+	select {
+	case q <- rec:
+		ms.InRecs.Inc()
+	default:
+		ms.ThrottledRecs.Inc()
 	}
 }

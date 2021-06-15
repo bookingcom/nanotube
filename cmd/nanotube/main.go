@@ -16,8 +16,6 @@ import (
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
-	"github.com/bookingcom/nanotube/pkg/in"
-	"github.com/bookingcom/nanotube/pkg/k8s"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
@@ -102,16 +100,9 @@ func main() {
 
 	stop := make(chan struct{})
 
-	if cfg.K8sMode {
-		// TODO: Add graceful shutdown.
-		k8s.ObserveK8s(&cfg, stop, lg, ms)
-		// k8s.ObserveContainerd(lg)
-		// k8s.ObserveDocker(lg)
-	}
-
 	n := gracenet.Net{}
-
-	queue, err := in.Listen(&n, &cfg, stop, lg, ms)
+	// TODO: Stop blocking.
+	queue, err := Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}

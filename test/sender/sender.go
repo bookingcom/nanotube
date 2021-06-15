@@ -77,7 +77,10 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 			_, err := conn.Write(message)
 			if err != nil {
 				log.Printf("error sending data: %v", err)
-				conn.Close()
+				err := conn.Close()
+				if err != nil {
+					log.Fatalf("error closing connection: %v", err)
+				}
 				conn = openTCPConnection(destination, retryTCP)
 			}
 			s.Inc()

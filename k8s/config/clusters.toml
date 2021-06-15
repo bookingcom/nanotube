@@ -1,33 +1,7 @@
-# Cluster is the routing unit and defines a set of targets.
 [[cluster]]
 name = 'local0'
-type = 'jump' # cluster type defines routing inside a cluster
-    [[cluster.hosts]]
-    name = 'localhost' # FQDN or IP of the host
-    port = 8001 # optional, overrides setting in main config
-    index = 0 # index in the hash ring 
-    [[cluster.hosts]]
-    name = 'localhost'
-    port = 8002
-    index = 1
-
-[[cluster]]
-name = 'local1'
 type = 'jump'
     [[cluster.hosts]]
     name = 'localhost'
-    port = 8101
-    index = 0
-    [[cluster.hosts]]
-    name = 'localhost'
-    port = 8102
-    index = 1
-    [[cluster.hosts]]
-    name = 'localhost'
-    port = 8103
-    index = 2
-    [[cluster.hosts]]
-    name = 'localhost'
-    port = 8104
-    index = 3
-    grpc = true # sets the target host to use GRPC protocol
+    port = 8001
+    index = 0 
