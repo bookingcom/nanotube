@@ -23,7 +23,6 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 
 	if cfg.K8sMode {
 		connWG.Add(1)
-		// TODO: Stop blocking.
 		k8s.Observe(queue, cfg, stop, &connWG, lg, ms)
 	} else {
 		if cfg.ListenTCP != "" {

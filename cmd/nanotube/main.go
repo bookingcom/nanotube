@@ -101,7 +101,6 @@ func main() {
 	stop := make(chan struct{})
 
 	n := gracenet.Net{}
-	// TODO: Stop blocking.
 	queue, err := Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)

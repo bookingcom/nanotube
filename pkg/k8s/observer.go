@@ -18,31 +18,32 @@ import (
 )
 
 // Observe is a function to observe and check for labeled pods via k8s API server.
-// Blocking for now, non-blocking by design. Starts own goroutine. Dones wg on finish.
-func Observe(q chan string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+// Non-blocking. Dones wg on finish.
+func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+	var contWG sync.WaitGroup
 	go func() {
-		cs := map[string]Cont{}
-
-		// var contWG sync.WaitGroup
+		cs := map[string]*Cont{}
 
 		tick := time.NewTicker(time.Second * time.Duration(cfg.K8sContainerUpdPeriodSec))
 		defer tick.Stop()
 
 		for {
 			<-tick.C
-			err := updateWatchedContainers(q, cfg, cs, lg, ms)
+			err := updateWatchedContainers(q, stop, &contWG, cfg, cs, lg, ms)
 			if err != nil {
 				lg.Error("error updating watched containers", zap.Error(err))
 			}
 		}
 	}()
 
-	<-stop // TODO Add proper shutdown.
-	// contWG.Wait()
-	wg.Done()
+	go func() {
+		<-stop        // when system is halted...
+		contWG.Wait() // ...containers are halted too. Wait for them to finish...
+		wg.Done()     // signal that all containers are done.
+	}()
 }
 
-func updateWatchedContainers(q chan string, cfg *conf.Main, cs map[string]Cont, lg *zap.Logger, ms *metrics.Prom) error {
+func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
 	// TODO: Forwarding setups are potentially long and blocking.
 	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
 
@@ -67,9 +68,9 @@ func updateWatchedContainers(q chan string, cfg *conf.Main, cs map[string]Cont, 
 		if _, ok := cs[id]; !ok {
 			// if new container appears, start forwarding from it
 			if c.IsContainerd {
-				cs[id] = NewContainerdCont(id, c.Name, lg, cfg.K8sInjectPortTCP, q, cfg, ms)
+				cs[id] = NewContainerdCont(id, c.Name, cfg.K8sInjectPortTCP, q, stop, wg, cfg, lg, ms)
 			} else {
-				cs[id] = NewDockerCont(id, c.Name, lg)
+				cs[id] = NewDockerCont(id, c.Name, cfg.K8sInjectPortTCP, q, stop, wg, cfg, lg, ms)
 			}
 
 			err := cs[id].StartForwarding()
@@ -124,11 +125,12 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 		// TODO Add fine-graining by container. Currently we open ports in all containers.
 		for _, contStatus := range pod.Status.ContainerStatuses {
 			// contStatus looks like docker://<id>
+			if contStatus.ContainerID == "" { continue } // empty id is possible during ops
 			parts := strings.Split(contStatus.ContainerID, "://")
 			if len(parts) != 2 {
 				return nil, errors.Wrap(
 					fmt.Errorf("container id: %s, should look like docker://<id>", contStatus.ContainerID),
-					"error when splitting container status")
+					"error when splitting container id")
 			}
 
 			if parts[0] == "containerd" {
