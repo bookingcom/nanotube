@@ -66,13 +66,7 @@ func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.Wai
 
 	for id, c := range freshCs {
 		if _, ok := cs[id]; !ok {
-			// if new container appears, start forwarding from it
-			if c.IsContainerd {
-				cs[id] = NewContainerdCont(id, c.Name, cfg.K8sInjectPortTCP, q, stop, wg, cfg, lg, ms)
-			} else {
-				cs[id] = NewDockerCont(id, c.Name, cfg.K8sInjectPortTCP, q, stop, wg, cfg, lg, ms)
-			}
-
+			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, stop, wg, cfg, lg, ms)
 			err := cs[id].StartForwarding()
 			if err != nil {
 				return errors.Wrap(err, "failed to start forwarding from container")
@@ -84,9 +78,9 @@ func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.Wai
 }
 
 type contInfo struct {
-	IsContainerd bool
-	Name         string
 	ID           string
+	Name         string
+	IsContainerd bool
 }
 
 func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
@@ -125,7 +119,9 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 		// TODO Add fine-graining by container. Currently we open ports in all containers.
 		for _, contStatus := range pod.Status.ContainerStatuses {
 			// contStatus looks like docker://<id>
-			if contStatus.ContainerID == "" { continue } // empty id is possible during ops
+			if contStatus.ContainerID == "" {
+				continue
+			} // empty id is possible during ops
 			parts := strings.Split(contStatus.ContainerID, "://")
 			if len(parts) != 2 {
 				return nil, errors.Wrap(
@@ -134,9 +130,9 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 			}
 
 			if parts[0] == "containerd" {
-				cs[parts[1]] = contInfo{true, contStatus.Name, parts[1]}
+				cs[parts[1]] = contInfo{parts[1], contStatus.Name, true}
 			} else if parts[0] == "docker" {
-				cs[parts[1]] = contInfo{false, contStatus.Name, parts[1]}
+				cs[parts[1]] = contInfo{parts[1], contStatus.Name, false}
 			} else {
 				return nil, errors.Wrapf(
 					fmt.Errorf("container type in id: %s, should be either containerd or docker", parts[0]),

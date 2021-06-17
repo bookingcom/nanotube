@@ -24,48 +24,37 @@ import (
 type Cont struct {
 	ID           string
 	Name         string
-	Lg           *zap.Logger
-	Ms           *metrics.Prom
-	Port         uint16
 	IsContainerd bool
-	Q            chan<- string
-	Cfg          *conf.Main
-	Listener     *net.TCPListener // nolint:structcheck
+
+	Q    chan<- string
+	Cfg  *conf.Main
+	Port uint16
 
 	GlobalStop <-chan struct{} // used to stop operation globally (propagated from above)
 	OwnStop    chan struct{}   // used to stop operation independently
 	Wg         *sync.WaitGroup
+
+	Lg *zap.Logger
+	Ms *metrics.Prom
 }
 
-// NewContainerdCont is a constructor.
-func NewContainerdCont(id string, name string, port uint16, q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
+// NewCont is a constructor.
+func NewCont(id string, name string, isContainerd bool, q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
 	return &Cont{
 		ID:           id,
 		Name:         name,
-		Lg:           lg.With(zap.String("ID", id), zap.String("name", name), zap.String("type", "containerd")),
-		Ms:           ms,
-		Q:            q,
-		GlobalStop:   stop,
-		Cfg:          cfg,
-		Port:         port,
-		IsContainerd: true,
-		Wg:           wg,
-	}
-}
+		IsContainerd: isContainerd,
 
-// NewDockerCont is a constructor.
-func NewDockerCont(id string, name string, port uint16, q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
-	return &Cont{
-		ID:           id,
-		Name:         name,
-		Lg:           lg.With(zap.String("ID", id), zap.String("name", name), zap.String("type", "docker")),
-		Ms:           ms,
-		Q:            q,
-		GlobalStop:   stop,
-		Cfg:          cfg,
-		Port:         port,
-		IsContainerd: false,
-		Wg:           wg,
+		Q:    q,
+		Cfg:  cfg,
+		Port: cfg.K8sInjectPortTCP,
+
+		GlobalStop: stop,
+		OwnStop:    make(chan struct{}),
+		Wg:         wg,
+
+		Lg: lg.With(zap.String("ID", id), zap.String("name", name), zap.Bool("isContainerd", isContainerd)),
+		Ms: ms,
 	}
 }
 
@@ -73,34 +62,26 @@ func NewDockerCont(id string, name string, port uint16, q chan<- string, stop <-
 func (c *Cont) StartForwarding() error {
 	c.Lg.Info("Forward start...")
 
+	var listener net.Listener
 	if c.IsContainerd {
-
 		pid, err := CointainerdPidFromID(c.ID)
 		if err != nil {
 			return errors.Wrap(err, "could not get pid for container by ID")
 		}
-		listener, err := OpenTCPTunnelToContainerd(pid, c.Port)
+		listener, err = OpenTCPTunnelToContainerd(pid, c.Port)
 		if err != nil {
 			return errors.Wrap(err, "error opening TCP tunnel into container")
 		}
-
-		c.Listener = listener
-		c.OwnStop = make(chan struct{})
 	} else {
-
-		listener, err := OpenTCPTunnelToDocker(c.ID, c.Port)
+		var err error
+		listener, err = OpenTCPTunnelToDocker(c.ID, c.Port)
 		if err != nil {
 			return errors.Wrap(err, "error opening TCP tunnel into container")
 		}
-
-		// TODO: Move
-		c.Listener = listener
-		// TODO: Move
-		c.OwnStop = make(chan struct{})
 	}
 
 	c.Wg.Add(1)
-	go in.AcceptAndListenTCP(c.Listener, c.Q, c.OwnStop, c.Cfg, c.Wg, c.Ms, c.Lg)
+	go in.AcceptAndListenTCP(listener, c.Q, c.OwnStop, c.Cfg, c.Wg, c.Ms, c.Lg)
 
 	go func() {
 		select {
