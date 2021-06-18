@@ -35,14 +35,14 @@ test:
 
 .PHONY: lint
 lint:
-	golangci-lint run -E golint -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false ./...
+	golangci-lint run -E revive -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false ./...
 
 .PHONY: fmt
 fmt:
 	gofmt -d -s .
 
 .PHONY: check
-check: all test end-to-end-test lint
+check: all test lint
 
 .PHONY: end-to-end-test
 end-to-end-test: docker-image
