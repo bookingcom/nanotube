@@ -48,23 +48,41 @@
       command: kind load docker-image sender --name nttest
 
     # k8s setup
-    - name: Pod reader role
+    - name: nanokube namespace
       community.kubernetes.k8s:
         context: kind-nttest
         state: present
-        src: pod-reader-role.yaml
+        src: nanokube-namespace.yaml
 
-    - name: Bind pod reader role
+    - name: nanokube serviceaccount
       community.kubernetes.k8s:
         context: kind-nttest
         state: present
-        src: pod-reader-rolebinding.yaml
+        src: nanokube-serviceaccount.yaml
 
-    - name: Deploy NT daemonset
+    - name: Nanokube role
       community.kubernetes.k8s:
         context: kind-nttest
         state: present
-        src: nt-daemonset.yaml
+        src: nanokube-role.yaml
+
+    - name: Bind Nanokube role
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: nanokube-rolebinding.yaml
+
+    - name: Deploy Nanokube daemonset
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: nanokube-daemonset.yaml
+
+    - name: sender namespace
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: sender-namespace.yaml
 
     - name: Deploy sender
       community.kubernetes.k8s:

@@ -106,7 +106,7 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 
 	// TODO: Try to use Watch.
 	// TODO: Check timeouts etc.
-	pods, err := clientset.CoreV1().Pods("default").List(
+	pods, err := clientset.CoreV1().Pods("").List(
 		context.TODO(),
 		listOpts,
 	)

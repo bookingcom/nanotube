@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sender-deployment
-  namespace: default
+  name: nanokube-sender-deployment
+  namespace: nanokube-sender
   labels:
-    app: sender
+    app: nanokube-sender
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: sender
+      app: nanokube-sender
   template:
     metadata:
       labels:
-        app: sender
+        app: nanokube-sender
         use_graphite_line: "yes"
     spec:
       containers:
