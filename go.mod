@@ -7,7 +7,7 @@ require (
 	github.com/burntsushi/toml v0.3.1
 	github.com/containerd/containerd v1.5.2
 	github.com/dgryski/go-jump v0.0.0-20170409065014-e1f439676b57
-	github.com/docker/docker v20.10.6+incompatible
+	github.com/docker/docker v17.12.0-ce-rc1.0.20210128214336-420b1d36250f+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/dvyukov/go-fuzz v0.0.0-20200916044129-21309f307f61
 	github.com/elazarl/go-bindata-assetfs v1.0.1 // indirect
@@ -21,7 +21,6 @@ require (
 	github.com/google/go-cmp v0.5.4
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/libp2p/go-reuseport v0.0.2
-	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1

@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -68,13 +69,17 @@ func (c *Cont) StartForwarding() error {
 		if err != nil {
 			return errors.Wrap(err, "could not get pid for container by ID")
 		}
-		listener, err = OpenTCPTunnelToContainerd(pid, c.Port)
+		listener, err = OpenTCPTunnelByPID(pid, c.Port)
 		if err != nil {
 			return errors.Wrap(err, "error opening TCP tunnel into container")
 		}
 	} else {
 		var err error
-		listener, err = OpenTCPTunnelToDocker(c.ID, c.Port)
+		pid, err := DockerPIDFromID(c.ID)
+		if err != nil {
+			return errors.Wrap(err, "could not get pid for container by ID")
+		}
+		listener, err = OpenTCPTunnelByPID(pid, c.Port)
 		if err != nil {
 			return errors.Wrap(err, "error opening TCP tunnel into container")
 		}
@@ -150,5 +155,31 @@ func CointainerdPidFromID(id string) (pid uint32, retErr error) {
 		retErr = errors.New("could not find pid for container; no container with such id found")
 	}
 
+	return
+}
+
+func DockerPIDFromID(id string) (pid uint32, retErr error) {
+	pid = 0
+
+	client, err := client.NewClientWithOpts(client.WithAPIVersionNegotiation())
+	if err != nil {
+		retErr = errors.Wrap(err, "error creating docker daemon client")
+		return
+	}
+
+	defer func() {
+		closeErr := client.Close()
+		if closeErr != nil {
+			retErr = errors.Wrapf(retErr, "error while closing the docker daemon client %v", closeErr)
+		}
+	}()
+
+	container, err := client.ContainerInspect(context.Background(), id)
+	if err != nil {
+		retErr = errors.Wrap(err, "error inspecting docker container")
+		return
+	}
+
+	pid = uint32(container.ContainerJSONBase.State.Pid)
 	return
 }

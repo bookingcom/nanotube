@@ -27,6 +27,8 @@ func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.Wai
 		tick := time.NewTicker(time.Second * time.Duration(cfg.K8sContainerUpdPeriodSec))
 		defer tick.Stop()
 
+		ms.K8sCurrentForwardedContainers.Set(0)
+
 		for {
 			<-tick.C
 			err := updateWatchedContainers(q, stop, &contWG, cfg, cs, lg, ms)
@@ -60,6 +62,7 @@ func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.Wai
 			if err != nil {
 				return errors.Wrap(err, "failed to stop forwarding from container")
 			}
+			ms.K8sCurrentForwardedContainers.Dec()
 			delete(cs, id)
 		}
 	}
@@ -67,6 +70,8 @@ func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.Wai
 	for id, c := range freshCs {
 		if _, ok := cs[id]; !ok {
 			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, stop, wg, cfg, lg, ms)
+			ms.K8sPickedUpContainers.Inc()
+			ms.K8sCurrentForwardedContainers.Inc()
 			err := cs[id].StartForwarding()
 			if err != nil {
 				return errors.Wrap(err, "failed to start forwarding from container")

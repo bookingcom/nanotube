@@ -9,8 +9,8 @@ import (
 	"github.com/vishvananda/netns"
 )
 
-// OpenTCPTunnelToContainerd opens an injected TCP port for listening in a container.
-func OpenTCPTunnelToContainerd(pid uint32, port uint16) (listener *net.TCPListener, returnErr error) {
+// OpenTCPTunnelByPID opens an injected TCP port for listening in a container identified by PID.
+func OpenTCPTunnelByPID(pid uint32, port uint16) (listener *net.TCPListener, returnErr error) {
 	listener = nil
 	returnErr = nil
 
@@ -33,7 +33,7 @@ func OpenTCPTunnelToContainerd(pid uint32, port uint16) (listener *net.TCPListen
 
 	newns, err := netns.GetFromPid(int(pid))
 	if err != nil {
-		returnErr = errors.Wrap(err, "failed to get docker network namespace")
+		returnErr = errors.Wrap(err, "failed to get container network namespace")
 		return
 	}
 
@@ -41,7 +41,7 @@ func OpenTCPTunnelToContainerd(pid uint32, port uint16) (listener *net.TCPListen
 		err := newns.Close()
 		if err != nil {
 			// TODO Add recursive wrapping
-			returnErr = errors.Wrap(err, "error while closing docker net namespace")
+			returnErr = errors.Wrap(err, "error while closing container net namespace")
 		}
 	}()
 

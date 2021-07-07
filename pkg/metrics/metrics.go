@@ -39,6 +39,9 @@ type Prom struct {
 
 	UDPReadFailures prometheus.Counter
 
+	K8sPickedUpContainers         prometheus.Counter
+	K8sCurrentForwardedContainers prometheus.Gauge
+
 	RegexDuration *prometheus.SummaryVec
 
 	Version     *prometheus.CounterVec
@@ -140,6 +143,16 @@ func New(conf *conf.Main) *Prom {
 			Namespace: "nanotube",
 			Name:      "udp_read_failures_total",
 			Help:      "Counter of failures when reading incoming data from the UDP connection.",
+		}),
+		K8sPickedUpContainers: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "k8s_pickeup_containers_total",
+			Help:      "The total number of containers that forwarding has started from. If container blips, it's counted twice.",
+		}),
+		K8sCurrentForwardedContainers: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "k8s_current_forwarded_containers",
+			Help:      "The number of current containers that have their metrics forwarded.",
 		}),
 		RegexDuration: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace: "nanotube",
@@ -261,6 +274,16 @@ func Register(m *Prom, cfg *conf.Main) {
 		err = prometheus.Register(m.UDPReadFailures)
 		if err != nil {
 			log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
+		}
+
+		err = prometheus.Register(m.K8sPickedUpContainers)
+		if err != nil {
+			log.Fatalf("error registering the k8s_pickeup_containers_total metric: %v", err)
+		}
+
+		err = prometheus.Register(m.K8sCurrentForwardedContainers)
+		if err != nil {
+			log.Fatalf("error registering the k8s_current_forwarded_containers metric: %v", err)
 		}
 
 		if cfg.RegexDurationMetric {
