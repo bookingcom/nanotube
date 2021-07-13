@@ -10,8 +10,9 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	InRecs        prometheus.Counter
-	ThrottledRecs prometheus.Counter
+	InRecs         prometheus.Counter
+	InRecsBySource *prometheus.CounterVec
+	ThrottledRecs  prometheus.Counter
 
 	// TODO: Rename
 	StateChangeHosts *prometheus.CounterVec
@@ -57,6 +58,11 @@ func New(conf *conf.Main) *Prom {
 			Name:      "in_records_total",
 			Help:      "Incoming records counter.",
 		}),
+		InRecsBySource: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "in_records_by_source_total",
+			Help:      "Incoming records counter by source.",
+		}, []string{"source"}),
 		OutRecs: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "out_records",
@@ -177,7 +183,7 @@ func New(conf *conf.Main) *Prom {
 func Register(m *Prom, cfg *conf.Main) {
 	err := prometheus.Register(m.InRecs)
 	if err != nil {
-		log.Fatalf("error registering the in_records_counter metric: %v", err)
+		log.Fatalf("error registering the in_records_total metric: %v", err)
 	}
 
 	err = prometheus.Register(m.OutRecsTotal)
@@ -234,6 +240,11 @@ func Register(m *Prom, cfg *conf.Main) {
 		err = prometheus.Register(m.OutRecs)
 		if err != nil {
 			log.Fatalf("error registering the out_records metric: %v", err)
+		}
+
+		err = prometheus.Register(m.InRecsBySource)
+		if err != nil {
+			log.Fatalf("error registering the in_records_by_source_total metric: %v", err)
 		}
 
 		err = prometheus.Register(m.StateChangeHosts)

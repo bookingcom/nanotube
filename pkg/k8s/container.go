@@ -102,7 +102,7 @@ func (c *Cont) StartForwarding() error {
 
 // StopForwarding stops the forwarding.
 func (c *Cont) StopForwarding() error {
-	c.Lg.Info("Stopping forwarding...")
+	c.Lg.Info("Forward stop...")
 	close(c.OwnStop)
 	return nil
 }
@@ -158,6 +158,7 @@ func CointainerdPidFromID(id string) (pid uint32, retErr error) {
 	return
 }
 
+// DockerPIDFromID gets Docker container host PID using Docker API.
 func DockerPIDFromID(id string) (pid uint32, retErr error) {
 	pid = 0
 
