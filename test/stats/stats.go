@@ -15,7 +15,6 @@ type Stats struct {
 	reportEvery      time.Duration
 	finalReportAfter time.Duration
 	finalReportSent  bool
-	prefix           string
 	finalCallback    func()
 }
 
@@ -47,12 +46,10 @@ func (s *Stats) periodicReporter() {
 }
 
 // NewStats constructs new statsistics.
-func NewStats(reportEvery time.Duration, finalReportAfter time.Duration,
-	prefix string, finalCallback func()) *Stats {
+func NewStats(reportEvery time.Duration, finalReportAfter time.Duration, finalCallback func()) *Stats {
 	ret := &Stats{
 		reportEvery:      reportEvery,
 		finalReportAfter: finalReportAfter,
-		prefix:           prefix,
 		finalCallback:    finalCallback,
 	}
 
@@ -90,10 +87,10 @@ func (s *Stats) Report(final bool) {
 	}
 	rate := float64(reqs) / float64(lastReportDuration)
 	if final {
-		log.Printf("%s -- Final report -- Requests: %d ", s.prefix, reqs)
+		log.Printf("Final report. Requests: %d ", reqs)
 		s.finalCallback()
 	}
 
-	log.Printf("%s -- Requests: %d -- Rate: %g", s.prefix, reqs, rate)
+	log.Printf("Sent: %d. Rate: %g", reqs, rate)
 	s.lastReport = time.Now().Unix()
 }

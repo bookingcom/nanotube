@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
-	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
@@ -100,8 +99,9 @@ func main() {
 	}()
 
 	stop := make(chan struct{})
+
 	n := gracenet.Net{}
-	queue, err := in.Listen(&n, &cfg, stop, lg, ms)
+	queue, err := Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}

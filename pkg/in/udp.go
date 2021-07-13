@@ -10,7 +10,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func listenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+// ListenUDP listens for incoming UDP connections.
+func ListenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	go func() {
 		<-stop
 		lg.Info("Termination: Closing the UDP connection.")

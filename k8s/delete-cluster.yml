@@ -1,0 +1,16 @@
+# Ansible playbook to cleanup Kind cluster
+---
+- hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Check kind clusters
+      shell: kind get clusters | grep nttest
+      register: kind_nttest_search
+      changed_when: false
+      failed_when: "kind_nttest_search.rc not in [ 0, 1 ]"
+
+    - name: Delete kind cluster if present
+      command: kind delete cluster --name nttest
+      when: kind_nttest_search.rc == 0
