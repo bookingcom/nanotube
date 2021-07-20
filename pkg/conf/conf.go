@@ -23,7 +23,7 @@ type Main struct {
 	// The label to use in order to turn on forwarding from a pod.
 	// If left unset or "", all pods get metrics forwarding.
 	K8sSwitchLabelKey string
-	// K8s label value. Default is "yes". Unused if K8sSwitchLabelKey is "".
+	// K8s label value. Default is "enabled". Unused if K8sSwitchLabelKey is "".
 	K8sSwitchLabelVal string
 	// The period for updating the containers for metrics forwarding in k8s.
 	K8sContainerUpdPeriodSec int
@@ -134,7 +134,7 @@ func MakeDefault() Main {
 		K8sMode:                  false,
 		K8sInjectPortTCP:         2003,
 		K8sSwitchLabelKey:        "",
-		K8sSwitchLabelVal:        "yes",
+		K8sSwitchLabelVal:        "enabled",
 		K8sContainerUpdPeriodSec: 30,
 
 		TargetPort: 2004,

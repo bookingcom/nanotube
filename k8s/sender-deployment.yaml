@@ -14,7 +14,7 @@ spec:
     metadata:
       labels:
         app: nanokube-sender
-        use_graphite_line: "yes"
+        graphite_tcp_port: enabled
     spec:
       containers:
         - name: sender
