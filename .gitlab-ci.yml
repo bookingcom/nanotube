@@ -1,10 +1,18 @@
+---
+include:
+  - template: 'Workflows/MergeRequest-Pipelines.gitlab-ci.yml'
 
 stages:
   - validate
-  - package
+  - rpmbuild-generate-ci-jobs
+  - rpmbuild-trigger-ci-jobs
 
 default:
   image: docker.artifactory.booking.com/projects/golang/golang-ci:1.15
+
+variables:
+  RPMBUILD_CENTOS_VERSIONS: "7 8"
+  RPMBUILD_TARGET_REPO: /yum/booking-extras/$${CENTOS_VER}/x86_64/RPMS
 
 lint:
   stage: validate
@@ -21,12 +29,10 @@ build:
   script:
   - make build
 
-package_subnanotube:
-  stage: package
-  tags: 
-    - docker
-  only:
-    - tags
-    - /^subnanotube-\d+-\d+$/
-  script:
-    - .gitlab-ci/gitlab-package.sh subnanotube
+# Enable docker-rpmbuild-pipeline
+# https://gitlab.booking.com/packaging/docker-rpmbuild
+#
+include:
+  - project: 'packaging/docker-rpmbuild'
+    ref: master
+    file: '/templates/rpmbuild.yml'
