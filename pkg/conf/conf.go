@@ -27,6 +27,9 @@ type Main struct {
 	K8sSwitchLabelVal string
 	// The period for updating the containers for metrics forwarding in k8s.
 	K8sContainerUpdPeriodSec int
+	// Range of jitter applied when querying k8s API while looking for pods.
+	// Jitter added will be [0, this_number]
+	K8sObserveJitterRangeSec int
 
 	TargetPort uint16
 
@@ -136,6 +139,7 @@ func MakeDefault() Main {
 		K8sSwitchLabelKey:        "",
 		K8sSwitchLabelVal:        "enabled",
 		K8sContainerUpdPeriodSec: 30,
+		K8sObserveJitterRangeSec: 10,
 
 		TargetPort: 2004,
 

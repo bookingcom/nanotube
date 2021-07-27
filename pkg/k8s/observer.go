@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
@@ -26,11 +27,14 @@ func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.Wai
 
 		tick := time.NewTicker(time.Second * time.Duration(cfg.K8sContainerUpdPeriodSec))
 		defer tick.Stop()
+		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 		ms.K8sCurrentForwardedContainers.Set(0)
 
 		for {
 			<-tick.C
+			time.Sleep(time.Second * time.Duration(rnd.Intn(cfg.K8sObserveJitterRangeSec+1)))
+
 			err := updateWatchedContainers(q, stop, &contWG, cfg, cs, lg, ms)
 			if err != nil {
 				lg.Error("error updating watched containers", zap.Error(err))
