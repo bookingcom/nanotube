@@ -18,6 +18,8 @@ type Main struct {
 
 	// Start NT as a metrics forwarder in k8s?
 	K8sMode bool
+	// Use k8s API to filter pods by label?
+	K8sLabelFiltering bool
 	// The port to listen on when forwarding metrics from containers.
 	K8sInjectPortTCP uint16
 	// The label to use in order to turn on forwarding from a pod.
@@ -135,6 +137,7 @@ func MakeDefault() Main {
 		RewritesConfig: "",
 
 		K8sMode:                  false,
+		K8sLabelFiltering:        false,
 		K8sInjectPortTCP:         2003,
 		K8sSwitchLabelKey:        "",
 		K8sSwitchLabelVal:        "enabled",

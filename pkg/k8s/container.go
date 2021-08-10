@@ -15,6 +15,7 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/api/types"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -182,5 +183,34 @@ func DockerPIDFromID(id string) (pid uint32, retErr error) {
 	}
 
 	pid = uint32(container.ContainerJSONBase.State.Pid)
+	return
+}
+
+func getLocalContainers() (res map[string]contInfo, retErr error) {
+	res = make(map[string]contInfo)
+
+	client, err := client.NewClientWithOpts(client.WithAPIVersionNegotiation())
+	if err != nil {
+		retErr = errors.Wrap(err, "error creating docker daemon client")
+		return
+	}
+
+	defer func() {
+		closeErr := client.Close()
+		if closeErr != nil {
+			retErr = errors.Wrapf(retErr, "error while closing the docker daemon client %v", closeErr)
+		}
+	}()
+
+	containers, err := client.ContainerList(context.Background(), types.ContainerListOptions{})
+	if err != nil {
+		retErr = errors.Wrap(err, "error getting list of containers")
+		return
+	}
+
+	for _, c := range containers {
+		res[c.ID] = contInfo{c.ID, c.Names[0], false}
+	}
+
 	return
 }

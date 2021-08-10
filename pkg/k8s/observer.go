@@ -20,7 +20,7 @@ import (
 
 // Observe is a function to observe and check for labeled pods via k8s API server.
 // Non-blocking. Dones wg on finish.
-func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+func ObserveByLabel(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
 	go func() {
 		cs := map[string]*Cont{}
@@ -47,6 +47,74 @@ func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.Wai
 		contWG.Wait() // ...containers are halted too. Wait for them to finish...
 		wg.Done()     // signal that all containers are done.
 	}()
+}
+
+// Observe is a function to observe and check for labeled pods via k8s API server.
+// Non-blocking. Dones wg on finish.
+func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+	var contWG sync.WaitGroup
+	go func() {
+		cs := map[string]*Cont{}
+
+		tick := time.NewTicker(time.Second * time.Duration(cfg.K8sContainerUpdPeriodSec))
+		defer tick.Stop()
+		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+		ms.K8sCurrentForwardedContainers.Set(0)
+
+		for {
+			<-tick.C
+			time.Sleep(time.Second * time.Duration(rnd.Intn(cfg.K8sObserveJitterRangeSec+1)))
+
+			err := updateWatchedContainersLocal(q, stop, &contWG, cfg, cs, lg, ms)
+			if err != nil {
+				lg.Error("error updating watched containers", zap.Error(err))
+			}
+		}
+	}()
+
+	go func() {
+		<-stop        // when system is halted...
+		contWG.Wait() // ...containers are halted too. Wait for them to finish...
+		wg.Done()     // signal that all containers are done.
+	}()
+}
+
+func updateWatchedContainersLocal(q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
+	// TODO: Forwarding setups are potentially long and blocking.
+	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
+
+	freshCs, err := getLocalContainers()
+	if err != nil {
+		return errors.Wrap(err, "getting containers via k8s API failed")
+	}
+
+	// check intersection of fresh and old containers
+	for id, c := range cs {
+		if _, ok := freshCs[id]; !ok {
+			// if container disappeared, stop forwarding from it
+			err := c.StopForwarding()
+			if err != nil {
+				return errors.Wrap(err, "failed to stop forwarding from container")
+			}
+			ms.K8sCurrentForwardedContainers.Dec()
+			delete(cs, id)
+		}
+	}
+
+	for id, c := range freshCs {
+		if _, ok := cs[id]; !ok {
+			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, stop, wg, cfg, lg, ms)
+			ms.K8sPickedUpContainers.Inc()
+			ms.K8sCurrentForwardedContainers.Inc()
+			err := cs[id].StartForwarding()
+			if err != nil {
+				return errors.Wrap(err, "failed to start forwarding from container")
+			}
+		}
+	}
+
+	return nil
 }
 
 func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
@@ -91,6 +159,8 @@ type contInfo struct {
 	Name         string
 	IsContainerd bool
 }
+
+
 
 func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 	conf, err := rest.InClusterConfig()

@@ -23,7 +23,12 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 
 	if cfg.K8sMode {
 		connWG.Add(1)
-		k8s.Observe(queue, cfg, stop, &connWG, lg, ms)
+
+		if cfg.K8sLabelFiltering {
+			k8s.ObserveByLabel(queue, cfg, stop, &connWG, lg, ms)
+		} else {
+			k8s.Observe(queue, cfg, stop, &connWG, lg, ms)
+		}
 	} else {
 		if cfg.ListenTCP != "" {
 			ip, port, err := parseListenOption(cfg.ListenTCP)
