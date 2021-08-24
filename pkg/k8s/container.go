@@ -14,8 +14,9 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/docker/docker/client"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -61,28 +62,28 @@ func NewCont(id string, name string, isContainerd bool, q chan<- string, stop <-
 }
 
 // StartForwarding starts forwarding Graphite line data from container.
-func (c *Cont) StartForwarding() error {
-	c.Lg.Info("Forward start...")
+func (c *Cont) StartForwarding() {
+	c.Lg.Info("Initializing forwarding...")
 
 	var listener net.Listener
 	if c.IsContainerd {
 		pid, err := CointainerdPidFromID(c.ID)
 		if err != nil {
-			return errors.Wrap(err, "could not get pid for container by ID")
+			c.Lg.Error("could not get pid for container by ID", zap.Error(err))
 		}
 		listener, err = OpenTCPTunnelByPID(pid, c.Port)
 		if err != nil {
-			return errors.Wrap(err, "error opening TCP tunnel into container")
+			c.Lg.Error("error opening TCP tunnel into container", zap.Error(err))
 		}
 	} else {
 		var err error
 		pid, err := DockerPIDFromID(c.ID)
 		if err != nil {
-			return errors.Wrap(err, "could not get pid for container by ID")
+			c.Lg.Error("could not get pid for container by ID", zap.Error(err))
 		}
 		listener, err = OpenTCPTunnelByPID(pid, c.Port)
 		if err != nil {
-			return errors.Wrap(err, "error opening TCP tunnel into container")
+			c.Lg.Error("error opening TCP tunnel into container", zap.Error(err))
 		}
 	}
 
@@ -97,15 +98,12 @@ func (c *Cont) StartForwarding() error {
 			// prevent goroutine leak
 		}
 	}()
-
-	return nil
 }
 
 // StopForwarding stops the forwarding.
-func (c *Cont) StopForwarding() error {
-	c.Lg.Info("Forward stop...")
+func (c *Cont) StopForwarding() {
+	c.Lg.Info("Stopping forwarding...")
 	close(c.OwnStop)
-	return nil
 }
 
 // CointainerdPidFromID returns PID for container
@@ -186,7 +184,7 @@ func DockerPIDFromID(id string) (pid uint32, retErr error) {
 	return
 }
 
-func getLocalContainers() (res map[string]contInfo, retErr error) {
+func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) {
 	res = make(map[string]contInfo)
 
 	client, err := client.NewClientWithOpts(client.WithAPIVersionNegotiation())
@@ -202,7 +200,9 @@ func getLocalContainers() (res map[string]contInfo, retErr error) {
 		}
 	}()
 
-	containers, err := client.ContainerList(context.Background(), types.ContainerListOptions{})
+	listOpts := types.ContainerListOptions{}
+	listOpts.Filters = filters.NewArgs(filters.Arg("label", "io.kubernetes.container.name=POD"), filters.Arg("label", fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)))
+	containers, err := client.ContainerList(context.Background(), listOpts)
 	if err != nil {
 		retErr = errors.Wrap(err, "error getting list of containers")
 		return

@@ -84,7 +84,7 @@ func updateWatchedContainersLocal(q chan<- string, stop <-chan struct{}, wg *syn
 	// TODO: Forwarding setups are potentially long and blocking.
 	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
 
-	freshCs, err := getLocalContainers()
+	freshCs, err := getLocalContainers(cfg)
 	if err != nil {
 		return errors.Wrap(err, "getting containers via k8s API failed")
 	}
@@ -93,10 +93,7 @@ func updateWatchedContainersLocal(q chan<- string, stop <-chan struct{}, wg *syn
 	for id, c := range cs {
 		if _, ok := freshCs[id]; !ok {
 			// if container disappeared, stop forwarding from it
-			err := c.StopForwarding()
-			if err != nil {
-				return errors.Wrap(err, "failed to stop forwarding from container")
-			}
+			c.StopForwarding()
 			ms.K8sCurrentForwardedContainers.Dec()
 			delete(cs, id)
 		}
@@ -107,10 +104,7 @@ func updateWatchedContainersLocal(q chan<- string, stop <-chan struct{}, wg *syn
 			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, stop, wg, cfg, lg, ms)
 			ms.K8sPickedUpContainers.Inc()
 			ms.K8sCurrentForwardedContainers.Inc()
-			err := cs[id].StartForwarding()
-			if err != nil {
-				return errors.Wrap(err, "failed to start forwarding from container")
-			}
+			go cs[id].StartForwarding()
 		}
 	}
 
@@ -130,7 +124,7 @@ func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.Wai
 	for id, c := range cs {
 		if _, ok := freshCs[id]; !ok {
 			// if container disappeared, stop forwarding from it
-			err := c.StopForwarding()
+			c.StopForwarding()
 			if err != nil {
 				return errors.Wrap(err, "failed to stop forwarding from container")
 			}
@@ -144,10 +138,7 @@ func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.Wai
 			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, stop, wg, cfg, lg, ms)
 			ms.K8sPickedUpContainers.Inc()
 			ms.K8sCurrentForwardedContainers.Inc()
-			err := cs[id].StartForwarding()
-			if err != nil {
-				return errors.Wrap(err, "failed to start forwarding from container")
-			}
+			go cs[id].StartForwarding()
 		}
 	}
 
@@ -159,8 +150,6 @@ type contInfo struct {
 	Name         string
 	IsContainerd bool
 }
-
-
 
 func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 	conf, err := rest.InClusterConfig()
@@ -179,9 +168,8 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 	listOpts := metav1.ListOptions{
 		FieldSelector: fmt.Sprintf("spec.nodeName=%s", node),
 	}
-	if cfg.K8sSwitchLabelKey != "" {
-		listOpts.LabelSelector = fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)
-	}
+
+	listOpts.LabelSelector = fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)
 
 	// TODO: Try to use Watch.
 	// TODO: Check timeouts etc.

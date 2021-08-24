@@ -23,9 +23,8 @@ type Main struct {
 	// The port to listen on when forwarding metrics from containers.
 	K8sInjectPortTCP uint16
 	// The label to use in order to turn on forwarding from a pod.
-	// If left unset or "", all pods get metrics forwarding.
 	K8sSwitchLabelKey string
-	// K8s label value. Default is "enabled". Unused if K8sSwitchLabelKey is "".
+	// K8s label value. Default is "enabled".
 	K8sSwitchLabelVal string
 	// The period for updating the containers for metrics forwarding in k8s.
 	K8sContainerUpdPeriodSec int
@@ -139,7 +138,7 @@ func MakeDefault() Main {
 		K8sMode:                  false,
 		K8sLabelFiltering:        false,
 		K8sInjectPortTCP:         2003,
-		K8sSwitchLabelKey:        "",
+		K8sSwitchLabelKey:        "graphite_tcp_port",
 		K8sSwitchLabelVal:        "enabled",
 		K8sContainerUpdPeriodSec: 30,
 		K8sObserveJitterRangeSec: 10,
