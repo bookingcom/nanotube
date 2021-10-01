@@ -4,7 +4,7 @@
 
 # Clusters config path. Mandatory.
 ClustersConfig = "config/clusters.toml"
-# Clusters config path. Mandatory.
+# Rules config path. Mandatory.
 RulesConfig = "config/rules.toml"
 # Rewrites config path. Optional.
 RewritesConfig = ""
