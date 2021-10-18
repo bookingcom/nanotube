@@ -16,9 +16,6 @@ HostQueueSize = 50000
 
 WorkerPoolSize = 50
 
-IncomingConnIdleTimeoutSec = 90
-SendTimeoutSec = 5
-OutConnTimeoutSec = 5
 TermTimeoutSec = 1
 
 TCPOutBufSize = 4096
