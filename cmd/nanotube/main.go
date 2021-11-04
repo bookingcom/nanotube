@@ -69,7 +69,6 @@ func main() {
 		log.Fatalf("error building pipline components: %v", err)
 	}
 
-	metrics.Register(ms, &cfg)
 	ms.Version.WithLabelValues(version).Inc()
 	ms.ConfVersion.WithLabelValues(hash).Inc()
 
@@ -244,6 +243,7 @@ func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.
 	lg *zap.Logger) (clusters target.Clusters, rls rules.Rules, rewriteRules rewrites.Rewrites, ms *metrics.Prom, retErr error) {
 
 	ms = metrics.New(cfg)
+	metrics.Register(ms, cfg)
 
 	clusters, err := target.NewClusters(cfg, clustersConf, lg, ms)
 	if err != nil {

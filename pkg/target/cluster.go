@@ -7,6 +7,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/dgryski/go-jump"
 	"github.com/pkg/errors"
@@ -46,7 +47,7 @@ func (cl *Cluster) Push(r *rec.Rec, metrics *metrics.Prom) error {
 		return nil
 	}
 
-	hs, err := cl.resolveHosts(r.Path)
+	hs, err := cl.resolveHosts(r.Path, metrics)
 	if err != nil {
 		return errors.Wrapf(err, "resolving host for record %v failed", *r)
 	}
@@ -64,7 +65,7 @@ func (cl *Cluster) GetName() string {
 }
 
 // resolveHosts does routing inside the cluster.
-func (cl *Cluster) resolveHosts(path string) ([]Target, error) {
+func (cl *Cluster) resolveHosts(path string, ms *metrics.Prom) ([]Target, error) {
 	switch cl.Type {
 	case conf.JumpCluster:
 		return []Target{
@@ -72,6 +73,8 @@ func (cl *Cluster) resolveHosts(path string) ([]Target, error) {
 		}, nil
 	case conf.LB:
 		availHosts := cl.availHostsList()
+		ms.NumberOfAvailableTargets.With(prometheus.Labels{"cluster": cl.Name}).Set(float64(len(availHosts)))
+
 		key := fnv1a.HashString64(path)
 		if len(availHosts) == 0 {
 			return []Target{

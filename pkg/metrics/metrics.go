@@ -40,6 +40,10 @@ type Prom struct {
 
 	UDPReadFailures prometheus.Counter
 
+	TargetStates             *prometheus.GaugeVec
+	NumberOfAvailableTargets *prometheus.GaugeVec
+	NumberOfTargets          *prometheus.GaugeVec
+
 	K8sPickedUpContainers         prometheus.Counter
 	K8sCurrentForwardedContainers prometheus.Gauge
 
@@ -150,6 +154,21 @@ func New(conf *conf.Main) *Prom {
 			Name:      "udp_read_failures_total",
 			Help:      "Counter of failures when reading incoming data from the UDP connection.",
 		}),
+		TargetStates: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "target_states",
+			Help:      "The current states of target hosts.",
+		}, []string{"upstream_host", "cluster"}),
+		NumberOfAvailableTargets: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "number_of_available_targets",
+			Help:      "Number of available targets in cluster.",
+		}, []string{"cluster"}),
+		NumberOfTargets: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "number_of_targets",
+			Help:      "Number of targets by cluster as seen by LB. Only counted for LB clusters.",
+		}, []string{"cluster"}),
 		K8sPickedUpContainers: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "k8s_pickeup_containers_total",
@@ -285,6 +304,21 @@ func Register(m *Prom, cfg *conf.Main) {
 		err = prometheus.Register(m.UDPReadFailures)
 		if err != nil {
 			log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
+		}
+
+		err = prometheus.Register(m.TargetStates)
+		if err != nil {
+			log.Fatalf("error while registering target_states metric: %v", err)
+		}
+
+		err = prometheus.Register(m.NumberOfAvailableTargets)
+		if err != nil {
+			log.Fatalf("error while registering number_of_available_targets metric: %v", err)
+		}
+
+		err = prometheus.Register(m.NumberOfTargets)
+		if err != nil {
+			log.Fatalf("error while registering number_of_targets metric: %v", err)
 		}
 
 		err = prometheus.Register(m.K8sPickedUpContainers)

@@ -57,6 +57,7 @@ type Main struct {
 	TCPOutBufFlushPeriodSec uint32
 	// 0 value turns off connection refresh
 	TCPOutConnectionRefreshPeriodSec uint32
+	TCPInitialConnCheck              bool
 
 	// GRPC target (client) params
 	GRPCOutKeepAlivePeriodSec      uint32
@@ -162,6 +163,7 @@ func MakeDefault() Main {
 		TCPOutBufSize:                    0,
 		TCPOutBufFlushPeriodSec:          2,
 		TCPOutConnectionRefreshPeriodSec: 0,
+		TCPInitialConnCheck:              false,
 
 		GRPCOutKeepAlivePeriodSec:      5,
 		GRPCOutKeepAlivePingTimeoutSec: 1,

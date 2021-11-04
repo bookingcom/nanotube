@@ -18,7 +18,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// Observe is a function to observe and check for labeled pods via k8s API server.
+// ObserveByLabel is a function to observe and check for labeled pods via k8s API server.
 // Non-blocking. Dones wg on finish.
 func ObserveByLabel(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
