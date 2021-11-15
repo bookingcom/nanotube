@@ -10,6 +10,16 @@ RulesConfig = "config/rules.toml"
 RewritesConfig = ""
 # RewritesConfig = "config/rewrite.toml" to enable
 
+# Launch NT as a k8s daemonset forwarding metrics from pods. kubeNT!
+K8sMode = false
+# Pods to inject for TCP listening on selected pods. Metics sent to that port will be forwarded
+# to the running daemon-set.
+K8sInjectPortTCP = 2003
+# Label to filter pods on. Only labeled pods running on the same node as NT daemon-set will get
+# the port injection.
+# Empty string means no filtering on label.
+K8sFilterLabel = ""
+
 # The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 2004
 

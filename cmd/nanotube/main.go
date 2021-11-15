@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
-	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
@@ -70,7 +69,6 @@ func main() {
 		log.Fatalf("error building pipline components: %v", err)
 	}
 
-	metrics.Register(ms, &cfg)
 	ms.Version.WithLabelValues(version).Inc()
 	ms.ConfVersion.WithLabelValues(hash).Inc()
 
@@ -100,8 +98,9 @@ func main() {
 	}()
 
 	stop := make(chan struct{})
+
 	n := gracenet.Net{}
-	queue, err := in.Listen(&n, &cfg, stop, lg, ms)
+	queue, err := Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}
@@ -244,6 +243,7 @@ func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.
 	lg *zap.Logger) (clusters target.Clusters, rls rules.Rules, rewriteRules rewrites.Rewrites, ms *metrics.Prom, retErr error) {
 
 	ms = metrics.New(cfg)
+	metrics.Register(ms, cfg)
 
 	clusters, err := target.NewClusters(cfg, clustersConf, lg, ms)
 	if err != nil {

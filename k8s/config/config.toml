@@ -1,0 +1,36 @@
+ClustersConfig = "config/clusters.toml"
+RulesConfig = "config/rules.toml"
+
+K8sMode = true
+K8sInjectPortTCP = 2003
+K8sSwitchLabelKey = "graphite_tcp_port"
+K8sContainerUpdPeriodSec = 30
+
+TargetPort = 2004
+
+ListenTCP = ":2003"
+ListenUDP = ""
+
+MainQueueSize = 100000
+HostQueueSize = 50000
+
+WorkerPoolSize = 50
+
+TermTimeoutSec = 1
+
+TCPOutBufSize = 4096
+TCPOutBufFlushPeriodSec = 2
+
+MaxHostReconnectPeriodMs = 5000
+HostReconnectPeriodDeltaMs = 10
+
+NormalizeRecords = true
+LogSpecialRecords = false
+
+PprofPort = 6000
+PromPort = 9090
+
+HostQueueLengthBucketFactor = 3.0
+HostQueueLengthBuckets = 10
+ProcessingDurationBucketFactor = 2.0
+ProcessingDurationBuckets = 10

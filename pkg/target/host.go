@@ -42,6 +42,7 @@ type Host struct {
 	oldConnectionRefresh      prometheus.Counter
 	oldConnectionRefreshTotal prometheus.Counter
 	processingDuration        prometheus.Histogram
+	targetState               prometheus.Gauge
 }
 
 // Connection contains all the attributes of the target host connection.
@@ -111,9 +112,21 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 		stateChangesTotal:         ms.StateChangeHostsTotal,
 		oldConnectionRefresh:      ms.OldConnectionRefresh.With(promLabels),
 		oldConnectionRefreshTotal: ms.OldConnectionRefreshTotal,
+		targetState:               ms.TargetStates.With(promLabels),
 	}
-	h.Available.Store(true)
+	h.Ms = ms
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
+
+	if mainCfg.TCPInitialConnCheck {
+		h.setAvailability(false)
+		go func() {
+			h.Conn.Lock()
+			defer h.Conn.Unlock()
+			h.ensureConnection()
+		}()
+	} else {
+		h.setAvailability(true)
+	}
 
 	return &h
 }
@@ -221,7 +234,7 @@ func (h *Host) tryToFlushIfNecessary() {
 		}
 		err := h.Conn.W.Flush()
 		if err != nil {
-			h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("host name", h.Name), zap.Uint16("host port", h.Port))
+			h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("target_name", h.Name), zap.Uint16("target_port", h.Port))
 			h.Conn.Conn = nil
 			h.Conn.W = nil
 		}
@@ -270,10 +283,11 @@ func (h *Host) ensureConnection() {
 func (h *Host) connect(attemptCount int) {
 	conn, err := h.getConnectionToHost()
 	if err != nil {
-		h.Lg.Warn("connection to host failed")
+		h.Lg.Warn("connection to target host failed")
 		h.Conn.Conn = nil
 		if attemptCount == 1 {
-			if h.Available.CAS(true, false) { // CAS = compare-and-save
+			if h.Available.Load() {
+				h.setAvailability(false)
 				h.stateChanges.Inc()
 				h.stateChangesTotal.Inc()
 			}
@@ -283,7 +297,7 @@ func (h *Host) connect(attemptCount int) {
 	}
 
 	h.Conn.New(conn, h.conf.TCPOutBufSize)
-	h.Available.Store(true)
+	h.setAvailability(true)
 }
 
 func (h *Host) getConnectionToHost() (net.Conn, error) {
@@ -293,4 +307,13 @@ func (h *Host) getConnectionToHost() (net.Conn, error) {
 	}
 	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
 	return conn, err
+}
+
+func (h *Host) setAvailability(val bool) {
+	h.Available.Store(val)
+	boolVal := 0.0
+	if val {
+		boolVal = 1.0
+	}
+	h.targetState.Set(boolVal)
 }

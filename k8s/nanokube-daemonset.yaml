@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nanokube
+  namespace: nanokube
+  labels:
+    k8s-app: nanokube
+spec:
+  selector:
+    matchLabels:
+      name: nanokube
+  template:
+    metadata:
+      labels:
+        name: nanokube
+    spec:
+      serviceAccountName: nanokube
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: nt
+          image: nt
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+            privileged: true
+          env:
+            - name: OWN_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - mountPath: /run
+              name: container-socket
+            - mountPath: /var/run
+              name: container-socket
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - hostPath:
+            path: /run
+          name: container-socket

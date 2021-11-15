@@ -16,6 +16,22 @@ type Main struct {
 	RulesConfig    string
 	RewritesConfig string
 
+	// Start NT as a metrics forwarder in k8s?
+	K8sMode bool
+	// Use k8s API to filter pods by label?
+	K8sLabelFiltering bool
+	// The port to listen on when forwarding metrics from containers.
+	K8sInjectPortTCP uint16
+	// The label to use in order to turn on forwarding from a pod.
+	K8sSwitchLabelKey string
+	// K8s label value. Default is "enabled".
+	K8sSwitchLabelVal string
+	// The period for updating the containers for metrics forwarding in k8s.
+	K8sContainerUpdPeriodSec int
+	// Range of jitter applied when querying k8s API while looking for pods.
+	// Jitter added will be [0, this_number]
+	K8sObserveJitterRangeSec int
+
 	TargetPort uint16
 
 	// empty string not to listen
@@ -41,6 +57,7 @@ type Main struct {
 	TCPOutBufFlushPeriodSec uint32
 	// 0 value turns off connection refresh
 	TCPOutConnectionRefreshPeriodSec uint32
+	TCPInitialConnCheck              bool
 
 	// GRPC target (client) params
 	GRPCOutKeepAlivePeriodSec      uint32
@@ -119,6 +136,14 @@ func MakeDefault() Main {
 		RulesConfig:    "",
 		RewritesConfig: "",
 
+		K8sMode:                  false,
+		K8sLabelFiltering:        false,
+		K8sInjectPortTCP:         2003,
+		K8sSwitchLabelKey:        "graphite_tcp_port",
+		K8sSwitchLabelVal:        "enabled",
+		K8sContainerUpdPeriodSec: 30,
+		K8sObserveJitterRangeSec: 10,
+
 		TargetPort: 2004,
 
 		ListenTCP: ":2003",
@@ -138,6 +163,7 @@ func MakeDefault() Main {
 		TCPOutBufSize:                    0,
 		TCPOutBufFlushPeriodSec:          2,
 		TCPOutConnectionRefreshPeriodSec: 0,
+		TCPInitialConnCheck:              false,
 
 		GRPCOutKeepAlivePeriodSec:      5,
 		GRPCOutKeepAlivePingTimeoutSec: 1,

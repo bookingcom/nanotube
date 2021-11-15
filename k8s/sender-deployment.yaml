@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nanokube-sender-deployment
+  namespace: nanokube-sender
+  labels:
+    app: nanokube-sender
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nanokube-sender
+  template:
+    metadata:
+      labels:
+        app: nanokube-sender
+        graphite_tcp_port: enabled
+    spec:
+      containers:
+        - name: sender
+          image: sender
+          imagePullPolicy: IfNotPresent

@@ -1,0 +1,91 @@
+# Ansible playbook to run test Kind cluster
+---
+- hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Build NT
+      make:
+        chdir: ..
+        target: build
+    - name: Ensure the NT image is built
+      docker_image:
+        name: nt
+        source: build
+        build:
+          dockerfile: k8s/nt.Dockerfile
+          path: ..
+          pull: no
+        state: present
+
+    - name: Ensure the sender image is built
+      docker_image:
+        name: sender
+        source: build
+        build:
+          dockerfile: k8s/sender.Dockerfile
+          path: ..
+          pull: no
+        state: present
+
+    # kind setup
+
+    - name: Check kind clusters
+      shell: kind get clusters | grep nttest
+      register: kind_nttest_search
+      changed_when: false
+      failed_when: "kind_nttest_search.rc not in [ 0, 1 ]"
+
+    - name: Create kind cluster if not present.
+      command: kind create cluster --config kind-cluster.yaml
+      when: kind_nttest_search.rc == 1
+
+    - name: Load NT image
+      command: kind load docker-image nt --name nttest
+
+    - name: Load sender image
+      command: kind load docker-image sender --name nttest
+
+    # k8s setup
+    - name: nanokube namespace
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: nanokube-namespace.yaml
+
+    - name: nanokube serviceaccount
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: nanokube-serviceaccount.yaml
+
+    - name: Nanokube role
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: nanokube-role.yaml
+
+    - name: Bind Nanokube role
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: nanokube-rolebinding.yaml
+
+    - name: Deploy Nanokube daemonset
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: nanokube-daemonset.yaml
+
+    - name: sender namespace
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: sender-namespace.yaml
+
+    - name: Deploy sender
+      community.kubernetes.k8s:
+        context: kind-nttest
+        state: present
+        src: sender-deployment.yaml
