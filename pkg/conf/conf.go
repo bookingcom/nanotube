@@ -123,7 +123,7 @@ type Main struct {
 	// Switch to expose only small subset of essential metrics.
 	// (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
 	LessMetrics bool
-	// Explose prometheus metrcs with the total time for running each regex from config.
+	// Expose prometheus metrcs with the total time for running each regex from config.
 	// Can be used to understand what regexs from config are more 'expensive'
 	RegexDurationMetric bool
 
