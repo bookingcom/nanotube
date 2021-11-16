@@ -12,15 +12,19 @@ import (
 
 // Main is the main and generic nanotube config.
 type Main struct {
+	// Clusters config path. Mandatory.
 	ClustersConfig string
-	RulesConfig    string
+	// Rules config path. Mandatory.
+	RulesConfig string
+	// Rewrites config path. Optional.
 	RewritesConfig string
 
-	// Start NT as a metrics forwarder in k8s?
+	// Launch NT as a k8s daemonset forwarding metrics from pods.
 	K8sMode bool
-	// Use k8s API to filter pods by label?
+	// Use filter pods by label?
 	K8sLabelFiltering bool
-	// The port to listen on when forwarding metrics from containers.
+	// Pods to inject for TCP listening on selected pods. Metics sent to that port will be forwarded
+	// to the running daemon-set.
 	K8sInjectPortTCP uint16
 	// The label to use in order to turn on forwarding from a pod.
 	K8sSwitchLabelKey string
@@ -32,38 +36,71 @@ type Main struct {
 	// Jitter added will be [0, this_number]
 	K8sObserveJitterRangeSec int
 
+	// The default target port on receiver hosts. Can be overridden in the clusters setup.
 	TargetPort uint16
 
-	// empty string not to listen
-	ListenTCP  string
-	ListenUDP  string
+	// Setting this to ip:port will enable TCP listening on specified address.
+	// Use empty string to disable TCP listening.
+	// Use empty ip to listen on all addresses.
+	ListenTCP string
+	// Setting this to ip:port will enable UDP listening on specified address.
+	// Use the empty string to disable UDP listening.
+	// Use the empty IP to listen on all addresses.
+	ListenUDP string
+	// TODO: Docs
 	ListenGRPC string
 
+	// The size on main queue between listen and routing. Refer to docs for details.
 	MainQueueSize uint64
+	// Each host has it's own queue that contains records to be sent to it. This is the size of it.
+	// Refer to docs for more insight.
 	HostQueueSize uint64
 
+	// Number of workers processing main queue and putting records into host queues
 	WorkerPoolSize uint16
 
+	// Timeout for dropping an incoming connection if no data is sent in.
 	IncomingConnIdleTimeoutSec uint32
-	SendTimeoutSec             uint32
-	OutConnTimeoutSec          uint32
+
+	// Timeout for sending data to target host via TCP connection.
+	// Has to be > TCPOutBufFlushPeriodSec to allow enough time for the buffered records to be sent.
+	SendTimeoutSec uint32
+	// Timeout for connecting to a target host. Does not influence re-connections with exponential backoffs.
+	OutConnTimeoutSec uint32
+
 	MaxHostReconnectPeriodMs   uint32
 	HostReconnectPeriodDeltaMs uint32
 	KeepAliveSec               uint32
-	TermTimeoutSec             uint16
+	// Time to wait for the processing pipeline to terminate when quitting. After this timeout is passed,
+	// forced termination is done. This helps when graceful shutdown is stuck or slow.
+	TermTimeoutSec uint16
+	// The size of the buffer for sending data to a target host via a TCP connections.
 	// 0 value turns off buffering
 	TCPOutBufSize int
+	// The period over which the out TCP buffer for the connections sending to target hosts is flushed.
+	// This helps if the traffic is low and records get stuck in the buffer.
+	// The value of zero means no flushing.
 	// 0 value turns off flushing
 	TCPOutBufFlushPeriodSec uint32
-	// 0 value turns off connection refresh
+
+	// The period to refresh the outgoing TCP connection.
+	// This solves the following problem. If nothing is sent for a prolonged period of time to a client
+	// it may drop the connection because of read i/o timeout. This will go unnoticed until the first
+	// write attempt that will fail and data will be lost. To prevent this situation and data loss, connection
+	// can be dropped and esteblished from scratch.
+	// 0 = no connection refresh.
 	TCPOutConnectionRefreshPeriodSec uint32
-	TCPInitialConnCheck              bool
+	// TODO: Docs
+	TCPInitialConnCheck bool
 
 	// GRPC target (client) params
+	// GRPC HTTP2 keepalive ping period https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
 	GRPCOutKeepAlivePeriodSec      uint32
 	GRPCOutKeepAlivePingTimeoutSec uint32
 	//	GRPCOutSendTimeoutSec          uint32
-	GRPCOutBackoffMaxDelaySec   uint32
+	// Max connect backoff period https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md
+	GRPCOutBackoffMaxDelaySec uint32
+	// Min time for the connection to complete https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md
 	GRPCOutMinConnectTimeoutSec uint32
 
 	// GRPC listener (server) params
@@ -75,24 +112,36 @@ type Main struct {
 
 	GRPCTracing bool
 
-	NormalizeRecords  bool
+	// Turns on and off the normalization of records path. Described in the docs in detail.
+	NormalizeRecords bool
+	// Turns on logging for special kinds of records. For now it's recrods with fractional timestamps.
 	LogSpecialRecords bool
 
 	// -1 turns off pprof server
-	PprofPort           int
-	PromPort            int
-	LessMetrics         bool
+	PprofPort int
+	PromPort  int
+	// Switch to expose only small subset of essential metrics.
+	// (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
+	LessMetrics bool
+	// Expose prometheus metrcs with the total time for running each regex from config.
+	// Can be used to understand what regexs from config are more 'expensive'
 	RegexDurationMetric bool
 
+	// Absolute path for a pidfile. Not written if left empty.
 	PidFilePath string
 
-	LogLimitInitial    int
+	// Initial number of allowed log records during LogLimitWindowSec with same msg and level
+	LogLimitInitial int
+	// Log every LogLimitThereafter record during LogLimitWindowSec after initial set with same msg and level
 	LogLimitThereafter int
-	LogLimitWindowSec  int
+	// Timeframe for log limiting
+	LogLimitWindowSec int
 
+	// Histogram parameters for the host queue size
 	HostQueueLengthBucketFactor float64
 	HostQueueLengthBuckets      int
 
+	// Histogram parameters for the processing duration
 	ProcessingDurationBucketFactor float64
 	ProcessingDurationBuckets      int
 }
