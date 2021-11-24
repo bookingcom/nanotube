@@ -2,15 +2,16 @@ package in
 
 import (
 	"bytes"
+	"errors"
 	"net"
-	"strings"
 	"sync"
 
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"go.uber.org/zap"
 )
 
-func listenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+// ListenUDP listens for incoming UDP connections.
+func ListenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	go func() {
 		<-stop
 		lg.Info("Termination: Closing the UDP connection.")
@@ -24,8 +25,7 @@ func listenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, con
 	for {
 		nRead, _, err := conn.ReadFrom(buf)
 		if err != nil {
-			// There is no other way, see https://github.com/golang/go/issues/4373
-			if strings.Contains(err.Error(), "use of closed network connection") {
+			if errors.Is(err, net.ErrClosed) {
 				break
 			}
 

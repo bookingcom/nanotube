@@ -11,7 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func acceptAndListenTCP(l net.Listener, queue chan string, term <-chan struct{},
+// AcceptAndListenTCP listens for incoming TCP connections.
+func AcceptAndListenTCP(l net.Listener, queue chan<- string, term <-chan struct{},
 	cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	var wg sync.WaitGroup
 
@@ -47,13 +48,15 @@ loop:
 			go readFromConnectionTCP(&wg, conn, queue, term, cfg, ms, lg)
 		}
 	}
-	lg.Info("Termination: Stopped accepting new TCP connections. Starting to close incoming connections...")
+	// TODO: Change logging level to debug
+	lg.Info("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
 	wg.Wait()
-	lg.Info("Termination: Finished previously accpted TCP connections.")
+	lg.Info("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
+
 	connWG.Done()
 }
 
-func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan<- string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	defer wg.Done() // executed after the connection is closed
 	defer func() {
 		err := conn.Close()
@@ -75,7 +78,7 @@ func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan string,
 	scanForRecordsTCP(conn, queue, stop, cfg, ms, lg)
 }
 
-func scanForRecordsTCP(conn net.Conn, queue chan string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func scanForRecordsTCP(conn net.Conn, queue chan<- string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(conn)
 	scanin := make(chan string)
 	go func() {
@@ -107,5 +110,14 @@ loop:
 			// give the reader the ability to drain the queue and close afterwards
 			break loop // break both from select and from for
 		}
+	}
+}
+
+func sendToMainQ(rec string, q chan<- string, ms *metrics.Prom) {
+	select {
+	case q <- rec:
+		ms.InRecs.Inc()
+	default:
+		ms.ThrottledRecs.Inc()
 	}
 }

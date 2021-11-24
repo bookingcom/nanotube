@@ -8,7 +8,7 @@ func nowF() time.Time {
 	return t
 }
 
-//nolint:golint
+//nolint:revive
 func Fuzz(data []byte) int {
 	s := string(data)
 	_, err := ParseRec(s, true, false, nowF, nil)

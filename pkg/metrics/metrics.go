@@ -10,8 +10,9 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	InRecs        prometheus.Counter
-	ThrottledRecs prometheus.Counter
+	InRecs         prometheus.Counter
+	InRecsBySource *prometheus.CounterVec
+	ThrottledRecs  prometheus.Counter
 
 	// TODO: Rename
 	StateChangeHosts *prometheus.CounterVec
@@ -39,6 +40,13 @@ type Prom struct {
 
 	UDPReadFailures prometheus.Counter
 
+	TargetStates             *prometheus.GaugeVec
+	NumberOfAvailableTargets *prometheus.GaugeVec
+	NumberOfTargets          *prometheus.GaugeVec
+
+	K8sPickedUpContainers         prometheus.Counter
+	K8sCurrentForwardedContainers prometheus.Gauge
+
 	RegexDuration *prometheus.SummaryVec
 
 	Version     *prometheus.CounterVec
@@ -54,6 +62,11 @@ func New(conf *conf.Main) *Prom {
 			Name:      "in_records_total",
 			Help:      "Incoming records counter.",
 		}),
+		InRecsBySource: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "in_records_by_source_total",
+			Help:      "Incoming records counter by source.",
+		}, []string{"source"}),
 		OutRecs: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "out_records",
@@ -141,6 +154,31 @@ func New(conf *conf.Main) *Prom {
 			Name:      "udp_read_failures_total",
 			Help:      "Counter of failures when reading incoming data from the UDP connection.",
 		}),
+		TargetStates: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "target_states",
+			Help:      "The current states of target hosts.",
+		}, []string{"upstream_host", "cluster"}),
+		NumberOfAvailableTargets: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "number_of_available_targets",
+			Help:      "Number of available targets in cluster.",
+		}, []string{"cluster"}),
+		NumberOfTargets: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "number_of_targets",
+			Help:      "Number of targets by cluster as seen by LB. Only counted for LB clusters.",
+		}, []string{"cluster"}),
+		K8sPickedUpContainers: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "k8s_pickeup_containers_total",
+			Help:      "The total number of containers that forwarding has started from. If container blips, it's counted twice.",
+		}),
+		K8sCurrentForwardedContainers: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "k8s_current_forwarded_containers",
+			Help:      "The number of current containers that have their metrics forwarded.",
+		}),
 		RegexDuration: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace: "nanotube",
 			Name:      "regex_duration_seconds",
@@ -164,7 +202,7 @@ func New(conf *conf.Main) *Prom {
 func Register(m *Prom, cfg *conf.Main) {
 	err := prometheus.Register(m.InRecs)
 	if err != nil {
-		log.Fatalf("error registering the in_records_counter metric: %v", err)
+		log.Fatalf("error registering the in_records_total metric: %v", err)
 	}
 
 	err = prometheus.Register(m.OutRecsTotal)
@@ -223,6 +261,11 @@ func Register(m *Prom, cfg *conf.Main) {
 			log.Fatalf("error registering the out_records metric: %v", err)
 		}
 
+		err = prometheus.Register(m.InRecsBySource)
+		if err != nil {
+			log.Fatalf("error registering the in_records_by_source_total metric: %v", err)
+		}
+
 		err = prometheus.Register(m.StateChangeHosts)
 		if err != nil {
 			log.Fatalf("error registering the state_change_hosts metric: %v", err)
@@ -261,6 +304,31 @@ func Register(m *Prom, cfg *conf.Main) {
 		err = prometheus.Register(m.UDPReadFailures)
 		if err != nil {
 			log.Fatalf("error registering the udp_read_failures_total metric: %v", err)
+		}
+
+		err = prometheus.Register(m.TargetStates)
+		if err != nil {
+			log.Fatalf("error while registering target_states metric: %v", err)
+		}
+
+		err = prometheus.Register(m.NumberOfAvailableTargets)
+		if err != nil {
+			log.Fatalf("error while registering number_of_available_targets metric: %v", err)
+		}
+
+		err = prometheus.Register(m.NumberOfTargets)
+		if err != nil {
+			log.Fatalf("error while registering number_of_targets metric: %v", err)
+		}
+
+		err = prometheus.Register(m.K8sPickedUpContainers)
+		if err != nil {
+			log.Fatalf("error registering the k8s_pickeup_containers_total metric: %v", err)
+		}
+
+		err = prometheus.Register(m.K8sCurrentForwardedContainers)
+		if err != nil {
+			log.Fatalf("error registering the k8s_current_forwarded_containers metric: %v", err)
 		}
 
 		if cfg.RegexDurationMetric {

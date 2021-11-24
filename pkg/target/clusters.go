@@ -6,6 +6,7 @@ import (
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"go.uber.org/zap"
 )
@@ -46,6 +47,8 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 			Name: cc.Name,
 			Type: cc.Type,
 		}
+		ms.NumberOfTargets.With(prometheus.Labels{"cluster": cl.Name}).Set(float64(len(cl.Hosts)))
+
 		switch cc.Type {
 		case conf.JumpCluster:
 			cl, err = getJumpCluster(cl, cc, *mainCfg, lg, ms)

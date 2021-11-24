@@ -16,8 +16,9 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
+// ListenGRPC listens for incoming gRPC connections.
 // Blocking. Returns when server returns.
-func listenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func ListenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	grpc.EnableTracing = cfg.GRPCTracing
 
 	s := streamerServer{

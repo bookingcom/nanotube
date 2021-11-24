@@ -11,13 +11,11 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
-	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
@@ -71,7 +69,6 @@ func main() {
 		log.Fatalf("error building pipline components: %v", err)
 	}
 
-	metrics.Register(ms, &cfg)
 	ms.Version.WithLabelValues(version).Inc()
 	ms.ConfVersion.WithLabelValues(hash).Inc()
 
@@ -101,8 +98,9 @@ func main() {
 	}()
 
 	stop := make(chan struct{})
+
 	n := gracenet.Net{}
-	queue, err := in.Listen(&n, &cfg, stop, lg, ms)
+	queue, err := Listen(&n, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}
@@ -196,7 +194,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(fixPath(cfgPath, cfg.ClustersConfig))
+	bs, err = ioutil.ReadFile(cfg.ClustersConfig)
 	if err != nil {
 		log.Fatal()
 		retErr = errors.Wrap(err, "error reading clusters file")
@@ -208,7 +206,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(fixPath(cfgPath, cfg.RulesConfig))
+	bs, err = ioutil.ReadFile(cfg.RulesConfig)
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading rules file")
 		return
@@ -221,7 +219,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 
 	rewritesConf = nil
 	if cfg.RewritesConfig != "" {
-		bs, err := ioutil.ReadFile(fixPath(cfgPath, cfg.RewritesConfig))
+		bs, err := ioutil.ReadFile(cfg.RewritesConfig)
 		if err != nil {
 			retErr = errors.Wrap(err, "error reading rewrites config")
 			return
@@ -241,17 +239,11 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 	return
 }
 
-func fixPath(prefixPath string, path string) string {
-	if !filepath.IsAbs(path) {
-		return filepath.Join(filepath.Dir(prefixPath), path)
-	}
-	return path
-}
-
 func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.Rules, rewritesConf *conf.Rewrites,
 	lg *zap.Logger) (clusters target.Clusters, rls rules.Rules, rewriteRules rewrites.Rewrites, ms *metrics.Prom, retErr error) {
 
 	ms = metrics.New(cfg)
+	metrics.Register(ms, cfg)
 
 	clusters, err := target.NewClusters(cfg, clustersConf, lg, ms)
 	if err != nil {
