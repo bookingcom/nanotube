@@ -131,9 +131,133 @@ func BenchmarkProcessPrefix(b *testing.B) {
 
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		for _, m := range benchMetrics {
-			proc(m, rules, emptyRewrites, true, false, lg, ms)
+		for i := 0; i < 10000; i++ {
+			for _, m := range benchMetrics {
+				proc(m, rules, emptyRewrites, true, false, lg, ms)
+			}
 		}
+	}
+}
+
+func BenchmarkProcessSingle(b *testing.B) {
+	b.StopTimer()
+	var benchMetrics = [...]string{
+		"aaa 1 1",
+	}
+	var prefixes = []string{
+		"a",
+	}
+
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
+	cls := map[string]*target.TestTarget{
+		"1": {Name: "1"},
+		"2": {Name: "2"},
+		"3": {Name: "3"},
+		"4": {Name: "4"},
+	}
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
+			Prefixes: prefixes,
+			Clusters: []string{
+				"1",
+			},
+		},
+	},
+	}
+
+	rules, err := rules.TestBuild(rulesConf, cls, false, ms)
+	if err != nil {
+		b.Fatalf("rules building failed: %v", err)
+	}
+	var emptyRewrites rewrites.Rewrites
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		queue := make(chan string, 1000)
+		go func() {
+			for _, m := range benchMetrics {
+				queue <- m
+			}
+			close(queue)
+		}()
+
+		done := Process(queue, rules, emptyRewrites, 4, true, false, lg, ms)
+		<-done
+	}
+}
+
+func BenchmarkFullProcess(b *testing.B) {
+	b.StopTimer()
+	var benchMetrics = [...]string{
+		"aaa 1 1",
+		"abcabc 1 1",
+		"xxx 1 1",
+		"1234lkjsljfdlaskdjfskdjf 1 1",
+		"123kjkj 1 1",
+		"123 1 1",
+		"jkn 1 1",
+		"lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1",
+		"lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1",
+		"lkjsdlkjfaljbajlkjlkjabcabc 1 1",
+		"kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1",
+		"aaaaaaaaaaajabcabcabcabcabclkjljk 1 1",
+		"a 1 1",
+		"abc 1 1",
+		"abcabcabcabc 1 1",
+		"abcabcabcabcabcabc 1 1",
+	}
+	var prefixes = []string{
+		"a",
+		"abc",
+		"abcabcabcabc",
+		"abcabcabcabcabcabc",
+	}
+
+	lg := zap.NewNop()
+	defaultConfig := conf.MakeDefault()
+	ms := metrics.New(&defaultConfig)
+
+	cls := map[string]*target.TestTarget{
+		"1": {Name: "1"},
+		"2": {Name: "2"},
+		"3": {Name: "3"},
+		"4": {Name: "4"},
+	}
+
+	rulesConf := conf.Rules{Rule: []conf.Rule{
+		{
+			Prefixes: prefixes,
+			Clusters: []string{
+				"1",
+			},
+		},
+	},
+	}
+
+	rules, err := rules.TestBuild(rulesConf, cls, false, ms)
+	if err != nil {
+		b.Fatalf("rules building failed: %v", err)
+	}
+	var emptyRewrites rewrites.Rewrites
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		queue := make(chan string, 100000)
+		go func() {
+			for i := 0; i < 10000; i++ {
+				for _, m := range benchMetrics {
+					queue <- m
+				}
+			}
+			close(queue)
+		}()
+
+		done := Process(queue, rules, emptyRewrites, 4, true, false, lg, ms)
+		<-done
 	}
 }
 

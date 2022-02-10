@@ -17,8 +17,8 @@ func Process(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites,
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for w := 1; w <= int(workerPoolSize); w++ {
-		go worker(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 		wg.Add(1)
+		go worker(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 	}
 	go func() {
 		wg.Wait()
