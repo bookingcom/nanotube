@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -50,8 +51,9 @@ func setup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error reading and compiling config: %v", err)
 	}
-
-	clusters, rules, rewrites, ms, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, lg)
+	ms := metrics.New(&cfg)
+	metrics.Register(ms, &cfg)
+	clusters, rules, rewrites, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, ms, lg)
 	if err != nil {
 		t.Fatalf("error building pipline components: %v", err)
 	}

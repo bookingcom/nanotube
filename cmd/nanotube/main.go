@@ -64,7 +64,9 @@ func main() {
 		log.Fatalf("error building logger config: %v", err)
 	}
 
-	clusters, rules, rewrites, ms, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, lg)
+	ms := metrics.New(&cfg)
+	metrics.Register(ms, &cfg)
+	clusters, rules, rewrites, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, ms, lg)
 	if err != nil {
 		log.Fatalf("error building pipline components: %v", err)
 	}
@@ -196,7 +198,6 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 
 	bs, err = ioutil.ReadFile(cfg.ClustersConfig)
 	if err != nil {
-		log.Fatal()
 		retErr = errors.Wrap(err, "error reading clusters file")
 		return
 	}
@@ -240,10 +241,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 }
 
 func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.Rules, rewritesConf *conf.Rewrites,
-	lg *zap.Logger) (clusters target.Clusters, rls rules.Rules, rewriteRules rewrites.Rewrites, ms *metrics.Prom, retErr error) {
-
-	ms = metrics.New(cfg)
-	metrics.Register(ms, cfg)
+	ms *metrics.Prom, lg *zap.Logger) (clusters target.Clusters, rls rules.Rules, rewriteRules rewrites.Rewrites, retErr error) {
 
 	clusters, err := target.NewClusters(cfg, clustersConf, lg, ms)
 	if err != nil {
