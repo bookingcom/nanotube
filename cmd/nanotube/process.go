@@ -49,3 +49,42 @@ func proc(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 		rules.RouteRec(rec, lg)
 	}
 }
+
+func processBytes(queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	for w := 1; w <= int(workerPoolSize); w++ {
+		wg.Add(1)
+		go workerBytes(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+	}
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	return done
+}
+
+func workerBytes(wg *sync.WaitGroup, queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
+	defer wg.Done()
+	for j := range queue {
+		procBytes(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+	}
+}
+
+func procBytes(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) { //nolint:golint,unparam
+	r, err := rec.ParseRecBytes(s, shouldNormalize, shouldLog, time.Now, lg)
+	if err != nil {
+		lg.Info("Error parsing incoming record", zap.String("record", string(s)), zap.Error(err))
+		metrics.ErrorRecs.Inc()
+		return
+	}
+
+	// TODO: To be added before merging.
+	// recs := rewrites.RewriteMetric(r)
+	recs := []*rec.RecBytes{r}
+
+	for _, rec := range recs {
+		rules.RouteRecBytes(rec, lg)
+	}
+}

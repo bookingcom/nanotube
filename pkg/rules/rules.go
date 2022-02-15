@@ -144,7 +144,7 @@ func (rl Rule) Match(r *rec.Rec, measureRegex bool) bool {
 	return false
 }
 
-// TestBuild makes a set of rules for testgin.
+// TestBuild makes a set of rules for testing.
 func TestBuild(crs conf.Rules, clusters map[string]*target.TestTarget, measureRegex bool, ms *metrics.Prom) (Rules, error) {
 	var rs Rules
 
@@ -176,4 +176,74 @@ func TestBuild(crs conf.Rules, clusters map[string]*target.TestTarget, measureRe
 	}
 
 	return rs, nil
+}
+
+// RouteRecBytes a record by following the rules
+func (rs Rules) RouteRecBytes(r *rec.RecBytes, lg *zap.Logger) {
+	pushedTo := make(map[target.ClusterTarget]struct{})
+
+	for _, rl := range rs.rules {
+		matchedRule := rl.MatchBytes(r, rs.measureRegex)
+		if matchedRule {
+			for _, cl := range rl.Targets {
+				if _, pushedBefore := pushedTo[cl]; pushedBefore {
+					continue
+				}
+				err := cl.PushBytes(r, rs.metrics)
+				if err != nil {
+					lg.Error("push to cluster failed",
+						zap.Error(err),
+						zap.String("cluster", cl.GetName()),
+						zap.String("record", string(r.Serialize())))
+				}
+				pushedTo[cl] = struct{}{}
+			}
+		}
+
+		if matchedRule && !rl.Continue {
+			break
+		}
+	}
+}
+
+// MatchBytes a record with any of the rule regexps
+func (rl Rule) MatchBytes(r *rec.RecBytes, measureRegex bool) bool {
+	for _, pre := range rl.Prefixes {
+		if HasPrefix(r.Path, []byte(pre)) { // TODO: Remove conversion
+			return true
+		}
+	}
+
+	var timer *prometheus.Timer
+
+	for idx, re := range rl.CompiledRE {
+		if measureRegex {
+			timer = prometheus.NewTimer(rl.regexDuration[idx])
+		}
+		matched := re.Match(r.Path)
+		if measureRegex {
+			timer.ObserveDuration()
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+//HasPrefix implementation for []byte
+func HasPrefix(s []byte, pr []byte) bool {
+	// TODO: Move to a trie.
+
+	if len(s) < len(pr) {
+		return false
+	}
+
+	for i, c := range pr {
+		if s[i] != c {
+			return false
+		}
+	}
+
+	return true
 }

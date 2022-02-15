@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -412,6 +413,43 @@ func realisticBench(b *testing.B, nWorkers uint16) {
 		b.StartTimer()
 
 		done := Process(queue, rules, rewrites, nWorkers, true, false, lg, ms)
+		_ = clusters.Send(done)
+
+		<-done
+
+		b.StopTimer()
+	}
+}
+
+func BenchmarkRealisticBytes(b *testing.B) {
+	for nWorkers := 1; nWorkers <= 32; nWorkers *= 2 {
+		b.Run(fmt.Sprintf("BenchmarkRealisticBytes-%d-workers", nWorkers), func(b *testing.B) {
+			benchRealisticBytes(b, nWorkers)
+		})
+	}
+}
+
+func benchRealisticBytes(b *testing.B, nWorkers int) {
+	b.StopTimer()
+
+	benchMetrics, clusters, rules, rewrites, ms, lg := setupRealisticBench(b)
+	benchMetricsBytes := [][]byte{}
+	for _, m := range benchMetrics {
+		benchMetricsBytes = append(benchMetricsBytes, []byte(m))
+	}
+
+	for i := 0; i < b.N; i++ {
+		queue := make(chan []byte, 1000000)
+		for i := 0; i < 10; i++ {
+			for _, m := range benchMetricsBytes {
+				queue <- m
+			}
+		}
+		close(queue)
+
+		b.StartTimer()
+
+		done := processBytes(queue, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
 		_ = clusters.Send(done)
 
 		<-done
