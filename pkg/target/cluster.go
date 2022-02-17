@@ -48,16 +48,16 @@ func (cl *Cluster) Push(r *rec.Rec, metrics *metrics.Prom) error {
 		return nil
 	}
 
-	hs, err := cl.resolveHosts(r.Path, metrics)
-	if err != nil {
-		return errors.Wrapf(err, "resolving host for record %v failed", *r)
-	}
+	// hs, err := cl.resolveHosts(r.Path, metrics)
+	// if err != nil {
+	// 	return errors.Wrapf(err, "resolving host for record %v failed", *r)
+	// }
 
-	for _, h := range hs {
-		h.Push(r)
-	}
+	// for _, h := range hs {
+	// 	h.Push(r)
+	// }
 
-	return nil
+	return errors.New("not implemented")
 }
 
 // PushBytes sends single record to cluster. Routing happens based on cluster type.
@@ -69,7 +69,16 @@ func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
 		return nil
 	}
 
-	return errors.New("not implemented")
+	hs, err := cl.resolveHosts(string(r.Path), metrics)
+	if err != nil {
+		return errors.Wrapf(err, "resolving host for record %v failed", *r)
+	}
+
+	for _, h := range hs {
+		h.Push(r)
+	}
+
+	return nil
 }
 
 // GetName returns cluster name.

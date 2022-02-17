@@ -12,13 +12,14 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rules"
 )
 
-// Process contains all the CPU-intensive processing operations
-func Process(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
+// ProcessStr contains all the CPU-intensive processing operations
+func ProcessStr(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16,
+	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for w := 1; w <= int(workerPoolSize); w++ {
 		wg.Add(1)
-		go worker(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+		go workerStr(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 	}
 	go func() {
 		wg.Wait()
@@ -28,14 +29,16 @@ func Process(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites,
 	return done
 }
 
-func worker(wg *sync.WaitGroup, queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
+func workerStr(wg *sync.WaitGroup, queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites,
+	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	defer wg.Done()
 	for j := range queue {
-		proc(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+		procStr(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 	}
 }
 
-func proc(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
+func procStr(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool,
+	shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	r, err := rec.ParseRec(s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record", s), zap.Error(err))
@@ -50,12 +53,14 @@ func proc(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 	}
 }
 
-func processBytes(queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
+// Process contains all the CPU-intensive processing operations
+func Process(queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16,
+	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for w := 1; w <= int(workerPoolSize); w++ {
 		wg.Add(1)
-		go workerBytes(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+		go worker(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 	}
 	go func() {
 		wg.Wait()
@@ -65,14 +70,15 @@ func processBytes(queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewr
 	return done
 }
 
-func workerBytes(wg *sync.WaitGroup, queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
+func worker(wg *sync.WaitGroup, queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites,
+	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	defer wg.Done()
 	for j := range queue {
-		procBytes(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+		proc(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 	}
 }
 
-func procBytes(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) { //nolint:golint,unparam
+func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) { //nolint:golint,unparam
 	r, err := rec.ParseRecBytes(s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record", string(s)), zap.Error(err))

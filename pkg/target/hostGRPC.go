@@ -87,7 +87,7 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 		if stream != nil {
 			pbR := otmetrics.Metric{
-				Name: r.Path,
+				Name: string(r.Path),
 				Data: &otmetrics.Metric_DoubleGauge{
 					DoubleGauge: &otmetrics.DoubleGauge{
 						DataPoints: [](*otmetrics.DoubleDataPoint){

@@ -96,13 +96,15 @@ func listen(port int, sample string, listening chan<- bool) (e error) {
 	// data is sent twice: once via TCP and once via UDP
 	sc := bufio.NewScanner(conn)
 	sc.Scan()
-	if sample != sc.Text() {
-		return errors.Errorf("got *%v*, expected *%v*", sc.Text(), sample)
+	comp := sc.Text()
+	if sample != comp {
+		return errors.Errorf("got *%s*, expected *%s*", sc.Text(), sample)
 	}
 
 	sc.Scan()
-	if sample != sc.Text() {
-		return errors.Errorf("got *%v*, expected *%v*", sc.Text(), sample)
+	comp = sc.Text()
+	if sample != comp {
+		return errors.Errorf("got *%s*, expected *%s*", sc.Text(), sample)
 	}
 
 	return nil

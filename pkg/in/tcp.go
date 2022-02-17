@@ -12,7 +12,7 @@ import (
 )
 
 // AcceptAndListenTCP listens for incoming TCP connections.
-func AcceptAndListenTCP(l net.Listener, queue chan<- string, term <-chan struct{},
+func AcceptAndListenTCP(l net.Listener, queue chan<- []byte, term <-chan struct{},
 	cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	var wg sync.WaitGroup
 
@@ -56,7 +56,7 @@ loop:
 	connWG.Done()
 }
 
-func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan<- string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan<- []byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	defer wg.Done() // executed after the connection is closed
 	defer func() {
 		err := conn.Close()
@@ -78,12 +78,12 @@ func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan<- strin
 	scanForRecordsTCP(conn, queue, stop, cfg, ms, lg)
 }
 
-func scanForRecordsTCP(conn net.Conn, queue chan<- string, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func scanForRecordsTCP(conn net.Conn, queue chan<- []byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(conn)
-	scanin := make(chan string)
+	scanin := make(chan []byte)
 	go func() {
 		for sc.Scan() {
-			scanin <- sc.Text()
+			scanin <- sc.Bytes()
 		}
 		close(scanin)
 	}()
@@ -113,7 +113,7 @@ loop:
 	}
 }
 
-func sendToMainQ(rec string, q chan<- string, ms *metrics.Prom) {
+func sendToMainQ(rec []byte, q chan<- []byte, ms *metrics.Prom) {
 	select {
 	case q <- rec:
 		ms.InRecs.Inc()

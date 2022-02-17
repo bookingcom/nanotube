@@ -18,7 +18,7 @@ import (
 
 // ListenGRPC listens for incoming gRPC connections.
 // Blocking. Returns when server returns.
-func ListenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func ListenGRPC(l net.Listener, queue chan []byte, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	grpc.EnableTracing = cfg.GRPCTracing
 
 	s := streamerServer{
@@ -52,7 +52,7 @@ func ListenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG 
 type streamerServer struct {
 	grpcstreamer.UnimplementedStreamerServer
 
-	queue chan string
+	queue chan []byte
 	stop  <-chan struct{}
 
 	lg *zap.Logger
@@ -96,7 +96,7 @@ loop:
 			Val:  m.GetDoubleGauge().DataPoints[0].Value,
 		}
 		rStr := fmt.Sprintf("%s %e %d", r.Path, r.Val, r.Time)
-		server.queue <- rStr // TODO: Stop using strings, move to parsed structures
+		server.queue <- []byte(rStr) // TODO: Stop using strings, move to parsed structures
 	}
 
 	return nil

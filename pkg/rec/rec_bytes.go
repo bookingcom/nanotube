@@ -94,7 +94,7 @@ func isWhitespace(c byte) bool {
 // Serialize makes record into a string ready to be sent via TCP w/ line protocol.
 func (r *RecBytes) Serialize() []byte {
 	// TODO (grzkv): Copy can be avoided if string was not changed
-	res := make([]byte, len(r.Path)+len(r.RawTime)+len(r.RawVal)+3)
+	res := make([]byte, 0, len(r.Path)+len(r.RawTime)+len(r.RawVal)+3)
 	res = append(res, r.Path...)
 	res = append(res, ' ')
 	res = append(res, r.RawVal...)

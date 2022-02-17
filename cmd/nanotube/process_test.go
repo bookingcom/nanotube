@@ -76,7 +76,7 @@ func BenchmarkProcessREs(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		for _, m := range benchMetrics {
-			proc(m, rules, emptyRewrites, true, false, lg, ms)
+			procStr(m, rules, emptyRewrites, true, false, lg, ms)
 		}
 	}
 }
@@ -139,7 +139,7 @@ func BenchmarkProcessPrefix(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for i := 0; i < 10000; i++ {
 			for _, m := range benchMetrics {
-				proc(m, rules, emptyRewrites, true, false, lg, ms)
+				procStr(m, rules, emptyRewrites, true, false, lg, ms)
 			}
 		}
 	}
@@ -191,7 +191,7 @@ func BenchmarkProcessSingle(b *testing.B) {
 			close(queue)
 		}()
 
-		done := Process(queue, rules, emptyRewrites, 4, true, false, lg, ms)
+		done := ProcessStr(queue, rules, emptyRewrites, 4, true, false, lg, ms)
 		<-done
 	}
 }
@@ -261,7 +261,7 @@ func BenchmarkProcWithoutConcurrentWorkers(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for i := 0; i < 10000; i++ {
 			for _, m := range benchMetrics {
-				proc(m, rules, emptyRewrites, true, false, lg, ms)
+				procStr(m, rules, emptyRewrites, true, false, lg, ms)
 			}
 		}
 	}
@@ -340,7 +340,7 @@ func BenchmarkProcessFunc(b *testing.B) {
 			close(queue)
 		}()
 
-		done := Process(queue, rules, emptyRewrites, 4, true, false, lg, ms)
+		done := ProcessStr(queue, rules, emptyRewrites, 4, true, false, lg, ms)
 		<-done
 	}
 }
@@ -412,7 +412,7 @@ func realisticBench(b *testing.B, nWorkers uint16) {
 
 		b.StartTimer()
 
-		done := Process(queue, rules, rewrites, nWorkers, true, false, lg, ms)
+		done := ProcessStr(queue, rules, rewrites, nWorkers, true, false, lg, ms)
 		_ = clusters.Send(done)
 
 		<-done
@@ -449,7 +449,7 @@ func benchRealisticBytes(b *testing.B, nWorkers int) {
 
 		b.StartTimer()
 
-		done := processBytes(queue, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
+		done := Process(queue, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
 		_ = clusters.Send(done)
 
 		<-done
@@ -607,7 +607,7 @@ func TestContinueRuleProcessing(t *testing.T) {
 	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
 	queue <- testMetric
-	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 2 {
@@ -673,7 +673,7 @@ func TestStopRuleProcessing(t *testing.T) {
 	var emptyRewrites rewrites.Rewrites
 	queue := make(chan string, 1)
 	queue <- testMetric
-	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 1 {
@@ -725,7 +725,7 @@ func TestRewriteNoCopy(t *testing.T) {
 	}
 	queue := make(chan string, 1)
 	queue <- testMetric
-	done := Process(queue, rules, rewrites, 1, true, true, lg, ms)
+	done := ProcessStr(queue, rules, rewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 1 {
@@ -777,7 +777,7 @@ func TestRewriteCopy(t *testing.T) {
 	}
 	queue := make(chan string, 1)
 	queue <- testMetric
-	done := Process(queue, rules, rewrites, 1, true, true, lg, ms)
+	done := ProcessStr(queue, rules, rewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 2 {
@@ -836,7 +836,7 @@ func TestProcessing(t *testing.T) {
 	for _, m := range testMetrics {
 		queue <- m
 	}
-	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if cls["1"].ReceivedRecsNum != 2 {
@@ -898,7 +898,7 @@ func TestProcessingPrefix(t *testing.T) {
 	for _, m := range testMetrics {
 		queue <- m
 	}
-	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if cls["1"].ReceivedRecsNum != 2 {
@@ -931,7 +931,7 @@ func workerBuff(wg *sync.WaitGroup, queue chan []string, rules rules.Rules, rewr
 
 	for ss := range queue {
 		for _, s := range ss {
-			proc(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 		}
 	}
 }
@@ -965,13 +965,13 @@ func workerHighThroughput(wg *sync.WaitGroup, queue [4](chan string), rules rule
 		var s string
 		select {
 		case s, ok0 = <-queue[0]:
-			proc(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 		case s, ok1 = <-queue[1]:
-			proc(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 		case s, ok2 = <-queue[2]:
-			proc(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 		case s, ok3 = <-queue[3]:
-			proc(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
 		}
 
 		if !ok0 && !ok1 && !ok2 && !ok3 {
