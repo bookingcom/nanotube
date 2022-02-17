@@ -165,3 +165,17 @@ func normalizePathBytes(s []byte) ([]byte, bool, error) {
 
 	return res, true, nil
 }
+
+// Copy returns a deep copy of the record
+func (r RecBytes) Copy() *RecBytes {
+	cpy := &RecBytes{
+		Val:      r.Val,
+		Time:     r.Time,
+		Received: r.Received,
+	}
+	copy(cpy.Path, r.Path)
+	copy(cpy.RawVal, r.RawVal)
+	copy(cpy.RawTime, r.RawTime)
+
+	return cpy
+}

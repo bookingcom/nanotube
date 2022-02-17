@@ -2,6 +2,7 @@ package target
 
 import (
 	"fmt"
+	"hash/fnv"
 	"sync"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
@@ -11,7 +12,7 @@ import (
 
 	"github.com/dgryski/go-jump"
 	"github.com/pkg/errors"
-	"github.com/segmentio/fasthash/fnv1a"
+	// "github.com/segmentio/fasthash/fnv1a"
 )
 
 // ClusterTarget is abstract notion of a target to send the records to during processing.
@@ -69,7 +70,7 @@ func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
 		return nil
 	}
 
-	hs, err := cl.resolveHosts(string(r.Path), metrics)
+	hs, err := cl.resolveHosts(r.Path, metrics)
 	if err != nil {
 		return errors.Wrapf(err, "resolving host for record %v failed", *r)
 	}
@@ -87,17 +88,19 @@ func (cl *Cluster) GetName() string {
 }
 
 // resolveHosts does routing inside the cluster.
-func (cl *Cluster) resolveHosts(path string, ms *metrics.Prom) ([]Target, error) {
+func (cl *Cluster) resolveHosts(path []byte, ms *metrics.Prom) ([]Target, error) {
 	switch cl.Type {
 	case conf.JumpCluster:
 		return []Target{
-			cl.Hosts[jumpHash(path, len(cl.Hosts))],
+			cl.Hosts[jumpHashStd(path, len(cl.Hosts))],
 		}, nil
 	case conf.LB:
 		availHosts := cl.availHostsList()
 		ms.NumberOfAvailableTargets.With(prometheus.Labels{"cluster": cl.Name}).Set(float64(len(availHosts)))
 
-		key := fnv1a.HashString64(path)
+		hash := fnv.New64a()
+		hash.Write(path)
+		key := hash.Sum64()
 		if len(availHosts) == 0 {
 			return []Target{
 				cl.Hosts[key%uint64(len(cl.Hosts))],
@@ -140,12 +143,18 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 	}()
 }
 
+// func jumpHash(path string, ringSize int) int32 {
+// 	key := fnv1a.HashString64(path)
+// 	return jump.Hash(key, ringSize)
+// }
+
 // hashing for the rind of hosts in a cluster based on the record path
 // using https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function and
 // https://arxiv.org/abs/1406.2294
-func jumpHash(path string, ringSize int) int32 {
-	key := fnv1a.HashString64(path)
-	return jump.Hash(key, ringSize)
+func jumpHashStd(path []byte, ringSize int) int32 {
+	hash := fnv.New64a()
+	hash.Write(path)
+	return jump.Hash(hash.Sum64(), ringSize)
 }
 
 // TestTarget mocks a target cluster in tests.

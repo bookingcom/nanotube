@@ -86,9 +86,7 @@ func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 		return
 	}
 
-	// TODO: To be added before merging.
-	// recs := rewrites.RewriteMetric(r)
-	recs := []*rec.RecBytes{r}
+	recs := rewrites.RewriteMetricBytes(r)
 
 	for _, rec := range recs {
 		rules.RouteRecBytes(rec, lg)
