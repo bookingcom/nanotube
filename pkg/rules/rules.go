@@ -26,11 +26,14 @@ type Rules struct {
 
 // Rule is a routing rule.
 type Rule struct {
-	Regexs        []string
-	Prefixes      []string
-	Targets       []target.ClusterTarget
-	Continue      bool
-	CompiledRE    []*regexp.Regexp
+	Regexs     []string
+	Prefixes   []string
+	Targets    []target.ClusterTarget
+	Continue   bool
+	CompiledRE []*regexp.Regexp
+
+	PrefixTrie *PrefixTrie
+
 	regexDuration []prometheus.Observer
 }
 
@@ -85,6 +88,11 @@ func (rs Rules) compile() error {
 				}
 				rs.rules[i].regexDuration = append(rs.rules[i].regexDuration, rs.metrics.RegexDuration.With(labels))
 			}
+		}
+
+		rs.rules[i].PrefixTrie = NewPrefixTrie()
+		for _, pre := range rs.rules[i].Prefixes {
+			rs.rules[i].PrefixTrie.Add([]byte(pre))
 		}
 	}
 
@@ -208,10 +216,8 @@ func (rs Rules) RouteRecBytes(r *rec.RecBytes, lg *zap.Logger) {
 
 // MatchBytes a record with any of the rule regexps
 func (rl Rule) MatchBytes(r *rec.RecBytes, measureRegex bool) bool {
-	for _, pre := range rl.Prefixes {
-		if HasPrefix(r.Path, []byte(pre)) { // TODO: Remove conversion
-			return true
-		}
+	if rl.PrefixTrie.Check(r.Path) {
+		return true
 	}
 
 	var timer *prometheus.Timer
@@ -229,21 +235,4 @@ func (rl Rule) MatchBytes(r *rec.RecBytes, measureRegex bool) bool {
 		}
 	}
 	return false
-}
-
-//HasPrefix implementation for []byte
-func HasPrefix(s []byte, pr []byte) bool {
-	// TODO: Move to a trie.
-
-	if len(s) < len(pr) {
-		return false
-	}
-
-	for i, c := range pr {
-		if s[i] != c {
-			return false
-		}
-	}
-
-	return true
 }
