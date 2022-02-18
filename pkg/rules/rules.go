@@ -62,7 +62,7 @@ func Build(crs *conf.Rules, clusters target.Clusters, measureRegex bool, ms *met
 
 	err := rs.compile()
 	if err != nil {
-		return rs, errors.Wrap(err, "rules compilation failed :")
+		return rs, errors.Wrap(err, "rules compilation failed")
 	}
 
 	return rs, nil
@@ -172,7 +172,7 @@ func TestBuild(crs conf.Rules, clusters map[string]*target.TestTarget, measureRe
 
 	err := rs.compile()
 	if err != nil {
-		return rs, errors.Wrap(err, "rules compilation failed :")
+		return rs, errors.Wrap(err, "rules compilation failed")
 	}
 
 	return rs, nil

@@ -19,32 +19,47 @@ import (
 	"go.uber.org/zap"
 )
 
-func BenchmarkProcessREs(b *testing.B) {
-	b.StopTimer()
-	var benchMetrics = [...]string{
-		"aaa 1 1",
-		"abcabc 1 1",
-		"xxx 1 1",
-		"1234lkjsljfdlaskdjfskdjf 1 1",
-		"123kjkj 1 1",
-		"123 1 1",
-		"jkn 1 1",
-		"lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1",
-		"lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1",
-		"lkjsdlkjfaljbajlkjlkjabcabc 1 1",
-		"kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1",
-		"aaaaaaaaaaajabcabcabcabcabclkjljk 1 1",
-		"a 1 1",
-		"abc 1 1",
-		"abcabcabcabc 1 1",
-		"abcabcabcabcabcabc 1 1",
+func testData() (benchMetrics [][]byte, regexs []string, prefixes []string) {
+	benchMetrics = [][]byte{
+		[]byte("aaa 1 1"),
+		[]byte("abcabc 1 1"),
+		[]byte("xxx 1 1"),
+		[]byte("1234lkjsljfdlaskdjfskdjf 1 1"),
+		[]byte("123kjkj 1 1"),
+		[]byte("123 1 1"),
+		[]byte("jkn 1 1"),
+		[]byte("lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1"),
+		[]byte("lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1"),
+		[]byte("lkjsdlkjfaljbajlkjlkjabcabc 1 1"),
+		[]byte("kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1"),
+		[]byte("aaaaaaaaaaajabcabcabcabcabclkjljk 1 1"),
+		[]byte("a 1 1"),
+		[]byte("abc 1 1"),
+		[]byte("abcabcabcabc 1 1"),
+		[]byte("abcabcabcabcabcabc 1 1"),
 	}
-	var REs = []string{
+
+	regexs = []string{
 		"^a.*",
 		"^abc.*",
 		"^abcabcabcabc.*",
 		"^abcabcabcabcabcabc.*",
 	}
+
+	prefixes = []string{
+		"a",
+		"abc",
+		"abcabcabcabc",
+		"abcabcabcabcabcabc",
+	}
+
+	return
+}
+
+func BenchmarkProcessREs(b *testing.B) {
+	b.StopTimer()
+
+	benchMetrics, REs, _ := testData()
 
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
@@ -76,37 +91,15 @@ func BenchmarkProcessREs(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		for _, m := range benchMetrics {
-			procStr(m, rules, emptyRewrites, true, false, lg, ms)
+			proc(m, rules, emptyRewrites, true, false, lg, ms)
 		}
 	}
 }
 
 func BenchmarkProcessPrefix(b *testing.B) {
 	b.StopTimer()
-	var benchMetrics = [...]string{
-		"aaa 1 1",
-		"abcabc 1 1",
-		"xxx 1 1",
-		"1234lkjsljfdlaskdjfskdjf 1 1",
-		"123kjkj 1 1",
-		"123 1 1",
-		"jkn 1 1",
-		"lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1",
-		"lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1",
-		"lkjsdlkjfaljbajlkjlkjabcabc 1 1",
-		"kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1",
-		"aaaaaaaaaaajabcabcabcabcabclkjljk 1 1",
-		"a 1 1",
-		"abc 1 1",
-		"abcabcabcabc 1 1",
-		"abcabcabcabcabcabc 1 1",
-	}
-	var prefixes = []string{
-		"a",
-		"abc",
-		"abcabcabcabc",
-		"abcabcabcabcabcabc",
-	}
+
+	benchMetrics, _, prefixes := testData()
 
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
@@ -139,95 +132,16 @@ func BenchmarkProcessPrefix(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for i := 0; i < 10000; i++ {
 			for _, m := range benchMetrics {
-				procStr(m, rules, emptyRewrites, true, false, lg, ms)
+				proc(m, rules, emptyRewrites, true, false, lg, ms)
 			}
 		}
 	}
 }
 
-func BenchmarkProcessSingle(b *testing.B) {
-	b.StopTimer()
-	var benchMetrics = [...]string{
-		"aaa 1 1",
-	}
-	var prefixes = []string{
-		"a",
-	}
-
-	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
-
-	cls := map[string]*target.TestTarget{
-		"1": {Name: "1"},
-		"2": {Name: "2"},
-		"3": {Name: "3"},
-		"4": {Name: "4"},
-	}
-
-	rulesConf := conf.Rules{Rule: []conf.Rule{
-		{
-			Prefixes: prefixes,
-			Clusters: []string{
-				"1",
-			},
-		},
-	},
-	}
-
-	rules, err := rules.TestBuild(rulesConf, cls, false, ms)
-	if err != nil {
-		b.Fatalf("rules building failed: %v", err)
-	}
-	var emptyRewrites rewrites.Rewrites
-
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		queue := make(chan string, 1000)
-		go func() {
-			for _, m := range benchMetrics {
-				queue <- m
-			}
-			close(queue)
-		}()
-
-		done := ProcessStr(queue, rules, emptyRewrites, 4, true, false, lg, ms)
-		<-done
-	}
-}
-
 func BenchmarkProcWithoutConcurrentWorkers(b *testing.B) {
 	b.StopTimer()
-	var benchMetrics = [...]string{
-		"aaa 1 1",
-		"abcabc 1 1",
-		"xxx 1 1",
-		"1234lkjsljfdlaskdjfskdjf 1 1",
-		"123kjkj 1 1",
-		"123 1 1",
-		"jkn 1 1",
-		"lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1",
-		"lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1",
-		"lkjsdlkjfaljbajlkjlkjabcabc 1 1",
-		"kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1",
-		"aaaaaaaaaaajabcabcabcabcabclkjljk 1 1",
-		"a 1 1",
-		"abc 1 1",
-		"abcabcabcabc 1 1",
-		"abcabcabcabcabcabc 1 1",
-	}
-	var prefixes = []string{
-		"a",
-		"abc",
-		"abcabcabcabc",
-		"abcabcabcabcabcabc",
-	}
-	var regexs = []string{
-		"lk.*kj.*",
-		"abc.*a+.*",
-		"a",
-		".*23.*",
-	}
+
+	benchMetrics, regexs, prefixes := testData()
 
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
@@ -261,7 +175,7 @@ func BenchmarkProcWithoutConcurrentWorkers(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for i := 0; i < 10000; i++ {
 			for _, m := range benchMetrics {
-				procStr(m, rules, emptyRewrites, true, false, lg, ms)
+				proc(m, rules, emptyRewrites, true, false, lg, ms)
 			}
 		}
 	}
@@ -269,36 +183,8 @@ func BenchmarkProcWithoutConcurrentWorkers(b *testing.B) {
 
 func BenchmarkProcessFunc(b *testing.B) {
 	b.StopTimer()
-	var benchMetrics = [...]string{
-		"aaa 1 1",
-		"abcabc 1 1",
-		"xxx 1 1",
-		"1234lkjsljfdlaskdjfskdjf 1 1",
-		"123kjkj 1 1",
-		"123 1 1",
-		"jkn 1 1",
-		"lkjlkjlksjdlkfjalskdjfewifjlsdkmnflksdjflskdjfloskjeoifjklsjdflkjsdl 1 1",
-		"lkmnxlkhjfgkshdioufhewoiabclkjlkjabclkjl;kjaaaaaaaaaaalkjljabcalkjlkjabc 1 1",
-		"lkjsdlkjfaljbajlkjlkjabcabc 1 1",
-		"kkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjj 1 1",
-		"aaaaaaaaaaajabcabcabcabcabclkjljk 1 1",
-		"a 1 1",
-		"abc 1 1",
-		"abcabcabcabc 1 1",
-		"abcabcabcabcabcabc 1 1",
-	}
-	var prefixes = []string{
-		"a",
-		"abc",
-		"abcabcabcabc",
-		"abcabcabcabcabcabc",
-	}
-	var regexs = []string{
-		"lk.*kj.*",
-		"abc.*a+.*",
-		"a",
-		".*23.*",
-	}
+
+	benchMetrics, regexs, prefixes := testData()
 
 	lg := zap.NewNop()
 	defaultConfig := conf.MakeDefault()
@@ -330,7 +216,7 @@ func BenchmarkProcessFunc(b *testing.B) {
 
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		queue := make(chan string, 100000)
+		queue := make(chan []byte, 100000)
 		go func() {
 			for i := 0; i < 10000; i++ {
 				for _, m := range benchMetrics {
@@ -340,7 +226,7 @@ func BenchmarkProcessFunc(b *testing.B) {
 			close(queue)
 		}()
 
-		done := ProcessStr(queue, rules, emptyRewrites, 4, true, false, lg, ms)
+		done := Process(queue, rules, emptyRewrites, 4, true, false, lg, ms)
 		<-done
 	}
 }
@@ -555,7 +441,7 @@ func TestContinueRuleProcessing(t *testing.T) {
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
 
-	testMetric := "ab.c 123 123"
+	testMetric := []byte("ab.c 123 123")
 	cls := target.Clusters{
 		"1": &target.Cluster{
 			Name: "1",
@@ -605,9 +491,9 @@ func TestContinueRuleProcessing(t *testing.T) {
 		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
-	queue := make(chan string, 1)
+	queue := make(chan []byte, 1)
 	queue <- testMetric
-	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 2 {
@@ -620,7 +506,7 @@ func TestStopRuleProcessing(t *testing.T) {
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
 
-	testMetric := " ab.c 123 123"
+	testMetric := []byte(" ab.c 123 123")
 	cls := target.Clusters{
 		"1": &target.Cluster{
 			Name: "1",
@@ -671,9 +557,9 @@ func TestStopRuleProcessing(t *testing.T) {
 		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
-	queue := make(chan string, 1)
+	queue := make(chan []byte, 1)
 	queue <- testMetric
-	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 1 {
@@ -686,7 +572,7 @@ func TestRewriteNoCopy(t *testing.T) {
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
 
-	testMetric := "ab.c 123 123"
+	testMetric := []byte("ab.c 123 123")
 	cls := target.Clusters{
 		"1": &target.Cluster{
 			Name: "1",
@@ -723,9 +609,9 @@ func TestRewriteNoCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrite rules building failed: %v", err)
 	}
-	queue := make(chan string, 1)
+	queue := make(chan []byte, 1)
 	queue <- testMetric
-	done := ProcessStr(queue, rules, rewrites, 1, true, true, lg, ms)
+	done := Process(queue, rules, rewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 1 {
@@ -738,7 +624,7 @@ func TestRewriteCopy(t *testing.T) {
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
 
-	testMetric := "ab.c 123 123"
+	testMetric := []byte("ab.c 123 123")
 	cls := target.Clusters{
 		"1": &target.Cluster{
 			Name: "1",
@@ -775,9 +661,9 @@ func TestRewriteCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrite rules building failed: %v", err)
 	}
-	queue := make(chan string, 1)
+	queue := make(chan []byte, 1)
 	queue <- testMetric
-	done := ProcessStr(queue, rules, rewrites, 1, true, true, lg, ms)
+	done := Process(queue, rules, rewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if testutil.ToFloat64(ms.BlackholedRecs) != 2 {
@@ -790,11 +676,11 @@ func TestProcessing(t *testing.T) {
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
 
-	var testMetrics = []string{
-		"ab.c 123 123",
-		"aaa 123 123",
-		"zz 1 1",
-		"klk.kjl.kjo 1.9800 8909876",
+	testMetrics := [][]byte{
+		[]byte("ab.c 123 123"),
+		[]byte("aaa 123 123"),
+		[]byte("zz 1 1"),
+		[]byte("klk.kjl.kjo 1.9800 8909876"),
 	}
 
 	cls := map[string]*target.TestTarget{
@@ -832,11 +718,11 @@ func TestProcessing(t *testing.T) {
 		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
-	queue := make(chan string, len(testMetrics))
+	queue := make(chan []byte, len(testMetrics))
 	for _, m := range testMetrics {
 		queue <- m
 	}
-	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if cls["1"].ReceivedRecsNum != 2 {
@@ -852,11 +738,11 @@ func TestProcessingPrefix(t *testing.T) {
 	defaultConfig := conf.MakeDefault()
 	ms := metrics.New(&defaultConfig)
 
-	var testMetrics = []string{
-		"ab.c 123 123",
-		"aaa 123 123",
-		"zz 1 1",
-		"klk.kjl.kjo 1.9800 8909876",
+	testMetrics := [][]byte{
+		[]byte("ab.c 123 123"),
+		[]byte("aaa 123 123"),
+		[]byte("zz 1 1"),
+		[]byte("klk.kjl.kjo 1.9800 8909876"),
 	}
 
 	cls := map[string]*target.TestTarget{
@@ -894,11 +780,11 @@ func TestProcessingPrefix(t *testing.T) {
 		t.Fatalf("rules building failed: %v", err)
 	}
 	var emptyRewrites rewrites.Rewrites
-	queue := make(chan string, len(testMetrics))
+	queue := make(chan []byte, len(testMetrics))
 	for _, m := range testMetrics {
 		queue <- m
 	}
-	done := ProcessStr(queue, rules, emptyRewrites, 1, true, true, lg, ms)
+	done := Process(queue, rules, emptyRewrites, 1, true, true, lg, ms)
 	close(queue)
 	<-done
 	if cls["1"].ReceivedRecsNum != 2 {

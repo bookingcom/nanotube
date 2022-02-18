@@ -49,7 +49,7 @@ func Build(crw *conf.Rewrites, measureRegex bool, metrics *metrics.Prom) (Rewrit
 
 	err := rw.compile()
 	if err != nil {
-		return rw, errors.Wrap(err, "rewrite rule compilation failed :")
+		return rw, errors.Wrap(err, "rewrite rule compilation failed")
 	}
 
 	return rw, nil
