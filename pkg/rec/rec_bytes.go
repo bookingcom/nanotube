@@ -8,20 +8,20 @@ import (
 	"go.uber.org/zap"
 )
 
-// RecBytes represents a single piece of data (a datapoint) that can be sent.
-type RecBytes struct { // nolint:revive
-	Path    []byte
-	Val     float64
-	RawVal  []byte // this is to avoid discrepancies in precision and formatting
-	Time    uint32
+// Rec represents a single piece of data (a datapoint) that can be sent.
+type Rec struct { // nolint:revive
+	Path []byte
+	// Val     float64
+	RawVal []byte // this is to avoid discrepancies in precision and formatting
+	// Time    uint32
 	RawTime []byte // to avoid differences when encoding, and save time
 	//	Raw  string // to avoid wasting time for serialization
 	Received time.Time
 }
 
-// ParseRecBytes parses a single datapoint record from a string. Makes sure it's valid.
+// ParseRec parses a single datapoint record from a string. Makes sure it's valid.
 // Performs normalizations.
-func ParseRecBytes(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*RecBytes, error) {
+func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*Rec, error) {
 	// strings.Fields does normalization by working with any number and any kind of whitespace
 	pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd, err := recFields(s)
 	if err != nil {
@@ -30,7 +30,7 @@ func ParseRecBytes(s []byte, normalize bool, shouldLog bool, nowF func() time.Ti
 
 	var path []byte
 	if normalize {
-		path, _, err = normalizePathBytes(s[pathStart:pathEnd])
+		path, err = normalizePath(s[pathStart:pathEnd])
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to normalize path")
 		}
@@ -38,7 +38,7 @@ func ParseRecBytes(s []byte, normalize bool, shouldLog bool, nowF func() time.Ti
 		path = s[pathStart:pathEnd]
 	}
 
-	return &RecBytes{
+	return &Rec{
 		Path:     path,
 		RawVal:   s[valStart:valEnd],
 		RawTime:  s[timeStart:timeEnd],
@@ -63,6 +63,13 @@ func recFields(s []byte) (pathStart, pathEnd, valStart, valEnd, timeStart, timeE
 	if err != nil {
 		retErr = errors.Wrap(err, "failed to find time in record")
 		return
+	}
+
+	for i := timeEnd; i < len(s); i++ {
+		if !isWhitespace(s[i]) {
+			retErr = errors.New("record has additional characters after 3 fields")
+			return
+		}
 	}
 
 	return
@@ -92,7 +99,7 @@ func isWhitespace(c byte) bool {
 }
 
 // Serialize makes record into a string ready to be sent via TCP w/ line protocol.
-func (r *RecBytes) Serialize() []byte {
+func (r Rec) Serialize() []byte {
 	// TODO (grzkv): Copy can be avoided if string was not changed
 	res := make([]byte, 0, len(r.Path)+len(r.RawTime)+len(r.RawVal)+3)
 	res = append(res, r.Path...)
@@ -105,18 +112,22 @@ func (r *RecBytes) Serialize() []byte {
 	return res
 }
 
+func (r Rec) String() string {
+	buf := r.Serialize()
+	return string(buf[:len(buf)-1])
+}
+
 // normalizePath does path normalization as described in the docs
-// returns: (updated path, was any normalization done)
-func normalizePathBytes(s []byte) ([]byte, bool, error) {
+func normalizePath(s []byte) ([]byte, error) {
 	if len(s) == 0 {
-		return []byte{}, false, nil
+		return []byte{}, nil
 	}
 
 	start := 0
 	for ; start < len(s) && s[start] == '.'; start++ {
 	}
 	if start == len(s) {
-		return []byte{}, true, errors.New("path contains only dots")
+		return []byte{}, errors.New("path contains only dots")
 	}
 
 	end := len(s) - 1 // points to the last char in path
@@ -157,20 +168,18 @@ func normalizePathBytes(s []byte) ([]byte, bool, error) {
 		}
 	} else {
 		if start == 0 && end == len(s)-1 {
-			return s, false, nil
+			return s, nil
 		}
 		res = s[start : end+1]
-		return res, true, nil
+		return res, nil
 	}
 
-	return res, true, nil
+	return res, nil
 }
 
 // Copy returns a deep copy of the record
-func (r RecBytes) Copy() *RecBytes {
-	cpy := &RecBytes{
-		Val:      r.Val,
-		Time:     r.Time,
+func (r Rec) Copy() *Rec {
+	cpy := &Rec{
 		Received: r.Received,
 	}
 	copy(cpy.Path, r.Path)
@@ -178,4 +187,24 @@ func (r RecBytes) Copy() *RecBytes {
 	copy(cpy.RawTime, r.RawTime)
 
 	return cpy
+}
+
+func validChar(c byte) bool {
+	if c >= 'A' && c <= 'Z' {
+		return true
+	}
+
+	if c >= 'a' && c <= 'z' {
+		return true
+	}
+
+	if c >= '0' && c <= '9' {
+		return true
+	}
+
+	if c == ':' || c == '_' || c == '-' || c == '#' || c == '.' {
+		return true
+	}
+
+	return false
 }

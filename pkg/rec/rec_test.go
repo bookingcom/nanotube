@@ -1,6 +1,7 @@
 package rec
 
 import (
+	"bytes"
 	"math"
 	"testing"
 	"time"
@@ -24,32 +25,38 @@ func TestRec(t *testing.T) {
 			isErr: true,
 		},
 		{
-			s:     "a a a",
-			isErr: true,
+			s: "a a a",
+			res: Rec{
+				Path:    []byte("a"),
+				RawVal:  []byte("a"),
+				RawTime: []byte("a"),
+			},
+			isErr: false,
 		},
 		{
-			s:     "1 a 1",
-			isErr: true,
+			s: "1 a 1",
+			res: Rec{
+				Path:    []byte("1"),
+				RawVal:  []byte("a"),
+				RawTime: []byte("1"),
+			},
+			isErr: false,
 		},
 		{
 			s: "a 1 1",
 			res: Rec{
-				Path:    "a",
-				Val:     1.0,
-				RawVal:  "1",
-				Time:    1,
-				RawTime: "1",
+				Path:    []byte("a"),
+				RawVal:  []byte("1"),
+				RawTime: []byte("1"),
 			},
 			isErr: false,
 		},
 		{
 			s: "a.a.a 1.1e3 123",
 			res: Rec{
-				Path:    "a.a.a",
-				Val:     1.1e3,
-				RawVal:  "1.1e3",
-				Time:    123,
-				RawTime: "123",
+				Path:    []byte("a.a.a"),
+				RawVal:  []byte("1.1e3"),
+				RawTime: []byte("123"),
 			},
 			isErr: false,
 		},
@@ -58,17 +65,20 @@ func TestRec(t *testing.T) {
 			isErr: true,
 		},
 		{
-			s:     "a 1 a",
-			isErr: true,
+			s: "a 1 a",
+			res: Rec{
+				Path:    []byte("a"),
+				RawVal:  []byte("1"),
+				RawTime: []byte("a"),
+			},
+			isErr: false,
 		},
 		{
 			s: "asdf.fdsa.a.1.c 12e-3 1234567890",
 			res: Rec{
-				Path:    "asdf.fdsa.a.1.c",
-				Val:     0.012,
-				RawVal:  "12e-3",
-				Time:    1234567890,
-				RawTime: "1234567890",
+				Path:    []byte("asdf.fdsa.a.1.c"),
+				RawVal:  []byte("12e-3"),
+				RawTime: []byte("1234567890"),
 			},
 			isErr: false,
 		},
@@ -76,86 +86,77 @@ func TestRec(t *testing.T) {
 		{
 			s: ".abc.abc.abc 1.23 12345678",
 			res: Rec{
-				Path:    "abc.abc.abc",
-				Val:     1.23,
-				RawVal:  "1.23",
-				Time:    12345678,
-				RawTime: "12345678",
+				Path:    []byte("abc.abc.abc"),
+				RawVal:  []byte("1.23"),
+				RawTime: []byte("12345678"),
 			},
 			isErr: false,
 		},
 		{
 			s: "..abc..ab&+=.jklm.jk% 1.234 1234567890",
 			res: Rec{
-				Path:    "abc.ab___.jklm.jk_",
-				Val:     1.234,
-				RawVal:  "1.234",
-				Time:    1234567890,
-				RawTime: "1234567890",
+				Path:    []byte("abc.ab___.jklm.jk_"),
+				RawVal:  []byte("1.234"),
+				RawTime: []byte("1234567890"),
 			},
 			isErr: false,
 		},
 		{
 			s:     "abc.ab c.abc 1.234 1234",
-			res:   Rec{},
 			isErr: true,
 		},
 		// test other kinds of whitespace
 		{
 			s: "abc.jkl.mno    1.23   12345",
 			res: Rec{
-				Path:    "abc.jkl.mno",
-				Val:     1.23,
-				RawVal:  "1.23",
-				Time:    12345,
-				RawTime: "12345",
+				Path:    []byte("abc.jkl.mno"),
+				RawVal:  []byte("1.23"),
+				RawTime: []byte("12345"),
 			},
 			isErr: false,
 		},
 		{
 			s: "some.thing.here			98.7  12345",
 			res: Rec{
-				Path:    "some.thing.here",
-				Val:     98.7,
-				RawVal:  "98.7",
-				Time:    12345,
-				RawTime: "12345",
+				Path:    []byte("some.thing.here"),
+				RawVal:  []byte("98.7"),
+				RawTime: []byte("12345"),
 			},
 			isErr: false,
 		},
 		{
 			s: "fractional.time.test 3.3 123.45",
 			res: Rec{
-				Path:    "fractional.time.test",
-				Val:     3.3,
-				RawVal:  "3.3",
-				Time:    123,
-				RawTime: "123.45",
+				Path:    []byte("fractional.time.test"),
+				RawVal:  []byte("3.3"),
+				RawTime: []byte("123.45"),
 			},
 		},
 		{
 			s: "large.float.test 1.79769313486231e+308 12345",
 			res: Rec{
-				Path:    "large.float.test",
-				Val:     float64(1.79769313486231e+308),
-				RawVal:  "1.79769313486231e+308",
-				Time:    12345,
-				RawTime: "12345",
+				Path:    []byte("large.float.test"),
+				RawVal:  []byte("1.79769313486231e+308"),
+				RawTime: []byte("12345"),
 			},
 		},
 		{
 			s: ". 0 0",
 			res: Rec{
-				Path:    "",
-				Val:     0,
-				RawVal:  "0",
-				Time:    0,
-				RawTime: "0",
+				Path:    []byte(""),
+				RawVal:  []byte("0"),
+				RawTime: []byte("0"),
 			},
+			isErr: true,
 		},
 		{
-			s:     "a.b.c NaN 12345",
-			isErr: true,
+			s: "a.b.c NaN 12345",
+			res: Rec{
+				Path:    []byte("a.b.c"),
+				RawVal:  []byte("NaN"),
+				RawTime: []byte("12345"),
+			},
+			isErr: false,
 		},
 	}
 	nowF := func() time.Time {
@@ -169,14 +170,14 @@ func TestRec(t *testing.T) {
 	})
 	for _, tst := range tt {
 		t.Run(tst.s, func(t *testing.T) {
-			res, err := ParseRec(tst.s, true, true, nowF, lg)
+			res, err := ParseRec([]byte(tst.s), true, true, nowF, lg)
 			if err != nil {
 				if !tst.isErr {
 					t.Error("unexpected error", err)
 				}
 			} else {
 				if tst.isErr {
-					t.Error("error expected, but got none")
+					t.Errorf("error expected, but got none, result: %v", *res)
 				} else {
 					if res == nil {
 						t.Error("unexpectected nil value of parsed rec")
@@ -239,8 +240,11 @@ func TestNormalization(t *testing.T) {
 	}
 
 	for _, test := range tt {
-		s := normalizePath(test.in)
-		if s != test.out {
+		s, err := normalizePath([]byte(test.in))
+		if err != nil {
+			t.Fatalf("got error while normalizing: %v", err)
+		}
+		if string(s) != test.out {
 			t.Fatalf("Got %s after normalization of %s, expected %s", s, test.in, test.out)
 		}
 	}
@@ -250,32 +254,28 @@ func TestSerialization(t *testing.T) { testSerialization(t) }
 func testSerialization(t testing.TB) {
 	tt := []struct {
 		in  Rec
-		out string
+		out []byte
 	}{
 		{
 			in: Rec{
-				Path:    "this.is.a.path",
-				Val:     1.23,
-				RawVal:  "1.23",
-				Time:    987654,
-				RawTime: "987654",
+				Path:    []byte("this.is.a.path"),
+				RawVal:  []byte("1.23"),
+				RawTime: []byte("987654"),
 			},
-			out: "this.is.a.path 1.23 987654\n",
+			out: []byte("this.is.a.path 1.23 987654\n"),
 		},
 		{
 			in: Rec{
-				Path:    "a.b.c.d.path",
-				Val:     89.0987,
-				RawVal:  "89.0987",
-				Time:    1568889265,
-				RawTime: "1568889265",
+				Path:    []byte("a.b.c.d.path"),
+				RawVal:  []byte("89.0987"),
+				RawTime: []byte("1568889265"),
 			},
-			out: "a.b.c.d.path 89.0987 1568889265\n",
+			out: []byte("a.b.c.d.path 89.0987 1568889265\n"),
 		},
 	}
 
 	for _, test := range tt {
-		if test.in.Serialize() != test.out {
+		if !bytes.Equal(test.in.Serialize(), test.out) {
 			t.Errorf("expected serialization output %s, got %s for record %+v", test.out, test.in.Serialize(), test.in)
 		}
 	}

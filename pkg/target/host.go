@@ -19,10 +19,9 @@ import (
 
 // Host represents a single target hosts to send records to.
 type Host struct {
-	Name string
-	Port uint16
-	// TODO (grzkv): Replace w/ circular buffer
-	Ch        chan *rec.RecBytes
+	Name      string
+	Port      uint16
+	Ch        chan *rec.Rec
 	Available atomic.Bool
 	Conn      Connection
 
@@ -98,7 +97,7 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 	h := Host{
 		Name: hostCfg.Name,
 		Port: targetPort,
-		Ch:   make(chan *rec.RecBytes, mainCfg.HostQueueSize),
+		Ch:   make(chan *rec.Rec, mainCfg.HostQueueSize),
 		stop: make(chan int),
 
 		conf: &mainCfg,
@@ -132,7 +131,7 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 }
 
 // Push adds a new record to send to the host queue.
-func (h *Host) Push(r *rec.RecBytes) {
+func (h *Host) Push(r *rec.Rec) {
 	select {
 	case h.Ch <- r:
 	default:
@@ -172,7 +171,7 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	h.tryToFlushIfNecessary()
 }
 
-func (h *Host) tryToSend(r *rec.RecBytes) {
+func (h *Host) tryToSend(r *rec.Rec) {
 	h.Conn.Lock()
 	defer h.Conn.Unlock()
 

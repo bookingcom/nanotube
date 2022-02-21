@@ -9,7 +9,7 @@ import (
 // Target represents target the records are sent to
 type Target interface {
 	Stream(wg *sync.WaitGroup)
-	Push(r *rec.RecBytes)
+	Push(r *rec.Rec)
 	IsAvailable() bool
 	Stop()
 }

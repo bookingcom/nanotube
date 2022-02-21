@@ -77,12 +77,12 @@ func (rw Rewrites) compile() error {
 	return nil
 }
 
-// RewriteMetric executes all rewrite rules on a record
+// RewriteMetricStr executes all rewrite rules on a record
 // If copy is true and rule matches, we generate new record
-func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
+func (rw Rewrites) RewriteMetricStr(record *rec.RecStr) []*rec.RecStr {
 	var timer *prometheus.Timer
 
-	result := []*rec.Rec{record}
+	result := []*rec.RecStr{record}
 
 	for _, r := range rw.rewrites {
 		if rw.measureRegex {
@@ -115,12 +115,12 @@ func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
 	return result
 }
 
-// RewriteMetricBytes executes all rewrite rules on a record
+// RewriteMetric executes all rewrite rules on a record
 // If copy is true and rule matches, we generate new record
-func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) []*rec.RecBytes {
+func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
 	var timer *prometheus.Timer
 
-	result := []*rec.RecBytes{record}
+	result := []*rec.Rec{record}
 
 	for _, r := range rw.rewrites {
 		if rw.measureRegex {

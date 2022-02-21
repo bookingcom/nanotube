@@ -10,8 +10,7 @@ func nowF() time.Time {
 
 //nolint:revive
 func Fuzz(data []byte) int {
-	s := string(data)
-	_, err := ParseRec(s, true, false, nowF, nil)
+	_, err := ParseRec(data, true, false, nowF, nil)
 	if err != nil {
 		return 0
 	}
