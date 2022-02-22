@@ -12,8 +12,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// RecStr represents a single piece of data (a datapoint) that can be sent.
-type RecStr struct { // nolint:revive
+// Rec represents a single piece of data (a datapoint) that can be sent.
+type Rec struct {
 	Path    string
 	Val     float64
 	RawVal  string // this is to avoid discrepancies in precision and formatting
@@ -23,9 +23,9 @@ type RecStr struct { // nolint:revive
 	Received time.Time
 }
 
-// ParseRecStr parses a single datapoint record from a string. Makes sure it's valid.
+// ParseRec parses a single datapoint record from a string. Makes sure it's valid.
 // Performs normalizations.
-func ParseRecStr(s string, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*RecStr, error) {
+func ParseRec(s string, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*Rec, error) {
 	// strings.Fields does normalization by working with any number and any kind of whitespace
 	words := strings.Fields(s)
 	if len(words) != 3 {
@@ -58,12 +58,12 @@ func ParseRecStr(s string, normalize bool, shouldLog bool, nowF func() time.Time
 
 	var path string
 	if normalize {
-		path = normalizePathStr(words[0])
+		path = normalizePath(words[0])
 	} else {
 		path = words[0]
 	}
 
-	return &RecStr{
+	return &Rec{
 		Path:     path,
 		Val:      float64(val),
 		RawVal:   words[1],
@@ -74,7 +74,7 @@ func ParseRecStr(s string, normalize bool, shouldLog bool, nowF func() time.Time
 }
 
 // Serialize makes record into a string ready to be sent via TCP w/ line protocol.
-func (r *RecStr) Serialize() string {
+func (r *Rec) Serialize() string {
 	// TODO (grzkv): serialization can be avoided in case there is no normalization
 
 	// out of printf, strings.Builder (with pre-grow) and simply
@@ -88,13 +88,13 @@ func (r *RecStr) Serialize() string {
 }
 
 // Copy record
-func (r *RecStr) Copy() *RecStr {
+func (r *Rec) Copy() *Rec {
 	ret := *r
 	return &ret
 }
 
 // normalizePath does path normalization as described in the docs.
-func normalizePathStr(s string) string {
+func normalizePath(s string) string {
 	if len(s) == 0 {
 		return ""
 	}
@@ -129,4 +129,24 @@ func normalizePathStr(s string) string {
 
 	res := b.String()
 	return res
+}
+
+func validChar(c byte) bool {
+	if c >= 'A' && c <= 'Z' {
+		return true
+	}
+
+	if c >= 'a' && c <= 'z' {
+		return true
+	}
+
+	if c >= '0' && c <= '9' {
+		return true
+	}
+
+	if c == ':' || c == '_' || c == '-' || c == '#' || c == '.' {
+		return true
+	}
+
+	return false
 }

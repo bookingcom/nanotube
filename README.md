@@ -84,9 +84,9 @@ Nanotube validates every record it receives. Validation checks performed are:
 
 It is possible to turn on record normalization with the `NormalizeRecords` option in general configuration. It is on by default. Normalizations performed are mainly for backward compatibility with `carbon-c-relay`, namely:
 
-- Double or more subsequent dots in path are converted to a single dot: *a.b..c* -> *a.b.c*
-- Prefix and trailing dots in path are removed: *.a.b.c.* -> *a.b.c*
-- Spaces in record are normalized to a single space character: *a.b.c␣␣␣1.23\t1234567* -> *a.b.c␣1.23␣1234567*
+- Double or more subsequent dots in path are converted to a single dot: _a.b..c_ -> _a.b.c_
+- Prefix and trailing dots in path are removed: _.a.b.c._ -> _a.b.c_
+- Spaces in record are normalized to a single space character: _a.b.c␣␣␣1.23<tab>1234567_ -> _a.b.c␣1.23␣1234567_
 - Characters not in the set `[0-9a-zA-Z-_:#]` are replaced with `_`. Tags have their own allowed chars but are not supported for now.
 
 ## Zero-downtime reload

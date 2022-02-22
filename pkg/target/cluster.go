@@ -17,8 +17,8 @@ import (
 
 // ClusterTarget is abstract notion of a target to send the records to during processing.
 type ClusterTarget interface {
-	PushStr(*rec.RecStr, *metrics.Prom) error
 	Push(*rec.Rec, *metrics.Prom) error
+	PushBytes(*rec.RecBytes, *metrics.Prom) error
 	Send(*sync.WaitGroup, chan struct{})
 	GetName() string
 }
@@ -42,8 +42,8 @@ func (cl *Cluster) availHostsList() []Target {
 	return availHosts
 }
 
-// PushStr sends single record to cluster. Routing happens based on cluster type.
-func (cl *Cluster) PushStr(r *rec.RecStr, metrics *metrics.Prom) error {
+// Push sends single record to cluster. Routing happens based on cluster type.
+func (cl *Cluster) Push(r *rec.Rec, metrics *metrics.Prom) error {
 	if cl.Type == conf.BlackholeCluster {
 		metrics.BlackholedRecs.Inc()
 		return nil
@@ -61,8 +61,10 @@ func (cl *Cluster) PushStr(r *rec.RecStr, metrics *metrics.Prom) error {
 	return errors.New("not implemented")
 }
 
-// Push sends single record to cluster. Routing happens based on cluster type.
-func (cl *Cluster) Push(r *rec.Rec, metrics *metrics.Prom) error {
+// PushBytes sends single record to cluster. Routing happens based on cluster type.
+func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
+	// TODO: Add full implementation.
+
 	if cl.Type == conf.BlackholeCluster {
 		metrics.BlackholedRecs.Inc()
 		return nil
@@ -161,14 +163,14 @@ type TestTarget struct {
 	ReceivedRecsNum uint64
 }
 
-// PushStr is a push in tests. It does nothing, just increases the counter.
-func (tt *TestTarget) PushStr(rec *rec.RecStr, ms *metrics.Prom) error {
+// Push is a push in tests. It does nothing, just increases the counter.
+func (tt *TestTarget) Push(rec *rec.Rec, ms *metrics.Prom) error {
 	tt.ReceivedRecsNum++
 	return nil
 }
 
-// Push is a push in tests. It does nothing, just increases the counter.
-func (tt *TestTarget) Push(rec *rec.Rec, ms *metrics.Prom) error {
+// PushBytes is a push in tests. It does nothing, just increases the counter.
+func (tt *TestTarget) PushBytes(rec *rec.RecBytes, ms *metrics.Prom) error {
 	tt.ReceivedRecsNum++
 	return nil
 }

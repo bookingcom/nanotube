@@ -99,18 +99,18 @@ func (rs Rules) compile() error {
 	return nil
 }
 
-// RouteRecStr a record by following the rules
-func (rs Rules) RouteRecStr(r *rec.RecStr, lg *zap.Logger) {
+// RouteRec a record by following the rules
+func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
 	pushedTo := make(map[target.ClusterTarget]struct{})
 
 	for _, rl := range rs.rules {
-		matchedRule := rl.MatchStr(r, rs.measureRegex)
+		matchedRule := rl.Match(r, rs.measureRegex)
 		if matchedRule {
 			for _, cl := range rl.Targets {
 				if _, pushedBefore := pushedTo[cl]; pushedBefore {
 					continue
 				}
-				err := cl.PushStr(r, rs.metrics)
+				err := cl.Push(r, rs.metrics)
 				if err != nil {
 					lg.Error("push to cluster failed",
 						zap.Error(err),
@@ -127,8 +127,8 @@ func (rs Rules) RouteRecStr(r *rec.RecStr, lg *zap.Logger) {
 	}
 }
 
-// MatchStr a record with any of the rule regexps
-func (rl Rule) MatchStr(r *rec.RecStr, measureRegex bool) bool {
+// Match a record with any of the rule regexps
+func (rl Rule) Match(r *rec.Rec, measureRegex bool) bool {
 	for _, pre := range rl.Prefixes {
 		if strings.HasPrefix(r.Path, pre) {
 			return true
@@ -186,8 +186,8 @@ func TestBuild(crs conf.Rules, clusters map[string]*target.TestTarget, measureRe
 	return rs, nil
 }
 
-// RouteRec a record by following the rules
-func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
+// RouteRecBytes a record by following the rules
+func (rs Rules) RouteRecBytes(r *rec.RecBytes, lg *zap.Logger) {
 	pushedTo := make(map[target.ClusterTarget]struct{})
 
 	for _, rl := range rs.rules {
@@ -197,7 +197,7 @@ func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
 				if _, pushedBefore := pushedTo[cl]; pushedBefore {
 					continue
 				}
-				err := cl.Push(r, rs.metrics)
+				err := cl.PushBytes(r, rs.metrics)
 				if err != nil {
 					lg.Error("push to cluster failed",
 						zap.Error(err),
@@ -215,7 +215,7 @@ func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
 }
 
 // MatchBytes a record with any of the rule regexps
-func (rl Rule) MatchBytes(r *rec.Rec, measureRegex bool) bool {
+func (rl Rule) MatchBytes(r *rec.RecBytes, measureRegex bool) bool {
 	if rl.PrefixTrie.Check(r.Path) {
 		return true
 	}

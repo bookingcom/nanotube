@@ -8,20 +8,20 @@ import (
 	"go.uber.org/zap"
 )
 
-// Rec represents a single piece of data (a datapoint) that can be sent.
-type Rec struct { // nolint:revive
-	Path []byte
-	// Val     float64
-	RawVal []byte // this is to avoid discrepancies in precision and formatting
-	// Time    uint32
+// RecBytes represents a single piece of data (a datapoint) that can be sent.
+type RecBytes struct { // nolint:revive
+	Path    []byte
+	Val     float64
+	RawVal  []byte // this is to avoid discrepancies in precision and formatting
+	Time    uint32
 	RawTime []byte // to avoid differences when encoding, and save time
 	//	Raw  string // to avoid wasting time for serialization
 	Received time.Time
 }
 
-// ParseRec parses a single datapoint record from a string. Makes sure it's valid.
+// ParseRecBytes parses a single datapoint record from a string. Makes sure it's valid.
 // Performs normalizations.
-func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*Rec, error) {
+func ParseRecBytes(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*RecBytes, error) {
 	// strings.Fields does normalization by working with any number and any kind of whitespace
 	pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd, err := recFields(s)
 	if err != nil {
@@ -30,7 +30,7 @@ func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, l
 
 	var path []byte
 	if normalize {
-		path, err = normalizePath(s[pathStart:pathEnd])
+		path, _, err = normalizePathBytes(s[pathStart:pathEnd])
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to normalize path")
 		}
@@ -38,7 +38,7 @@ func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, l
 		path = s[pathStart:pathEnd]
 	}
 
-	return &Rec{
+	return &RecBytes{
 		Path:     path,
 		RawVal:   s[valStart:valEnd],
 		RawTime:  s[timeStart:timeEnd],
@@ -63,13 +63,6 @@ func recFields(s []byte) (pathStart, pathEnd, valStart, valEnd, timeStart, timeE
 	if err != nil {
 		retErr = errors.Wrap(err, "failed to find time in record")
 		return
-	}
-
-	for i := timeEnd; i < len(s); i++ {
-		if !isWhitespace(s[i]) {
-			retErr = errors.New("record has additional characters after 3 fields")
-			return
-		}
 	}
 
 	return
@@ -99,7 +92,7 @@ func isWhitespace(c byte) bool {
 }
 
 // Serialize makes record into a string ready to be sent via TCP w/ line protocol.
-func (r Rec) Serialize() []byte {
+func (r *RecBytes) Serialize() []byte {
 	// TODO (grzkv): Copy can be avoided if string was not changed
 	res := make([]byte, 0, len(r.Path)+len(r.RawTime)+len(r.RawVal)+3)
 	res = append(res, r.Path...)
@@ -112,22 +105,18 @@ func (r Rec) Serialize() []byte {
 	return res
 }
 
-func (r Rec) String() string {
-	buf := r.Serialize()
-	return string(buf[:len(buf)-1])
-}
-
 // normalizePath does path normalization as described in the docs
-func normalizePath(s []byte) ([]byte, error) {
+// returns: (updated path, was any normalization done)
+func normalizePathBytes(s []byte) ([]byte, bool, error) {
 	if len(s) == 0 {
-		return []byte{}, nil
+		return []byte{}, false, nil
 	}
 
 	start := 0
 	for ; start < len(s) && s[start] == '.'; start++ {
 	}
 	if start == len(s) {
-		return []byte{}, errors.New("path contains only dots")
+		return []byte{}, true, errors.New("path contains only dots")
 	}
 
 	end := len(s) - 1 // points to the last char in path
@@ -168,18 +157,20 @@ func normalizePath(s []byte) ([]byte, error) {
 		}
 	} else {
 		if start == 0 && end == len(s)-1 {
-			return s, nil
+			return s, false, nil
 		}
 		res = s[start : end+1]
-		return res, nil
+		return res, true, nil
 	}
 
-	return res, nil
+	return res, true, nil
 }
 
 // Copy returns a deep copy of the record
-func (r Rec) Copy() *Rec {
-	cpy := &Rec{
+func (r RecBytes) Copy() *RecBytes {
+	cpy := &RecBytes{
+		Val:      r.Val,
+		Time:     r.Time,
 		Received: r.Received,
 	}
 	copy(cpy.Path, r.Path)
@@ -187,24 +178,4 @@ func (r Rec) Copy() *Rec {
 	copy(cpy.RawTime, r.RawTime)
 
 	return cpy
-}
-
-func validChar(c byte) bool {
-	if c >= 'A' && c <= 'Z' {
-		return true
-	}
-
-	if c >= 'a' && c <= 'z' {
-		return true
-	}
-
-	if c >= '0' && c <= '9' {
-		return true
-	}
-
-	if c == ':' || c == '_' || c == '-' || c == '#' || c == '.' {
-		return true
-	}
-
-	return false
 }

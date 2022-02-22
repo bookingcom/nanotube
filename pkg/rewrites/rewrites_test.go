@@ -32,20 +32,20 @@ func TestRewrites(t *testing.T) {
 	}
 
 	tests := []struct {
-		in  []byte
-		out [][]byte
+		in  string
+		out []string
 	}{
 		{
-			in:  []byte("abcxxx"),
-			out: [][]byte{[]byte("cdexxx")},
+			in:  "abcxxx",
+			out: []string{"cdexxx"},
 		},
 		{
-			in:  []byte("def"),
-			out: [][]byte{[]byte("def"), []byte("acd")},
+			in:  "def",
+			out: []string{"def", "acd"},
 		},
 		{
-			in:  []byte("ghtesttesttest"),
-			out: [][]byte{[]byte("[[testtesttest]]")},
+			in:  "ghtesttesttest",
+			out: []string{"[[testtesttest]]"},
 		},
 	}
 
@@ -61,7 +61,7 @@ func TestRewrites(t *testing.T) {
 			Path: test.in,
 		}
 		resultRecords := rewrites.RewriteMetric(record)
-		result := make([][]byte, 0)
+		result := make([]string, 0)
 		for _, rec := range resultRecords {
 			result = append(result, rec.Path)
 		}

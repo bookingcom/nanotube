@@ -128,7 +128,7 @@ func main() {
 	targetPort := flag.Int("port", 0, "target port")
 	useUDP := flag.Bool("udp", false, "use UDP instead of TCP? Default - false.")
 	retryTCP := flag.Bool("retryTCP", false, "retry connection for TCP - do not fail if connection fails")
-	rate := flag.Int("rate", 2000, "rate to send messages(number/sec)")
+	rate := flag.Int("rate", 1000, "rate to send messages(number/sec)")
 	cycle := flag.Bool("cycle", false, "cycle through the traffic file indefinitely?")
 	nCycles := flag.Int("ncycles", 0, "number of cycles over the data for each connection. 0 by default. 0 means infinity.")
 	connections := flag.Int("connections", 1, "number of concurrent connections")

@@ -10,6 +10,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/grpcstreamer"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rec"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -89,11 +90,12 @@ loop:
 		}
 
 		res.ReceivedCount++
-		rStr := fmt.Sprintf("%s %e %d",
-			m.Name,
-			m.GetDoubleGauge().DataPoints[0].Value,
-			uint32(m.GetDoubleGauge().DataPoints[0].TimeUnixNano/1000/1000/1000), // ns -> sec
-		)
+		r := rec.Rec{
+			Path: m.Name,
+			Time: uint32(m.GetDoubleGauge().DataPoints[0].TimeUnixNano / 1000 / 1000 / 1000), // ns -> sec
+			Val:  m.GetDoubleGauge().DataPoints[0].Value,
+		}
+		rStr := fmt.Sprintf("%s %e %d", r.Path, r.Val, r.Time)
 		server.queue <- []byte(rStr) // TODO: Stop using strings, move to parsed structures
 	}
 
