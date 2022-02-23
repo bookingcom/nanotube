@@ -12,8 +12,10 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rules"
 )
 
+// TODO: Clean-up .*Str functions
+
 // ProcessStr contains all the CPU-intensive processing operations
-func ProcessStr(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16,
+func ProcessStr(queue <-chan string, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16, // nolint:deadcode
 	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
 	done := make(chan struct{})
 	var wg sync.WaitGroup
@@ -86,7 +88,11 @@ func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 		return
 	}
 
-	recs := rewrites.RewriteMetricBytes(r)
+	recs, err := rewrites.RewriteMetricBytes(r)
+	if err != nil {
+		lg.Info("Error parsing incoming record", zap.String("record", string(s)), zap.Error(err))
+		return
+	}
 
 	for _, rec := range recs {
 		rules.RouteRecBytes(rec, lg)

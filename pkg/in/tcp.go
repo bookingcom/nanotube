@@ -83,7 +83,9 @@ func scanForRecordsTCP(conn net.Conn, queue chan<- []byte, stop <-chan struct{},
 	scanin := make(chan []byte)
 	go func() {
 		for sc.Scan() {
-			scanin <- sc.Bytes()
+			rec := []byte{}
+			rec = append(rec, sc.Bytes()...)
+			scanin <- rec
 		}
 		close(scanin)
 	}()

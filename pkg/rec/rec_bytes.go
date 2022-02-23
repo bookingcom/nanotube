@@ -22,7 +22,6 @@ type RecBytes struct { // nolint:revive
 // ParseRecBytes parses a single datapoint record from a string. Makes sure it's valid.
 // Performs normalizations.
 func ParseRecBytes(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*RecBytes, error) {
-	// strings.Fields does normalization by working with any number and any kind of whitespace
 	pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd, err := recFields(s)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to break record into fields")
@@ -30,20 +29,22 @@ func ParseRecBytes(s []byte, normalize bool, shouldLog bool, nowF func() time.Ti
 
 	var path []byte
 	if normalize {
-		path, _, err = normalizePathBytes(s[pathStart:pathEnd])
+		path, err = normalizePathBytes(s[pathStart:pathEnd])
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to normalize path")
 		}
 	} else {
-		path = s[pathStart:pathEnd]
+		path = append(path, s[pathStart:pathEnd]...)
 	}
 
-	return &RecBytes{
+	res := RecBytes{
 		Path:     path,
-		RawVal:   s[valStart:valEnd],
-		RawTime:  s[timeStart:timeEnd],
 		Received: nowF(),
-	}, nil
+	}
+	res.RawVal = append(res.RawVal, s[valStart:valEnd]...)
+	res.RawTime = append(res.RawTime, s[timeStart:timeEnd]...)
+
+	return &res, nil
 }
 
 func recFields(s []byte) (pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd int, retErr error) {
@@ -63,6 +64,13 @@ func recFields(s []byte) (pathStart, pathEnd, valStart, valEnd, timeStart, timeE
 	if err != nil {
 		retErr = errors.Wrap(err, "failed to find time in record")
 		return
+	}
+
+	for i := timeEnd; i < len(s); i++ {
+		if !isWhitespace(s[i]) {
+			retErr = errors.New("record has additional characters after 3 fields")
+			return
+		}
 	}
 
 	return
@@ -107,16 +115,16 @@ func (r *RecBytes) Serialize() []byte {
 
 // normalizePath does path normalization as described in the docs
 // returns: (updated path, was any normalization done)
-func normalizePathBytes(s []byte) ([]byte, bool, error) {
+func normalizePathBytes(s []byte) ([]byte, error) {
 	if len(s) == 0 {
-		return []byte{}, false, nil
+		return []byte{}, nil
 	}
 
 	start := 0
 	for ; start < len(s) && s[start] == '.'; start++ {
 	}
 	if start == len(s) {
-		return []byte{}, true, errors.New("path contains only dots")
+		return []byte{}, errors.New("path contains only dots")
 	}
 
 	end := len(s) - 1 // points to the last char in path
@@ -157,25 +165,38 @@ func normalizePathBytes(s []byte) ([]byte, bool, error) {
 		}
 	} else {
 		if start == 0 && end == len(s)-1 {
-			return s, false, nil
+			return s, nil
 		}
-		res = s[start : end+1]
-		return res, true, nil
+		res = append(res, s[start:end+1]...)
+		return res, nil
 	}
 
-	return res, true, nil
+	return res, nil
 }
 
 // Copy returns a deep copy of the record
-func (r RecBytes) Copy() *RecBytes {
+func (r RecBytes) Copy() (*RecBytes, error) {
 	cpy := &RecBytes{
 		Val:      r.Val,
 		Time:     r.Time,
 		Received: r.Received,
+		Path:     make([]byte, len(r.Path)),
+		RawVal:   make([]byte, len(r.RawVal)),
+		RawTime:  make([]byte, len(r.RawTime)),
 	}
-	copy(cpy.Path, r.Path)
-	copy(cpy.RawVal, r.RawVal)
-	copy(cpy.RawTime, r.RawTime)
 
-	return cpy
+	n := copy(cpy.Path, r.Path)
+	if n != len(r.Path) {
+		return nil, errors.Errorf("did not copy full path, expected %d bytes, copied %d bytes", len(r.Path), n)
+	}
+	n = copy(cpy.RawVal, r.RawVal)
+	if n != len(r.RawVal) {
+		return nil, errors.Errorf("did not copy full value, expected %d bytes, copied %d bytes", len(r.RawVal), n)
+	}
+	n = copy(cpy.RawTime, r.RawTime)
+	if n != len(r.RawTime) {
+		return nil, errors.Errorf("did not copy full time, expected %d bytes, copied %d bytes", len(r.RawTime), n)
+	}
+
+	return cpy, nil
 }

@@ -117,7 +117,7 @@ func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
 
 // RewriteMetricBytes executes all rewrite rules on a record
 // If copy is true and rule matches, we generate new record
-func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) []*rec.RecBytes {
+func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) ([]*rec.RecBytes, error) {
 	var timer *prometheus.Timer
 
 	result := []*rec.RecBytes{record}
@@ -140,7 +140,10 @@ func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) []*rec.RecBytes {
 			}
 			if r.Copy {
 				// keep both old and new value
-				copy := record.Copy()
+				copy, err := record.Copy()
+				if err != nil {
+					return nil, errors.Wrapf(err, "could not copy the record: %v", record)
+				}
 				copy.Path = newPath
 
 				result = append(result, copy)
@@ -150,5 +153,5 @@ func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) []*rec.RecBytes {
 			}
 		}
 	}
-	return result
+	return result, nil
 }
