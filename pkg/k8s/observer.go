@@ -20,7 +20,7 @@ import (
 
 // ObserveByLabel is a function to observe and check for labeled pods via k8s API server.
 // Non-blocking. Dones wg on finish.
-func ObserveByLabel(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+func ObserveByLabel(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
 	go func() {
 		cs := map[string]*Cont{}
@@ -51,7 +51,7 @@ func ObserveByLabel(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *s
 
 // Observe is a function to observe and check for labeled pods via k8s API server.
 // Non-blocking. Dones wg on finish.
-func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+func Observe(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
 	go func() {
 		cs := map[string]*Cont{}
@@ -80,7 +80,7 @@ func Observe(q chan<- string, cfg *conf.Main, stop <-chan struct{}, wg *sync.Wai
 	}()
 }
 
-func updateWatchedContainersLocal(q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
+func updateWatchedContainersLocal(q chan<- []byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
 	// TODO: Forwarding setups are potentially long and blocking.
 	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
 
@@ -111,7 +111,7 @@ func updateWatchedContainersLocal(q chan<- string, stop <-chan struct{}, wg *syn
 	return nil
 }
 
-func updateWatchedContainers(q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
+func updateWatchedContainers(q chan<- []byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
 	// TODO: Forwarding setups are potentially long and blocking.
 	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
 

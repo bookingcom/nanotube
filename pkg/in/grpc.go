@@ -10,7 +10,6 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/grpcstreamer"
 	"github.com/bookingcom/nanotube/pkg/metrics"
-	"github.com/bookingcom/nanotube/pkg/rec"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -18,7 +17,7 @@ import (
 
 // ListenGRPC listens for incoming gRPC connections.
 // Blocking. Returns when server returns.
-func ListenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func ListenGRPC(l net.Listener, queue chan []byte, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	grpc.EnableTracing = cfg.GRPCTracing
 
 	s := streamerServer{
@@ -52,7 +51,7 @@ func ListenGRPC(l net.Listener, queue chan string, stop <-chan struct{}, connWG 
 type streamerServer struct {
 	grpcstreamer.UnimplementedStreamerServer
 
-	queue chan string
+	queue chan []byte
 	stop  <-chan struct{}
 
 	lg *zap.Logger
@@ -90,13 +89,12 @@ loop:
 		}
 
 		res.ReceivedCount++
-		r := rec.Rec{
-			Path: m.Name,
-			Time: uint32(m.GetDoubleGauge().DataPoints[0].TimeUnixNano / 1000 / 1000 / 1000), // ns -> sec
-			Val:  m.GetDoubleGauge().DataPoints[0].Value,
-		}
-		rStr := fmt.Sprintf("%s %e %d", r.Path, r.Val, r.Time)
-		server.queue <- rStr // TODO: Stop using strings, move to parsed structures
+		rStr := fmt.Sprintf("%s %e %d",
+			m.Name,
+			m.GetDoubleGauge().DataPoints[0].Value,
+			uint32(m.GetDoubleGauge().DataPoints[0].TimeUnixNano/1000/1000/1000), // ns -> sec
+		)
+		server.queue <- []byte(rStr) // TODO: Stop using strings, move to parsed structures
 	}
 
 	return nil

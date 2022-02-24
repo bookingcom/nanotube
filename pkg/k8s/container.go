@@ -29,7 +29,7 @@ type Cont struct {
 	Name         string
 	IsContainerd bool
 
-	Q    chan<- string
+	Q    chan<- []byte
 	Cfg  *conf.Main
 	Port uint16
 
@@ -42,7 +42,7 @@ type Cont struct {
 }
 
 // NewCont is a constructor.
-func NewCont(id string, name string, isContainerd bool, q chan<- string, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
+func NewCont(id string, name string, isContainerd bool, q chan<- []byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
 	return &Cont{
 		ID:           id,
 		Name:         name,
