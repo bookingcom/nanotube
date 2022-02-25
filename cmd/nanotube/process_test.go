@@ -284,6 +284,10 @@ func BenchmarkRealisticBytes(b *testing.B) {
 	benchmarkPowN(b, benchRealisticBytes)
 }
 
+func BenchmarkRealisticBytes4(b *testing.B) {
+	benchRealisticBytes(b, 4)
+}
+
 func benchRealisticBytes(b *testing.B, nWorkers int) {
 	b.StopTimer()
 
@@ -305,6 +309,35 @@ func benchRealisticBytes(b *testing.B, nWorkers int) {
 		b.StartTimer()
 
 		done := Process(queue, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
+		_ = clusters.Send(done)
+
+		<-done
+
+		b.StopTimer()
+	}
+}
+
+func BenchmarkRealisticStr4(b *testing.B) {
+	benchRealisticStr(b, 4)
+}
+
+func benchRealisticStr(b *testing.B, nWorkers int) {
+	b.StopTimer()
+
+	benchMetrics, clusters, rules, rewrites, ms, lg := setupRealisticBench(b)
+
+	for i := 0; i < b.N; i++ {
+		queue := make(chan string, 1000000)
+		for i := 0; i < 10; i++ {
+			for _, m := range benchMetrics {
+				queue <- m
+			}
+		}
+		close(queue)
+
+		b.StartTimer()
+
+		done := ProcessStr(queue, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
 		_ = clusters.Send(done)
 
 		<-done
