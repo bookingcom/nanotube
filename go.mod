@@ -9,7 +9,7 @@ require (
 	github.com/dgryski/go-jump v0.0.0-20170409065014-e1f439676b57
 	github.com/docker/docker v17.12.0-ce-rc1.0.20210128214336-420b1d36250f+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
-	github.com/dvyukov/go-fuzz v0.0.0-20200916044129-21309f307f61
+	github.com/dvyukov/go-fuzz v0.0.0-20220220162807-a217d9bdbece
 	github.com/elazarl/go-bindata-assetfs v1.0.1 // indirect
 	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5 // indirect
 	github.com/facebookgo/ensure v0.0.0-20200202191622-63f1cf65ac4c // indirect

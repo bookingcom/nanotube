@@ -54,8 +54,8 @@ clean:
 
 .PHONY: fuzz
 fuzz:
-	go-fuzz-build -o test/fuzzing/pkg-rec.zip ./pkg/rec
-	go-fuzz -workdir=test/fuzzing -bin=test/fuzzing/pkg-rec.zip
+	go-fuzz-build -o test/fuzz/rec.zip ./pkg/rec
+	go-fuzz -workdir=test/fuzz -bin=test/fuzz/rec.zip
 
 test/sender/sender: test/sender/sender.go
 	go build -o $@ $<
