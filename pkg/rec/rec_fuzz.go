@@ -1,16 +1,12 @@
+// +build gofuzz
+
 package rec
 
 import "time"
 
-var t = time.Now() //nolint:gochecknoglobals
-
-func nowF() time.Time {
-	return t
-}
-
-//nolint:revive
+// Fuzz does the fuzz testing
 func Fuzz(data []byte) int {
-	_, err := ParseRecBytes(data, true, false, nowF, nil)
+	_, err := ParseRecBytes(data, true, false, func() time.Time { return time.Unix(1e8, 0) }, nil)
 	if err != nil {
 		return 0
 	}
