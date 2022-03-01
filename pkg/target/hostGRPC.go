@@ -86,20 +86,30 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 		}
 
 		if stream != nil {
+			time, err := strconv.ParseFloat(string(r.RawTime), 64)
+			if err != nil {
+				h.Lg.Warn("failed to parse record timestamp", zap.Error(err))
+				continue
+			}
+			val, err := strconv.ParseFloat(string(r.RawVal), 64)
+			if err != nil {
+				h.Lg.Warn("failed to parse record value", zap.Error(err))
+				continue
+			}
 			pbR := otmetrics.Metric{
-				Name: r.Path,
+				Name: string(r.Path),
 				Data: &otmetrics.Metric_DoubleGauge{
 					DoubleGauge: &otmetrics.DoubleGauge{
 						DataPoints: [](*otmetrics.DoubleDataPoint){
 							&otmetrics.DoubleDataPoint{
-								TimeUnixNano: uint64(r.Time) * 1000 * 1000 * 1000,
-								Value:        r.Val,
+								TimeUnixNano: uint64(time) * 1000 * 1000 * 1000,
+								Value:        val,
 							},
 						},
 					},
 				},
 			}
-			err := stream.Send(&pbR)
+			err = stream.Send(&pbR)
 			if err != nil {
 				h.Lg.Warn("error while streaming", zap.Error(err))
 				stream = nil

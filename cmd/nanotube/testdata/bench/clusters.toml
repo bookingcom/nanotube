@@ -1,0 +1,217 @@
+# Blackhole cluster
+[[cluster]]
+name = "grow"
+type = "blackhole"
+
+
+[[cluster]]
+name = "another-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "another-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "another-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "plume-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "plume-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "plume-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "irs-hallelujah4room"
+type = "blackhole"
+
+[[cluster]]
+name = "irs-demolish4room"
+type = "blackhole"
+
+[[cluster]]
+name = "irs-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "rheum-hallelujah4room"
+type = "blackhole"
+
+[[cluster]]
+name = "example-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "example-demolish4room"
+type = "blackhole"
+
+[[cluster]]
+name = "example-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "aphasic-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "aphasic-demolish4room"
+type = "blackhole"
+
+[[cluster]]
+name = "aphasic-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "infanticide-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "infanticide-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "infanticide-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "homeobox-hallelujah4room"
+type = "blackhole"
+
+[[cluster]]
+name = "homeobox-demolish4room"
+type = "blackhole"
+
+[[cluster]]
+name = "homeobox-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "taint-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "taint-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "methacrylate-hallelujah4"
+type = "blackhole"
+
+[[cluster]]
+name = "methacrylate-demolish4"
+type = "blackhole"
+
+[[cluster]]
+name = "impeccable-hallelujah4room"
+type = "blackhole"
+
+[[cluster]]
+name = "impeccable-demolish4room"
+type = "blackhole"
+
+[[cluster]]
+name = "impeccable-opponent4room"
+type = "blackhole"
+
+[[cluster]]
+name = "impeccable-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "once-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "once-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "once-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "kermit-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "casey-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "casey-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "gules-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "gules-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "sandy-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "sandy-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "sandy-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "cruise-opponent4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "locomotive-hallelujah4room"
+type = "blackhole"
+
+[[cluster]]
+name = "locomotive-demolish4room"
+type = "blackhole"
+
+[[cluster]]
+name = "locomotive-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "notorious-hallelujah4room"
+type = "blackhole"
+
+[[cluster]]
+name = "notorious-demolish4room"
+type = "blackhole"
+
+[[cluster]]
+name = "ruthenium-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "ruthenium-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "ruthenium-opponent3platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "ramble-hallelujah4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "ramble-demolish4platonist"
+type = "blackhole"
+
+[[cluster]]
+name = "ramble-opponent3platonist"
+type = "blackhole"

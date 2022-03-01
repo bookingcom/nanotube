@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -50,8 +51,9 @@ func setup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error reading and compiling config: %v", err)
 	}
-
-	clusters, rules, rewrites, ms, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, lg)
+	ms := metrics.New(&cfg)
+	metrics.Register(ms, &cfg)
+	clusters, rules, rewrites, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, ms, lg)
 	if err != nil {
 		t.Fatalf("error building pipline components: %v", err)
 	}
@@ -94,13 +96,15 @@ func listen(port int, sample string, listening chan<- bool) (e error) {
 	// data is sent twice: once via TCP and once via UDP
 	sc := bufio.NewScanner(conn)
 	sc.Scan()
-	if sample != sc.Text() {
-		return errors.Errorf("got *%v*, expected *%v*", sc.Text(), sample)
+	comp := sc.Text()
+	if sample != comp {
+		return errors.Errorf("got *%s*, expected *%s*", sc.Text(), sample)
 	}
 
 	sc.Scan()
-	if sample != sc.Text() {
-		return errors.Errorf("got *%v*, expected *%v*", sc.Text(), sample)
+	comp = sc.Text()
+	if sample != comp {
+		return errors.Errorf("got *%s*, expected *%s*", sc.Text(), sample)
 	}
 
 	return nil

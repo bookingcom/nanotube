@@ -17,8 +17,8 @@ import (
 )
 
 // Listen listens for incoming metric data
-func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan string, error) {
-	queue := make(chan string, cfg.MainQueueSize)
+func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan []byte, error) {
+	queue := make(chan []byte, cfg.MainQueueSize)
 	var connWG sync.WaitGroup
 
 	if cfg.K8sMode {

@@ -11,7 +11,7 @@ import (
 )
 
 // ListenUDP listens for incoming UDP connections.
-func ListenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+func ListenUDP(conn net.PacketConn, queue chan []byte, stop <-chan struct{}, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	go func() {
 		<-stop
 		lg.Info("Termination: Closing the UDP connection.")
@@ -36,9 +36,8 @@ func ListenUDP(conn net.PacketConn, queue chan string, stop <-chan struct{}, con
 		// WARNING: The split does not copy the data.
 		lines := bytes.Split(buf[:nRead], []byte{'\n'})
 
-		// TODO (grzkv): string -> []bytes, line has to be copied to avoid races.
 		for i := 0; i < len(lines)-1; i++ {
-			sendToMainQ(string(lines[i]), queue, ms)
+			sendToMainQ(lines[i], queue, ms)
 		}
 	}
 

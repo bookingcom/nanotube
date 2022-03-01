@@ -53,7 +53,7 @@ for d in test* ; do
     fi
 
     echo -e "\n. starting sender"
-    ./sender/sender -data "${d}/in" -host localhost -port 2003
+    ./sender/sender -data "${d}/in" -host localhost -port 2003 -rate 4000
     echo -e "\n. sender finished running"
 
     echo -e "\n. waiting for nanotube"
@@ -77,7 +77,7 @@ for d in test* ; do
     for i in $tmpdir/*; do sort -o $i $i; done
 
     echo -e "\n. comparing"
-    if ! diff -qr "${d}/out" "$tmpdir"; then
+    if ! diff -r "${d}/out" "$tmpdir"; then
         echo "   -> FAIL: ${tmpdir} and ${d}/out are different"
     else
         echo "   -> SUCCESS: ${tmpdir} and ${d}/out are identical"

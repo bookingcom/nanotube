@@ -49,7 +49,7 @@ func Build(crw *conf.Rewrites, measureRegex bool, metrics *metrics.Prom) (Rewrit
 
 	err := rw.compile()
 	if err != nil {
-		return rw, errors.Wrap(err, "rewrite rule compilation failed :")
+		return rw, errors.Wrap(err, "rewrite rule compilation failed")
 	}
 
 	return rw, nil
@@ -113,4 +113,45 @@ func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
 		}
 	}
 	return result
+}
+
+// RewriteMetricBytes executes all rewrite rules on a record
+// If copy is true and rule matches, we generate new record
+func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) ([]*rec.RecBytes, error) {
+	var timer *prometheus.Timer
+
+	result := []*rec.RecBytes{record}
+
+	for _, r := range rw.rewrites {
+		if rw.measureRegex {
+			timer = prometheus.NewTimer(r.matchDuration)
+		}
+		matched := r.CompiledFrom.Match(record.Path)
+		if rw.measureRegex {
+			timer.ObserveDuration()
+		}
+		if matched {
+			if rw.measureRegex {
+				timer = prometheus.NewTimer(r.replaceDuration)
+			}
+			newPath := r.CompiledFrom.ReplaceAll(record.Path, []byte(r.To))
+			if rw.measureRegex {
+				timer.ObserveDuration()
+			}
+			if r.Copy {
+				// keep both old and new value
+				copy, err := record.Copy()
+				if err != nil {
+					return nil, errors.Wrapf(err, "could not copy the record: %v", record)
+				}
+				copy.Path = newPath
+
+				result = append(result, copy)
+			} else {
+				// no copy, rewrite
+				record.Path = newPath
+			}
+		}
+	}
+	return result, nil
 }
