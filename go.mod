@@ -9,8 +9,7 @@ require (
 	github.com/dgryski/go-jump v0.0.0-20170409065014-e1f439676b57
 	github.com/docker/docker v17.12.0-ce-rc1.0.20210128214336-420b1d36250f+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
-	github.com/dvyukov/go-fuzz v0.0.0-20220220162807-a217d9bdbece
-	github.com/elazarl/go-bindata-assetfs v1.0.1 // indirect
+	github.com/dvyukov/go-fuzz v0.0.0-20220220162807-a217d9bdbece // indirect
 	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5 // indirect
 	github.com/facebookgo/ensure v0.0.0-20200202191622-63f1cf65ac4c // indirect
 	github.com/facebookgo/freeport v0.0.0-20150612182905-d4adf43b75b9 // indirect
@@ -24,7 +23,6 @@ require (
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
-	github.com/stephens2424/writerset v1.0.2 // indirect
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f
 	go.uber.org/atomic v1.7.0
 	go.uber.org/automaxprocs v1.3.0

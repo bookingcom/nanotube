@@ -52,10 +52,32 @@ end-to-end-test: docker-image
 clean:
 	rm -rf nanotube test/sender/sender test/receiver/receiver test/test2/{in,out}
 
+
+got_go_fuzz := $(shell command -v go-fuzz 2> /dev/null)
+got_go_fuzz_build := $(shell command -v go-fuzz-build 2> /dev/null)
+
+.PHONY: check-go-fuzz
+check-go-fuzz:
+ifndef got_go_fuzz
+	$(error "go-fuzz is not available please install it https://github.com/dvyukov/go-fuzz")
+endif
+
+.PHONY: check-go-fuzz-build
+check-go-fuzz-build:
+ifndef got_go_fuzz_build
+	$(error "go-fuzz-build is not available please install it https://github.com/dvyukov/go-fuzz")
+endif
+
 .PHONY: fuzz
-fuzz:
+fuzz: check-go-fuzz check-go-fuzz-build
 	go-fuzz-build -o test/fuzz/rec.zip ./pkg/rec
 	go-fuzz -workdir=test/fuzz -bin=test/fuzz/rec.zip
+
+.PHONY: fuzz-race
+fuzz-race: check-go-fuzz check-go-fuzz-build
+	go-fuzz-build -race -o test/fuzz/rec.zip ./pkg/rec
+	go-fuzz -workdir=test/fuzz -bin=test/fuzz/rec.zip
+
 
 test/sender/sender: test/sender/sender.go
 	go build -o $@ $<
