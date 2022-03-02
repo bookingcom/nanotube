@@ -1,7 +1,4 @@
-FROM golang:1.16
-LABEL authors="Booking.com"
-LABEL name="nanotube-test-receiver"
-LABEL vendor="Booking.com"
+FROM golang:1.17
 
 RUN mkdir /nanotube
 WORKDIR /nanotube
