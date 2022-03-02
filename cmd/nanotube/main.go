@@ -11,6 +11,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/libp2p/go-reuseport"
-	_ "go.uber.org/automaxprocs" // TODO: Make explicit. Remove logline.
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -66,6 +66,9 @@ func main() {
 
 	ms := metrics.New(&cfg)
 	metrics.Register(ms, &cfg)
+
+	lg.Info("GOMAXPROCS value", zap.Int("GOMAXPROCS", runtime.GOMAXPROCS(0)))
+
 	clusters, rules, rewrites, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, ms, lg)
 	if err != nil {
 		log.Fatalf("error building pipline components: %v", err)
