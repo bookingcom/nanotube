@@ -11,9 +11,7 @@ import (
 // RecBytes represents a single piece of data (a datapoint) that can be sent.
 type RecBytes struct { // nolint:revive
 	Path    []byte
-	Val     float64
 	RawVal  []byte // this is to avoid discrepancies in precision and formatting
-	Time    uint32
 	RawTime []byte // to avoid differences when encoding, and save time
 	//	Raw  string // to avoid wasting time for serialization
 	Received time.Time
@@ -177,8 +175,6 @@ func normalizePathBytes(s []byte) ([]byte, error) {
 // Copy returns a deep copy of the record
 func (r RecBytes) Copy() (*RecBytes, error) {
 	cpy := &RecBytes{
-		Val:      r.Val,
-		Time:     r.Time,
 		Received: r.Received,
 		Path:     make([]byte, len(r.Path)),
 		RawVal:   make([]byte, len(r.RawVal)),
@@ -199,4 +195,24 @@ func (r RecBytes) Copy() (*RecBytes, error) {
 	}
 
 	return cpy, nil
+}
+
+func validChar(c byte) bool {
+	if c >= 'A' && c <= 'Z' {
+		return true
+	}
+
+	if c >= 'a' && c <= 'z' {
+		return true
+	}
+
+	if c >= '0' && c <= '9' {
+		return true
+	}
+
+	if c == ':' || c == '_' || c == '-' || c == '#' || c == '.' {
+		return true
+	}
+
+	return false
 }

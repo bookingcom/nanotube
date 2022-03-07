@@ -171,7 +171,7 @@ func New(conf *conf.Main) *Prom {
 		}, []string{"cluster"}),
 		K8sPickedUpContainers: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
-			Name:      "k8s_pickeup_containers_total",
+			Name:      "k8s_picked_up_containers_total",
 			Help:      "The total number of containers that forwarding has started from. If container blips, it's counted twice.",
 		}),
 		K8sCurrentForwardedContainers: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -323,7 +323,7 @@ func Register(m *Prom, cfg *conf.Main) {
 
 		err = prometheus.Register(m.K8sPickedUpContainers)
 		if err != nil {
-			log.Fatalf("error registering the k8s_pickeup_containers_total metric: %v", err)
+			log.Fatalf("error registering the k8s_picked_up_containers_total metric: %v", err)
 		}
 
 		err = prometheus.Register(m.K8sCurrentForwardedContainers)

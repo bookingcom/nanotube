@@ -104,7 +104,6 @@ func parseListenOption(listenOption string) (net.IP, int, error) {
 	if port < 0 || port > 65535 {
 		return nil, port, errors.New("invalid port value")
 	}
-	// ":2003" will listen on all IPs
 	if ipStr == "" {
 		return nil, port, nil
 	}

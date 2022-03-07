@@ -47,7 +47,9 @@ type Main struct {
 	// Use the empty string to disable UDP listening.
 	// Use the empty IP to listen on all addresses.
 	ListenUDP string
-	// TODO: Docs
+	// Setting this to ip:port will enable gRPC listening on specified address.
+	// Use the empty string to disable gRPC listening.
+	// Use the empty IP to listen on all addresses.
 	ListenGRPC string
 
 	// The size on main queue between listen and routing. Refer to docs for details.
@@ -89,23 +91,22 @@ type Main struct {
 	// This solves the following problem. If nothing is sent for a prolonged period of time to a client
 	// it may drop the connection because of read i/o timeout. This will go unnoticed until the first
 	// write attempt that will fail and data will be lost. To prevent this situation and data loss, connection
-	// can be dropped and esteblished from scratch.
+	// can be dropped and established from scratch.
 	// 0 = no connection refresh.
 	TCPOutConnectionRefreshPeriodSec uint32
-	// TODO: Docs
+	// Perform connection check to target right away?
 	TCPInitialConnCheck bool
 
-	// GRPC target (client) params
-	// GRPC HTTP2 keepalive ping period https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
+	// gRPC target (client) params
+	// gRPC HTTP2 keepalive ping period https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
 	GRPCOutKeepAlivePeriodSec      uint32
 	GRPCOutKeepAlivePingTimeoutSec uint32
-	//	GRPCOutSendTimeoutSec          uint32
 	// Max connect backoff period https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md
 	GRPCOutBackoffMaxDelaySec uint32
 	// Min time for the connection to complete https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md
 	GRPCOutMinConnectTimeoutSec uint32
 
-	// GRPC listener (server) params
+	// gRPC listener (server) params
 	GRPCListenMaxConnectionIdleSec     uint32
 	GRPCListenMaxConnectionAgeSec      uint32
 	GRPCListenMaxConnectionAgeGraceSec uint32
@@ -125,7 +126,7 @@ type Main struct {
 	// Switch to expose only small subset of essential metrics.
 	// (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
 	LessMetrics bool
-	// Expose prometheus metrcs with the total time for running each regex from config.
+	// Expose prometheus metrics with the total time for running each regex from config.
 	// Can be used to understand what regexs from config are more 'expensive'
 	RegexDurationMetric bool
 

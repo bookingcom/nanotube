@@ -77,7 +77,6 @@ loop:
 		m, err := s.Recv()
 
 		if err == io.EOF {
-			server.lg.Info("got EOF") // TODO: Cleanup
 			err := s.SendAndClose(&res)
 			if err != nil {
 				server.lg.Error("error when sending a response to stream", zap.Error(err))
