@@ -56,8 +56,10 @@ type Main struct {
 	// Refer to docs for more insight.
 	HostQueueSize uint64
 
-	// Number of workers processing main queue and putting records into host queues
-	WorkerPoolSize uint16
+	// Number of workers processing main queue and putting records into host queues.
+	// If 0, set to be GOMAXPROCS / 2.
+	// Default: 0.
+	WorkerPoolSize int
 
 	// Timeout for dropping an incoming connection if no data is sent in.
 	IncomingConnIdleTimeoutSec uint32
@@ -199,7 +201,7 @@ func MakeDefault() Main {
 
 		MainQueueSize:  1000,
 		HostQueueSize:  1000,
-		WorkerPoolSize: 10,
+		WorkerPoolSize: 0,
 
 		IncomingConnIdleTimeoutSec: 90,
 		SendTimeoutSec:             5,

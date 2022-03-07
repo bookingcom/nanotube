@@ -304,7 +304,7 @@ func benchRealisticBytes(b *testing.B, nWorkers int) {
 
 		b.StartTimer()
 
-		done := Process(queue, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
+		done := Process(queue, rules, rewrites, nWorkers, true, false, lg, ms)
 		_ = clusters.Send(done)
 
 		<-done
