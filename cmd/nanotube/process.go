@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"sync"
 	"time"
 
@@ -56,9 +57,17 @@ func procStr(s string, rules rules.Rules, rewrites rewrites.Rewrites, shouldNorm
 }
 
 // Process contains all the CPU-intensive processing operations
-func Process(queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16,
+func Process(queue <-chan []byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize int,
 	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
 	done := make(chan struct{})
+
+	if workerPoolSize < 1 {
+		workerPoolSize = runtime.GOMAXPROCS(0) / 2
+		if workerPoolSize == 0 {
+			workerPoolSize = 1
+		}
+	}
+
 	var wg sync.WaitGroup
 	for w := 1; w <= int(workerPoolSize); w++ {
 		wg.Add(1)
