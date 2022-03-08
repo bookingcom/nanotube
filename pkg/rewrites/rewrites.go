@@ -77,44 +77,6 @@ func (rw Rewrites) compile() error {
 	return nil
 }
 
-// RewriteMetric executes all rewrite rules on a record
-// If copy is true and rule matches, we generate new record
-func (rw Rewrites) RewriteMetric(record *rec.Rec) []*rec.Rec {
-	var timer *prometheus.Timer
-
-	result := []*rec.Rec{record}
-
-	for _, r := range rw.rewrites {
-		if rw.measureRegex {
-			timer = prometheus.NewTimer(r.matchDuration)
-		}
-		matched := r.CompiledFrom.MatchString(record.Path)
-		if rw.measureRegex {
-			timer.ObserveDuration()
-		}
-		if matched {
-			if rw.measureRegex {
-				timer = prometheus.NewTimer(r.replaceDuration)
-			}
-			newPath := r.CompiledFrom.ReplaceAllString(record.Path, r.To)
-			if rw.measureRegex {
-				timer.ObserveDuration()
-			}
-			if r.Copy {
-				// keep both old and new value
-				copy := record.Copy()
-				copy.Path = newPath
-
-				result = append(result, copy)
-			} else {
-				// no copy, rewrite
-				record.Path = newPath
-			}
-		}
-	}
-	return result
-}
-
 // RewriteMetricBytes executes all rewrite rules on a record
 // If copy is true and rule matches, we generate new record
 func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) ([]*rec.RecBytes, error) {

@@ -158,7 +158,6 @@ func main() {
 }
 
 func parseFlags() (string, bool, bool) {
-	// TODO (grzkv): Cleanup unused clPath, rulesPath, rewritesPath after migration
 	cfgPath := flag.String("config", "", "Path to config file.")
 	testConfig := flag.Bool("validate", false, "Validate configuration files.")
 	versionInfo := flag.Bool("version", false, "Print version info.")
