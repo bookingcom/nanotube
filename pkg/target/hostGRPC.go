@@ -13,6 +13,7 @@ import (
 	otmetrics "github.com/bookingcom/nanotube/pkg/opentelemetry/proto/metrics/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
 	"go.uber.org/zap"
@@ -50,7 +51,7 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	// Dial does not timeout. This is intentional since gRPC will keep trying. (check that)
 	conn, err := grpc.Dial(net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port))),
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
 		grpc.WithKeepaliveParams(kacp),
 		grpc.WithConnectParams(grpc.ConnectParams{

@@ -182,7 +182,7 @@ func buildLogger(cfg *conf.Main) (*zap.Logger, error) {
 
 	config.Sampling = nil // make sure there is no sampler since we will add one by ourselves
 	return config.Build(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
-		return zapcore.NewSampler(core, time.Second*time.Duration(cfg.LogLimitWindowSec), cfg.LogLimitInitial, cfg.LogLimitThereafter)
+		return zapcore.NewSamplerWithOptions(core, time.Second*time.Duration(cfg.LogLimitWindowSec), cfg.LogLimitInitial, cfg.LogLimitThereafter)
 	}))
 }
 
