@@ -19,9 +19,8 @@ import (
 
 // Host represents a single target hosts to send records to.
 type Host struct {
-	Name string
-	Port uint16
-	// TODO (grzkv): Replace w/ circular buffer
+	Name      string
+	Port      uint16
 	Ch        chan *rec.RecBytes
 	Available atomic.Bool
 	Conn      Connection

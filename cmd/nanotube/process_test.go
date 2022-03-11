@@ -251,7 +251,7 @@ func setupRealisticBench(b *testing.B) (benchMetrics []string, clusters target.C
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatalf("error while scan-reading the samplie in metrics %v", err)
+		log.Fatalf("error while scan-reading the sample in metrics %v", err)
 	}
 
 	cfgPath := filepath.Join(fixturesPath, "config.toml")
@@ -312,92 +312,6 @@ func benchRealisticBytes(b *testing.B, nWorkers int) {
 		b.StopTimer()
 	}
 }
-
-// This set of benchmarks investigates impact of channel contention by making reads/write on it less frequent.
-
-// func BenchmarkRealisticBuff(b *testing.B) {
-// 	benchmarkPowN(b, realisticBenchBuff)
-// }
-
-// func realisticBenchBuff(b *testing.B, nWorkers int) {
-// 	b.StopTimer()
-
-// 	benchMetrics, clusters, rules, rewrites, ms, lg := setupRealisticBench(b)
-
-// 	for i := 0; i < b.N; i++ {
-// 		q := make(chan []string, 1000000)
-
-// 		for i := 0; i < 10; i++ {
-// 			ss := []string{}
-// 			for _, m := range benchMetrics {
-// 				ss = append(ss, m)
-
-// 				if len(ss) > 20 {
-// 					q <- ss
-
-// 					ss = []string{}
-// 				}
-// 			}
-// 			if len(ss) > 0 {
-// 				q <- ss
-// 			}
-// 		}
-// 		close(q)
-
-// 		b.StartTimer()
-
-// 		done := ProcessBuff(q, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
-// 		_ = clusters.Send(done)
-
-// 		<-done
-
-// 		b.StopTimer()
-// 	}
-// }
-
-// // This is a set of tests to investigate channel contention impact on performance.
-// func BenchmarkRealisticHighThroughput(b *testing.B) {
-// 	benchmarkPowN(b, realisticBenchHighThroughput)
-// }
-
-// func realisticBenchHighThroughput(b *testing.B, nWorkers int) {
-// 	b.StopTimer()
-
-// 	benchMetrics, clusters, rules, rewrites, ms, lg := setupRealisticBench(b)
-
-// 	for i := 0; i < b.N; i++ {
-// 		qs := [4](chan string){
-// 			make(chan string, 100000),
-// 			make(chan string, 100000),
-// 			make(chan string, 100000),
-// 			make(chan string, 100000),
-// 		}
-
-// 		go func() {
-// 			for i := 0; i < 10; i++ {
-// 				j := 0
-// 				for _, m := range benchMetrics {
-// 					qs[j] <- m
-// 					j++
-// 					j %= 4
-// 				}
-// 			}
-// 			close(qs[0])
-// 			close(qs[1])
-// 			close(qs[2])
-// 			close(qs[3])
-// 		}()
-
-// 		b.StartTimer()
-
-// 		done := ProcessHighThroughput(qs, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
-// 		_ = clusters.Send(done)
-
-// 		<-done
-
-// 		b.StopTimer()
-// 	}
-// }
 
 func TestContinueRuleProcessing(t *testing.T) {
 	lg := zap.NewNop()
@@ -758,6 +672,48 @@ func TestProcessingPrefix(t *testing.T) {
 	}
 }
 
+// This set of benchmarks investigates impact of channel contention by making reads/write on it less frequent.
+
+// func BenchmarkRealisticBuff(b *testing.B) {
+// 	benchmarkPowN(b, realisticBenchBuff)
+// }
+
+// func realisticBenchBuff(b *testing.B, nWorkers int) {
+// 	b.StopTimer()
+
+// 	benchMetrics, clusters, rules, rewrites, ms, lg := setupRealisticBench(b)
+
+// 	for i := 0; i < b.N; i++ {
+// 		q := make(chan []string, 1000000)
+
+// 		for i := 0; i < 10; i++ {
+// 			ss := []string{}
+// 			for _, m := range benchMetrics {
+// 				ss = append(ss, m)
+
+// 				if len(ss) > 20 {
+// 					q <- ss
+
+// 					ss = []string{}
+// 				}
+// 			}
+// 			if len(ss) > 0 {
+// 				q <- ss
+// 			}
+// 		}
+// 		close(q)
+
+// 		b.StartTimer()
+
+// 		done := ProcessBuff(q, rules, rewrites, uint16(nWorkers), true, false, lg, ms)
+// 		_ = clusters.Send(done)
+
+// 		<-done
+
+// 		b.StopTimer()
+// 	}
+// }
+
 // // ProcessBuff is a test variation of main.Process
 // func ProcessBuff(q chan [][]byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
 // 	done := make(chan struct{})
@@ -781,50 +737,6 @@ func TestProcessingPrefix(t *testing.T) {
 // 	for ss := range queue {
 // 		for _, s := range ss {
 // 			proc(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
-// 		}
-// 	}
-// }
-
-// // ProcessHighThroughput is a test variation of main.Process
-// func ProcessHighThroughput(qs [4](chan string), rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize uint16, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
-// 	done := make(chan struct{})
-// 	var wg sync.WaitGroup
-// 	for w := 1; w <= int(workerPoolSize); w++ {
-// 		wg.Add(1)
-// 		go workerHighThroughput(&wg, qs, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
-// 	}
-// 	go func() {
-// 		wg.Wait()
-// 		close(done)
-// 	}()
-
-// 	return done
-// }
-
-// // workerHighThroughput is a test variation of same function
-// func workerHighThroughput(wg *sync.WaitGroup, queue [4](chan string), rules rules.Rules, rewrites rewrites.Rewrites, shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
-// 	defer wg.Done()
-
-// 	ok0 := true
-// 	ok1 := true
-// 	ok2 := true
-// 	ok3 := true
-
-// 	for {
-// 		var s string
-// 		select {
-// 		case s, ok0 = <-queue[0]:
-// 			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
-// 		case s, ok1 = <-queue[1]:
-// 			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
-// 		case s, ok2 = <-queue[2]:
-// 			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
-// 		case s, ok3 = <-queue[3]:
-// 			procStr(s, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
-// 		}
-
-// 		if !ok0 && !ok1 && !ok2 && !ok3 {
-// 			return
 // 		}
 // 	}
 // }

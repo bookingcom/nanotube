@@ -4,7 +4,6 @@ package rules
 import (
 	"fmt"
 	"regexp"
-	"strings"
 
 	"go.uber.org/zap"
 
@@ -97,59 +96,6 @@ func (rs Rules) compile() error {
 	}
 
 	return nil
-}
-
-// RouteRec a record by following the rules
-func (rs Rules) RouteRec(r *rec.Rec, lg *zap.Logger) {
-	pushedTo := make(map[target.ClusterTarget]struct{})
-
-	for _, rl := range rs.rules {
-		matchedRule := rl.Match(r, rs.measureRegex)
-		if matchedRule {
-			for _, cl := range rl.Targets {
-				if _, pushedBefore := pushedTo[cl]; pushedBefore {
-					continue
-				}
-				err := cl.Push(r, rs.metrics)
-				if err != nil {
-					lg.Error("push to cluster failed",
-						zap.Error(err),
-						zap.String("cluster", cl.GetName()),
-						zap.String("record", r.Serialize()))
-				}
-				pushedTo[cl] = struct{}{}
-			}
-		}
-
-		if matchedRule && !rl.Continue {
-			break
-		}
-	}
-}
-
-// Match a record with any of the rule regexps
-func (rl Rule) Match(r *rec.Rec, measureRegex bool) bool {
-	for _, pre := range rl.Prefixes {
-		if strings.HasPrefix(r.Path, pre) {
-			return true
-		}
-	}
-
-	var timer *prometheus.Timer
-
-	for idx, re := range rl.CompiledRE {
-		if measureRegex {
-			timer = prometheus.NewTimer(rl.regexDuration[idx])
-		}
-		matched := re.MatchString(r.Path)
-		if measureRegex {
-			timer.ObserveDuration()
-		}
-		if matched {
-			return true
-		}
-	}
-	return false
 }
 
 // TestBuild makes a set of rules for testing.

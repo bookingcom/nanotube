@@ -21,7 +21,6 @@ func TestMain(t *testing.T) {
 	setup(t)
 
 	sample := "test 123 123"
-	// stop := make(chan struct{})
 	var g errgroup.Group
 	listening := make(chan bool)
 	g.Go(func() error { return listen(12003, sample, listening) })
@@ -29,7 +28,6 @@ func TestMain(t *testing.T) {
 	<-listening
 
 	err := send(12123, sample)
-	// close(stop)
 	if err != nil {
 		t.Fatalf("sending to nanotube failed: %v", err)
 	}
@@ -127,7 +125,7 @@ func send(port int, sample string) (e error) {
 		return errors.Wrap(err, "error sending data via TCP")
 	}
 
-	connUDP, err := net.Dial("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+	connUDP, err := net.Dial("udp", net.JoinHostPort("localhost", strconv.Itoa(port)))
 	if err != nil {
 		return errors.Wrap(err, "dialing to UDP failed")
 
