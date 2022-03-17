@@ -1,6 +1,7 @@
 /nanotube
 .deploy
 .vscode
+.idea
 cover.out
 test/sender/sender
 test/receiver/receiver

@@ -1,0 +1,15 @@
+---
+- hosts: sender
+  become: yes
+  roles:
+    - role: sender
+
+- hosts: nanotube
+  become: yes
+  roles:
+    - role: nanotube
+
+- hosts: receiver
+  become: yes
+  roles:
+    - role: receiver

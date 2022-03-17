@@ -85,6 +85,15 @@ test/sender/sender: test/sender/sender.go
 test/receiver/receiver: test/receiver/receiver.go
 	go build -o $@ $<
 
+sender-linux:
+	env GOOS=linux GOARCH=386 build -o sender-linux test/sender
+
+receiver-linux:
+	env GOOS=linux GOARCH=386 go build -o receiver-linux test/receiver
+
+nanotube-linux:
+	env GOOS=linux GOARCH=386 go build -o nanotube-linux -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
+
 .dockerignore: .gitignore
 	cat .gitignore | grep -v .dockerignore > .dockerignore
 
@@ -95,3 +104,9 @@ docker-image: .dockerignore
 .PHONY: local-end-to-end-test
 local-end-to-end-test: nanotube test/sender/sender test/receiver/receiver
 	cd test && ./run.sh
+
+.PHONY: build-for-benchmarking-setup
+build-for-benchmarking-setup: nanotube-linux sender-linux receiver-linux
+	cp nanotube-linux test/performance/roles/nanotube/files/nanotube
+	cp sender-linux test/performance/roles/sender/files/sender
+	cp receiver-linux test/performance/roles/receiver/files/receiver
