@@ -1,0 +1,28 @@
+---
+- name: create group
+  group:
+    name: nanotube
+    state: present
+    system: true
+
+- name: create user
+  user:
+    name: nanotube
+    group: nanotube
+    system: true
+
+- name: copy the binary
+  ansible.builtin.copy:
+    src: sender
+    dest: "{{ bin_location }}"
+    owner: nanotube
+    group: nanotube
+    mode: "0744"
+
+- name: copy the data
+  ansible.builtin.copy:
+    src: in
+    dest: "{{ data_location }}"
+    owner: nanotube
+    group: nanotube
+    mode: "0744"
