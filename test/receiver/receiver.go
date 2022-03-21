@@ -18,8 +18,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/bookingcom/nanotube/test/stats"
 )
 
 func parsePorts(portsStr string) []int {
@@ -65,7 +63,6 @@ func main() {
 	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
 	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
 	profiler := flag.String("profiler", "", "Where should the profiler listen?")
-	exitAfter := flag.Duration("exitAfter", time.Second*10, "Exit after not receiving any message for this time. Will work only of outDir == ''. Will not exit if Duration is 0")
 	localAPIPort := flag.Int64("local-api-port", 0, "specify which port the local HTTP API should be listening on")
 
 	flag.Parse()
@@ -114,13 +111,6 @@ func main() {
 
 	fs := make(map[int]io.Writer)
 
-	s := &stats.Stats{}
-	if *outDir == "" {
-		s = stats.NewStats(time.Second, *exitAfter, func() {
-			log.Printf("Exiting after %s duration of inactivity", *exitAfter)
-			os.Exit(0)
-		})
-	}
 	for _, p := range ports {
 		fs[p] = ioutil.Discard
 		if *outDir != "" {
@@ -187,7 +177,7 @@ func main() {
 						scanner.Buffer(make([]byte, bufio.MaxScanTokenSize*100), bufio.MaxScanTokenSize)
 						if *outDir == "" {
 							for scanner.Scan() {
-								s.Inc()
+								// TODO: Add counting
 							}
 							if err := scanner.Err(); err != nil {
 								log.Printf("failed reading data: %v", err)

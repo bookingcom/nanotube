@@ -1,21 +1,22 @@
-package stats
+package main
 
 import (
-	"log"
 	"sync/atomic"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Stats is the test statistics struct.
 type Stats struct {
 	total            uint32
 	intervalBucket   uint32
-	lastReport       int64
+	lastReport       time.Time
 	lastMessage      int64
 	reportEvery      time.Duration
 	finalReportAfter time.Duration
 	finalReportSent  bool
-	finalCallback    func()
+	lg               *zap.Logger
 }
 
 func (s *Stats) finalReportTime() time.Duration {
@@ -46,11 +47,11 @@ func (s *Stats) periodicReporter() {
 }
 
 // NewStats constructs new statsistics.
-func NewStats(reportEvery time.Duration, finalReportAfter time.Duration, finalCallback func()) *Stats {
+func NewStats(reportEvery time.Duration, finalReportAfter time.Duration, lg *zap.Logger) *Stats {
 	ret := &Stats{
 		reportEvery:      reportEvery,
 		finalReportAfter: finalReportAfter,
-		finalCallback:    finalCallback,
+		lg:               lg,
 	}
 
 	go ret.periodicReporter()
@@ -81,16 +82,15 @@ func (s *Stats) Report(final bool) {
 	if reqs != 0 && !final {
 		s.finalReportSent = false
 	}
-	lastReportDuration := time.Now().Unix() - s.lastReport
-	if lastReportDuration == 0 {
+	lastReportDuration := time.Since(s.lastReport).Seconds()
+	if lastReportDuration == 0.0 {
 		return
 	}
-	rate := float64(reqs) / float64(lastReportDuration)
+	rate := float64(reqs) / lastReportDuration
 	if final {
-		log.Printf("Final report. Requests: %d ", reqs)
-		s.finalCallback()
+		s.lg.Info("Final report", zap.Uint32("total requests", reqs))
 	}
 
-	log.Printf("Sent: %d. Rate: %g", reqs, rate)
-	s.lastReport = time.Now().Unix()
+	s.lg.Info("Stats", zap.Uint32("sent", reqs), zap.Float64("rate", rate))
+	s.lastReport = time.Now()
 }

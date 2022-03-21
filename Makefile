@@ -79,17 +79,17 @@ fuzz-race: check-go-fuzz check-go-fuzz-build
 	go-fuzz -workdir=test/fuzz -bin=test/fuzz/rec.zip
 
 
-test/sender/sender: test/sender/sender.go
-	go build -o $@ $<
+test/sender/sender:
+	go build -o ./test/sender/sender ./test/sender
 
-test/receiver/receiver: test/receiver/receiver.go
-	go build -o $@ $<
+test/receiver/receiver:
+	go build -0 ./test/receiver/receiver ./test/receiver
 
 sender-linux:
-	env GOOS=linux GOARCH=386 build -o sender-linux test/sender
+	env GOOS=linux GOARCH=386 go build -o sender-linux ./test/sender
 
 receiver-linux:
-	env GOOS=linux GOARCH=386 go build -o receiver-linux test/receiver
+	env GOOS=linux GOARCH=386 go build -o receiver-linux ./test/receiver
 
 nanotube-linux:
 	env GOOS=linux GOARCH=386 go build -o nanotube-linux -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
