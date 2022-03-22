@@ -1,15 +1,18 @@
 ---
-- hosts: sender
-  become: yes
-  roles:
-    - role: sender
+# - hosts: sender
+#   gather_facts: no
+#   become: yes
+#   roles:
+#     - role: sender
 
 - hosts: nanotube
+  gather_facts: no
   become: yes
   roles:
     - role: nanotube
 
 - hosts: receiver
+  gather_facts: no
   become: yes
   roles:
     - role: receiver

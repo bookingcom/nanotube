@@ -83,7 +83,7 @@ test/sender/sender:
 	go build -o ./test/sender/sender ./test/sender
 
 test/receiver/receiver:
-	go build -0 ./test/receiver/receiver ./test/receiver
+	go build -o ./test/receiver/receiver ./test/receiver
 
 sender-linux:
 	env GOOS=linux GOARCH=386 go build -o sender-linux ./test/sender
