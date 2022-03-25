@@ -1,0 +1,12 @@
+[Unit]
+Description=Receiver fro NT test
+After=network.target
+
+[Service]
+ExecStart={{ bin_location }} -ports {{ ports }}
+LimitNOFILE=5000
+User=nanotube
+Group=nanotube
+
+[Install]
+WantedBy=multi-user.target

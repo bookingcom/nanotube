@@ -85,12 +85,15 @@ test/sender/sender:
 test/receiver/receiver:
 	go build -o ./test/receiver/receiver ./test/receiver
 
+.PHONY: sender-linux
 sender-linux:
 	env GOOS=linux GOARCH=386 go build -o sender-linux ./test/sender
 
+.PHONY: receiver-linux
 receiver-linux:
 	env GOOS=linux GOARCH=386 go build -o receiver-linux ./test/receiver
 
+.PHONY: nanotube-linux
 nanotube-linux:
 	env GOOS=linux GOARCH=386 go build -o nanotube-linux -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 

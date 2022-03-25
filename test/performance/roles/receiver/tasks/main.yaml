@@ -18,3 +18,18 @@
     owner: nanotube
     group: nanotube
     mode: "0744"
+
+- name: copy systemd unit file
+  template:
+    src: receiver.service.j2
+    dest: /etc/systemd/system/receiver.service
+    owner: nanotube
+    group: nanotube
+    mode: "0644"
+
+- name: run systemd
+  ansible.builtin.systemd:
+    name: receiver
+    state: started
+    daemon_reload: yes
+    enabled: yes

@@ -18,7 +18,18 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 )
+
+var currentStatus = &struct {
+	sync.Mutex
+	Ready         bool
+	dataProcessed bool
+
+	timestampLastProcessed time.Time
+	IdleTimeMilliSecs      int64
+}{sync.Mutex{}, false, false, time.Now(), 0}
 
 func parsePorts(portsStr string) []int {
 	var ports []int
@@ -58,28 +69,7 @@ func parsePorts(portsStr string) []int {
 	return ports
 }
 
-func main() {
-	portsStr := flag.String("ports", "", `List of the ports to listen on. Has to be supplied in the from "XXXX YYYY ZZZZ AAAA-BBBB" in quotes.`)
-	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
-	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
-	profiler := flag.String("profiler", "", "Where should the profiler listen?")
-	localAPIPort := flag.Int64("local-api-port", 0, "specify which port the local HTTP API should be listening on")
-
-	flag.Parse()
-
-	if *portsStr == "" {
-		log.Fatal("please supply the ports argument")
-	}
-
-	var currentStatus = &struct {
-		sync.Mutex
-		Ready         bool
-		dataProcessed bool
-
-		timestampLastProcessed time.Time
-		IdleTimeMilliSecs      int64
-	}{sync.Mutex{}, false, false, time.Now(), 0}
-
+func setupStatusServer(localAPIPort int) {
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 		currentStatus.Lock()
 		defer currentStatus.Unlock()
@@ -92,14 +82,34 @@ func main() {
 		}
 		fmt.Fprint(w, string(data))
 	})
-	if *localAPIPort != 0 {
+	if localAPIPort != 0 {
 		go func() {
-			log.Printf("local API setup on port %d", *localAPIPort)
-			err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPort), nil)
+			log.Printf("local API setup on port %d", localAPIPort)
+			err := http.ListenAndServe(fmt.Sprintf(":%d", localAPIPort), nil)
 			if err != nil {
 				log.Fatal(err)
 			}
 		}()
+	}
+
+}
+
+func main() {
+	portsStr := flag.String("ports", "", `List of the ports to listen on. Has to be supplied in the from "XXXX YYYY ZZZZ AAAA-BBBB" in quotes.`)
+	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
+	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
+	profiler := flag.String("profiler", "", "Where should the profiler listen?")
+	localAPIPort := flag.Int("local-api-port", 0, "specify which port the local HTTP API should be listening on")
+
+	flag.Parse()
+
+	lg, err := zap.NewProduction()
+	if err != nil {
+		log.Fatal("failed to create logger: ", err)
+	}
+
+	if *portsStr == "" {
+		lg.Fatal("please supply the ports argument")
 	}
 
 	if *profiler != "" {
@@ -108,6 +118,10 @@ func main() {
 		}()
 	}
 	ports := parsePorts(*portsStr)
+
+	if *localAPIPort != 0 {
+		setupStatusServer(*localAPIPort)
+	}
 
 	fs := make(map[int]io.Writer)
 
@@ -154,7 +168,7 @@ func main() {
 				go func() {
 					conn, err := lst.Accept()
 					if err != nil {
-						log.Fatalf("failed to accept connection on addr %s: %v", lst.Addr(), err)
+						lg.Fatal("failed to accept connection on addr %s: %v", zap.String("address", lst.Addr().String()) , zap.Error(err))
 					}
 					connCh <- conn
 				}()
@@ -180,20 +194,19 @@ func main() {
 								// TODO: Add counting
 							}
 							if err := scanner.Err(); err != nil {
-								log.Printf("failed reading data: %v", err)
+								lg.Info("failed scan when reading data", zap.Error(err))
 							}
-							// ignore scanner.Err()
 						} else {
-							nb, err := io.Copy(fs[prt], conn)
-							log.Printf("wrote %d bytes to port %d", nb, prt)
+							_, err := io.Copy(fs[prt], conn)
 							if err != nil {
-								log.Printf("failed during data copy: %v", err)
+								lg.Error("failed when dumping data", zap.Error(err))
 							}
-							currentStatus.Lock()
-							currentStatus.dataProcessed = true
-							currentStatus.timestampLastProcessed = time.Now()
-							currentStatus.Unlock()
 						}
+
+						currentStatus.Lock()
+						currentStatus.dataProcessed = true
+						currentStatus.timestampLastProcessed = time.Now()
+						currentStatus.Unlock()
 					}(conn)
 				}
 			}
