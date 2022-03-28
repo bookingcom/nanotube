@@ -1,1 +1,4 @@
 # TODO
+- shell: "( ( nohup /usr/bin/carbonserver 1>/dev/null 2>&1 ) & )"
+  async: 5
+  poll: 0

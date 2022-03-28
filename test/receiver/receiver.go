@@ -168,7 +168,7 @@ func main() {
 				go func() {
 					conn, err := lst.Accept()
 					if err != nil {
-						lg.Fatal("failed to accept connection on addr %s: %v", zap.String("address", lst.Addr().String()) , zap.Error(err))
+						lg.Fatal("failed to accept connection on addr %s: %v", zap.String("address", lst.Addr().String()), zap.Error(err))
 					}
 					connCh <- conn
 				}()

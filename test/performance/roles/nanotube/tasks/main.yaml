@@ -38,8 +38,8 @@
   notify: restart-nanotube
 
 - name: copy config
-  ansible.builtin.copy:
-    src: config.toml
+  template:
+    src: config.toml.j2
     dest: "{{ conf_path }}/config.toml"
     owner: nanotube
     group: nanotube
