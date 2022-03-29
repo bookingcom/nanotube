@@ -79,7 +79,7 @@ func (rw Rewrites) compile() error {
 
 // RewriteMetricBytes executes all rewrite rules on a record
 // If copy is true and rule matches, we generate new record
-func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) ([]*rec.RecBytes, error) {
+func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes, metrics *metrics.Prom) ([]*rec.RecBytes, error) {
 	var timer *prometheus.Timer
 
 	result := []*rec.RecBytes{record}
@@ -93,6 +93,7 @@ func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) ([]*rec.RecBytes, er
 			timer.ObserveDuration()
 		}
 		if matched {
+			metrics.RewriteMatchRecords.Inc()
 			if rw.measureRegex {
 				timer = prometheus.NewTimer(r.replaceDuration)
 			}

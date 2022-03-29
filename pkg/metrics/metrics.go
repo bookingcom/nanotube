@@ -49,6 +49,8 @@ type Prom struct {
 
 	RegexDuration *prometheus.SummaryVec
 
+	RewriteMatchRecords prometheus.Counter
+
 	Version     *prometheus.CounterVec
 	ConfVersion *prometheus.CounterVec
 }
@@ -184,6 +186,11 @@ func New(conf *conf.Main) *Prom {
 			Name:      "regex_duration_seconds",
 			Help:      "Time to evaluate each regex from configuration",
 		}, []string{"regex", "rule_type"}),
+		RewriteMatchRecords: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "rewrite_match_records_total",
+			Help:      "Number of metics that were matched by any of the rewrite rules",
+		}),
 		Version: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "version",
