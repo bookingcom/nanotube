@@ -16,3 +16,6 @@ test/test2/out
 test/test2/in
 
 .dockerignore
+test/performance/roles/receiver/files/receiver
+test/performance/roles/sender/files/sender
+test/performance/roles/nanotube/files/nanotube

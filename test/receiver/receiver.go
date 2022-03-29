@@ -22,16 +22,16 @@ import (
 	"go.uber.org/zap"
 )
 
-var currentStatus = &struct {
+type status struct {
 	sync.Mutex
 	Ready         bool
 	dataProcessed bool
 
 	timestampLastProcessed time.Time
 	IdleTimeMilliSecs      int64
-}{sync.Mutex{}, false, false, time.Now(), 0}
+}
 
-func parsePorts(portsStr string) []int {
+func parsePorts(portsStr string, lg *zap.Logger) []int {
 	var ports []int
 
 	portStrs := strings.Fields(portsStr)
@@ -41,19 +41,19 @@ func parsePorts(portsStr string) []int {
 		case 1: // single port
 			p64, err := strconv.ParseUint(ss[0], 10, 32)
 			if err != nil {
-				log.Fatalf("could not parse port from parameters : %v", err)
+				lg.Fatal("could not parse port from parameters", zap.Error(err))
 			}
 			ports = append(ports, int(p64))
 		case 2: // ports range
 			pfromUint64, err := strconv.ParseUint(ss[0], 10, 32)
 			if err != nil {
-				log.Fatalf("Could not parse port parameters.")
+				lg.Fatal("could not parse port parameters", zap.Error(err))
 			}
 			pfrom := int(pfromUint64)
 
 			ptoUint64, err := strconv.ParseUint(ss[1], 10, 32)
 			if err != nil {
-				log.Fatalf("Could not parse port parameters.")
+				lg.Fatal("could not parse port parameters", zap.Error(err))
 			}
 			pto := int(ptoUint64)
 
@@ -61,7 +61,7 @@ func parsePorts(portsStr string) []int {
 				ports = append(ports, i)
 			}
 		default:
-			log.Fatal("wrong ports argument")
+			lg.Fatal("wrong ports argument")
 
 		}
 	}
@@ -69,7 +69,7 @@ func parsePorts(portsStr string) []int {
 	return ports
 }
 
-func setupStatusServer(localAPIPort int) {
+func setupStatusServer(localAPIPort int, currentStatus *status, lg *zap.Logger) {
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 		currentStatus.Lock()
 		defer currentStatus.Unlock()
@@ -78,17 +78,17 @@ func setupStatusServer(localAPIPort int) {
 		}
 		data, err := json.Marshal(currentStatus)
 		if err != nil {
-			log.Printf("error when json marshaling status: %v", currentStatus)
+			lg.Error("error when json marshaling status", zap.Any("status", currentStatus), zap.Error(err))
 		}
 		fmt.Fprint(w, string(data))
 	})
 	if localAPIPort != 0 {
 		go func() {
-			log.Printf("local API setup on port %d", localAPIPort)
 			err := http.ListenAndServe(fmt.Sprintf(":%d", localAPIPort), nil)
 			if err != nil {
-				log.Fatal(err)
+				lg.Fatal("failed to start the status server", zap.Error(err))
 			}
+			lg.Info("status server running", zap.Int("port", localAPIPort))
 		}()
 	}
 
@@ -114,13 +114,15 @@ func main() {
 
 	if *profiler != "" {
 		go func() {
-			log.Println(http.ListenAndServe(*profiler, nil))
+			lg.Info("profiler server exited", zap.Error(http.ListenAndServe(*profiler, nil)))
 		}()
 	}
-	ports := parsePorts(*portsStr)
+	ports := parsePorts(*portsStr, lg)
+
+	currentStatus := &status{sync.Mutex{}, false, false, time.Now(), 0}
 
 	if *localAPIPort != 0 {
-		setupStatusServer(*localAPIPort)
+		setupStatusServer(*localAPIPort, currentStatus, lg)
 	}
 
 	fs := make(map[int]io.Writer)
@@ -131,12 +133,12 @@ func main() {
 			fPath := fmt.Sprintf("%s/%s%d", *outDir, *outPrefix, p)
 			f, err := os.Create(fPath)
 			if err != nil {
-				log.Fatalf("failed to create file %s%d : %v", *outPrefix, p, err)
+				lg.Fatal("failed to create file", zap.String("path", fPath), zap.Error(err))
 			}
 			defer func(p int) {
 				err := f.Close()
 				if err != nil {
-					log.Printf("could not close file for port %d : %v", p, err)
+					lg.Error("could not close file for port", zap.Int("port", p), zap.Error(err))
 				}
 
 			}(p)
@@ -148,7 +150,7 @@ func main() {
 	for _, p := range ports {
 		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
 		if err != nil {
-			log.Fatalf("failed to open connection on port %d : %v", p, err)
+			lg.Fatal("failed to open connection on port", zap.Int("port", p), zap.Error(err))
 		}
 		ls[p] = l
 	}
@@ -184,7 +186,7 @@ func main() {
 						defer func() {
 							err := conn.Close()
 							if err != nil {
-								log.Fatalf("connection close failed: %v", err)
+								lg.Fatal("connection close failed", zap.Error(err))
 							}
 						}()
 						scanner := bufio.NewScanner(conn)

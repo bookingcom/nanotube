@@ -110,6 +110,6 @@ local-end-to-end-test: nanotube test/sender/sender test/receiver/receiver
 
 .PHONY: build-for-benchmarking-setup
 build-for-benchmarking-setup: nanotube-linux sender-linux receiver-linux
-	cp nanotube-linux test/performance/roles/nanotube/files/nanotube
-	cp sender-linux test/performance/roles/sender/files/sender
-	cp receiver-linux test/performance/roles/receiver/files/receiver
+	mv nanotube-linux test/performance/roles/nanotube/files/nanotube
+	mv sender-linux test/performance/roles/sender/files/sender
+	mv receiver-linux test/performance/roles/receiver/files/receiver
