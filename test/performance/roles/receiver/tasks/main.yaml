@@ -18,6 +18,7 @@
     owner: nanotube
     group: nanotube
     mode: "0744"
+  notify: restart-receiver
 
 - name: copy systemd unit file
   template:
@@ -26,6 +27,7 @@
     owner: nanotube
     group: nanotube
     mode: "0644"
+  notify: restart-receiver
 
 - name: run systemd
   ansible.builtin.systemd:

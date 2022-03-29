@@ -3,7 +3,7 @@ Description=Nanotube
 After=network.target
 
 [Service]
-ExecStart={{ bin_location }} -config="{{ conf_path }}/config.toml"
+ExecStart={{ bin_location }} -config={{ conf_path }}/config.toml
 LimitNOFILE=5000
 User=nanotube
 Group=nanotube
