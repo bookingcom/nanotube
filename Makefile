@@ -87,15 +87,15 @@ test/receiver/receiver:
 
 .PHONY: sender-linux
 sender-linux:
-	env GOOS=linux GOARCH=386 go build -o sender-linux ./test/sender
+	env GOOS=linux GOARCH=amd64 go build -o sender-linux ./test/sender
 
 .PHONY: receiver-linux
 receiver-linux:
-	env GOOS=linux GOARCH=386 go build -o receiver-linux ./test/receiver
+	env GOOS=linux GOARCH=amd64 go build -o receiver-linux ./test/receiver
 
 .PHONY: nanotube-linux
 nanotube-linux:
-	env GOOS=linux GOARCH=386 go build -o nanotube-linux -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
+	env GOOS=linux GOARCH=amd64 go build -o nanotube-linux -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
 .dockerignore: .gitignore
 	cat .gitignore | grep -v .dockerignore > .dockerignore

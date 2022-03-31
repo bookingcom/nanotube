@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -94,12 +96,33 @@ func setupStatusServer(localAPIPort int, currentStatus *status, lg *zap.Logger) 
 
 }
 
+type metrics struct {
+	inRecs prometheus.Counter
+}
+
+func setupMetrics() *metrics {
+	ms := metrics{
+		inRecs: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "receiver",
+			Name:      "in_records_total",
+			Help:      "Incoming records counter.",
+		}),
+	}
+	err := prometheus.Register(ms.inRecs)
+	if err != nil {
+		log.Fatalf("error registering the in_records_total metric: %v", err)
+	}
+
+	return &ms
+}
+
 func main() {
 	portsStr := flag.String("ports", "", `List of the ports to listen on. Has to be supplied in the from "XXXX YYYY ZZZZ AAAA-BBBB" in quotes.`)
 	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
 	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
 	profiler := flag.String("profiler", "", "Where should the profiler listen?")
 	localAPIPort := flag.Int("local-api-port", 0, "specify which port the local HTTP API should be listening on")
+	promPort := flag.Int("prom-port", 0, "Prometheus port. If unset, Prometheus metrics are not exposed.")
 
 	flag.Parse()
 
@@ -110,6 +133,21 @@ func main() {
 
 	if *portsStr == "" {
 		lg.Fatal("please supply the ports argument")
+	}
+
+	ms := setupMetrics()
+
+	if *promPort != 0 {
+		go func() {
+			l, err := net.Listen("tcp", fmt.Sprintf(":%d", *promPort))
+			if err != nil {
+				lg.Error("opening TCP port for Prometheus failed", zap.Error(err))
+			}
+			err = http.Serve(l, promhttp.Handler())
+			if err != nil {
+				lg.Error("prometheus server failed", zap.Error(err))
+			}
+		}()
 	}
 
 	if *profiler != "" {
@@ -193,7 +231,7 @@ func main() {
 						scanner.Buffer(make([]byte, bufio.MaxScanTokenSize*100), bufio.MaxScanTokenSize)
 						if *outDir == "" {
 							for scanner.Scan() {
-								// TODO: Add counting
+								ms.inRecs.Inc()
 							}
 							if err := scanner.Err(); err != nil {
 								lg.Info("failed scan when reading data", zap.Error(err))

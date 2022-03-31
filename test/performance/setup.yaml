@@ -10,6 +10,7 @@
   become: yes
   roles:
     - role: nanotube
+      receiver: "<receiver_host>"
 
 - hosts: receiver
   gather_facts: no
