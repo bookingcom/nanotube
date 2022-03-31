@@ -49,8 +49,9 @@ type Prom struct {
 
 	RegexDuration *prometheus.SummaryVec
 
-	Version     *prometheus.CounterVec
-	ConfVersion *prometheus.CounterVec
+	Version         *prometheus.CounterVec
+	ConfVersion     *prometheus.CounterVec
+	ClustersVersion *prometheus.CounterVec
 }
 
 // New creates a new set of metrics from the main config.
@@ -194,6 +195,11 @@ func New(conf *conf.Main) *Prom {
 			Name:      "conf_version",
 			Help:      "Config version in label. Value should be always 1.",
 		}, []string{"conf_version"}),
+		ClustersVersion: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "clusters_version",
+			Help:      "Clusters config version in label. Value should be always 1.",
+		}, []string{"clusters_version"}),
 	}
 }
 
@@ -253,6 +259,11 @@ func Register(m *Prom, cfg *conf.Main) {
 	err = prometheus.Register(m.ConfVersion)
 	if err != nil {
 		log.Fatalf("error registering the conf version metric: %v", err)
+	}
+
+	err = prometheus.Register(m.ClustersVersion)
+	if err != nil {
+		log.Fatalf("error registering the clusters_version metric: %v", err)
 	}
 
 	if !cfg.LessMetrics {

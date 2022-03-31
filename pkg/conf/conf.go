@@ -262,3 +262,13 @@ func Hash(cfg *Main, clusters *Clusters, rules *Rules, rewrites *Rewrites) (stri
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
+
+// ClustersHash calculates hash of the clusters config to track its versions.
+func ClustersHash(clusters *Clusters) (string, error) {
+	h := md5.New()
+	_, err := h.Write([]byte(fmt.Sprintf("%v", clusters)))
+	if err != nil {
+		return "", fmt.Errorf("failed to calculate clusters config hash: %w", err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}

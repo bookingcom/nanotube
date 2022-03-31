@@ -42,7 +42,7 @@ func main() {
 		return
 	}
 
-	cfg, clustersConf, rulesConf, rewritesConf, hash, err := readConfigs(cfgPath)
+	cfg, clustersConf, rulesConf, rewritesConf, hash, clustersHash, err := readConfigs(cfgPath)
 	if err != nil {
 		log.Fatalf("error reading and compiling config: %v", err)
 	}
@@ -76,6 +76,7 @@ func main() {
 
 	ms.Version.WithLabelValues(version).Inc()
 	ms.ConfVersion.WithLabelValues(hash).Inc()
+	ms.ClustersVersion.WithLabelValues(clustersHash).Inc()
 
 	if cfg.PprofPort != -1 {
 		go func() {
@@ -127,7 +128,7 @@ func main() {
 
 		if s == syscall.SIGUSR2 {
 			lg.Info("Reload: Got signal for reload. Checking config.")
-			_, _, _, _, _, err = readConfigs(cfgPath)
+			_, _, _, _, _, _, err = readConfigs(cfgPath)
 			if err != nil {
 				lg.Error("Reload: Cannot reload: config invalid", zap.Error(err))
 				continue
@@ -186,7 +187,7 @@ func buildLogger(cfg *conf.Main) (*zap.Logger, error) {
 	}))
 }
 
-func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rulesConf conf.Rules, rewritesConf *conf.Rewrites, hash string, retErr error) {
+func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rulesConf conf.Rules, rewritesConf *conf.Rewrites, hash string, clustersHash string, retErr error) {
 	bs, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading config file")
@@ -239,6 +240,12 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 	if err != nil {
 		retErr = fmt.Errorf("error calculating hash config: %w", err)
 	}
+
+	clustersHash, err = conf.ClustersHash(&clustersConf)
+	if err != nil {
+		retErr = fmt.Errorf("error calculating clusters config hash: %w", err)
+	}
+
 	return
 }
 
