@@ -256,7 +256,7 @@ func setupRealisticBench(b *testing.B) (benchMetrics []string, clusters target.C
 
 	cfgPath := filepath.Join(fixturesPath, "config.toml")
 
-	cfg, clustersConf, rulesConf, rewritesConf, _, err := readConfigs(cfgPath)
+	cfg, clustersConf, rulesConf, rewritesConf, _, _, err := readConfigs(cfgPath)
 	if err != nil {
 		b.Fatalf("error reading and compiling config: %v", err)
 	}
