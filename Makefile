@@ -79,11 +79,23 @@ fuzz-race: check-go-fuzz check-go-fuzz-build
 	go-fuzz -workdir=test/fuzz -bin=test/fuzz/rec.zip
 
 
-test/sender/sender: test/sender/sender.go
-	go build -o $@ $<
+test/sender/sender:
+	go build -o ./test/sender/sender ./test/sender
 
-test/receiver/receiver: test/receiver/receiver.go
-	go build -o $@ $<
+test/receiver/receiver:
+	go build -o ./test/receiver/receiver ./test/receiver
+
+.PHONY: sender-linux
+sender-linux:
+	env GOOS=linux GOARCH=amd64 go build -o sender-linux ./test/sender
+
+.PHONY: receiver-linux
+receiver-linux:
+	env GOOS=linux GOARCH=amd64 go build -o receiver-linux ./test/receiver
+
+.PHONY: nanotube-linux
+nanotube-linux:
+	env GOOS=linux GOARCH=amd64 go build -o nanotube-linux -ldflags "-X main.version=$(shell git rev-parse HEAD)" ./cmd/nanotube
 
 .dockerignore: .gitignore
 	cat .gitignore | grep -v .dockerignore > .dockerignore
@@ -95,3 +107,9 @@ docker-image: .dockerignore
 .PHONY: local-end-to-end-test
 local-end-to-end-test: nanotube test/sender/sender test/receiver/receiver
 	cd test && ./run.sh
+
+.PHONY: build-for-benchmarking-setup
+build-for-benchmarking-setup: nanotube-linux sender-linux receiver-linux
+	mv nanotube-linux test/performance/roles/nanotube/files/nanotube
+	mv sender-linux test/performance/roles/sender/files/sender
+	mv receiver-linux test/performance/roles/receiver/files/receiver

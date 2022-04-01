@@ -19,10 +19,21 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bookingcom/nanotube/test/stats"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
-func parsePorts(portsStr string) []int {
+type status struct {
+	sync.Mutex
+	Ready         bool
+	dataProcessed bool
+
+	timestampLastProcessed time.Time
+	IdleTimeMilliSecs      int64
+}
+
+func parsePorts(portsStr string, lg *zap.Logger) []int {
 	var ports []int
 
 	portStrs := strings.Fields(portsStr)
@@ -32,19 +43,19 @@ func parsePorts(portsStr string) []int {
 		case 1: // single port
 			p64, err := strconv.ParseUint(ss[0], 10, 32)
 			if err != nil {
-				log.Fatalf("could not parse port from parameters : %v", err)
+				lg.Fatal("could not parse port from parameters", zap.Error(err))
 			}
 			ports = append(ports, int(p64))
 		case 2: // ports range
 			pfromUint64, err := strconv.ParseUint(ss[0], 10, 32)
 			if err != nil {
-				log.Fatalf("Could not parse port parameters.")
+				lg.Fatal("could not parse port parameters", zap.Error(err))
 			}
 			pfrom := int(pfromUint64)
 
 			ptoUint64, err := strconv.ParseUint(ss[1], 10, 32)
 			if err != nil {
-				log.Fatalf("Could not parse port parameters.")
+				lg.Fatal("could not parse port parameters", zap.Error(err))
 			}
 			pto := int(ptoUint64)
 
@@ -52,7 +63,7 @@ func parsePorts(portsStr string) []int {
 				ports = append(ports, i)
 			}
 		default:
-			log.Fatal("wrong ports argument")
+			lg.Fatal("wrong ports argument")
 
 		}
 	}
@@ -60,29 +71,7 @@ func parsePorts(portsStr string) []int {
 	return ports
 }
 
-func main() {
-	portsStr := flag.String("ports", "", `List of the ports to listen on. Has to be supplied in the from "XXXX YYYY ZZZZ AAAA-BBBB" in quotes.`)
-	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
-	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
-	profiler := flag.String("profiler", "", "Where should the profiler listen?")
-	exitAfter := flag.Duration("exitAfter", time.Second*10, "Exit after not receiving any message for this time. Will work only of outDir == ''. Will not exit if Duration is 0")
-	localAPIPort := flag.Int64("local-api-port", 0, "specify which port the local HTTP API should be listening on")
-
-	flag.Parse()
-
-	if *portsStr == "" {
-		log.Fatal("please supply the ports argument")
-	}
-
-	var currentStatus = &struct {
-		sync.Mutex
-		Ready         bool
-		dataProcessed bool
-
-		timestampLastProcessed time.Time
-		IdleTimeMilliSecs      int64
-	}{sync.Mutex{}, false, false, time.Now(), 0}
-
+func setupStatusServer(localAPIPort int, currentStatus *status, lg *zap.Logger) {
 	http.HandleFunc("/status", func(w http.ResponseWriter, req *http.Request) {
 		currentStatus.Lock()
 		defer currentStatus.Unlock()
@@ -91,48 +80,103 @@ func main() {
 		}
 		data, err := json.Marshal(currentStatus)
 		if err != nil {
-			log.Printf("error when json marshaling status: %v", currentStatus)
+			lg.Error("error when json marshaling status", zap.Any("status", currentStatus), zap.Error(err))
 		}
 		fmt.Fprint(w, string(data))
 	})
-	if *localAPIPort != 0 {
+	if localAPIPort != 0 {
 		go func() {
-			log.Printf("local API setup on port %d", *localAPIPort)
-			err := http.ListenAndServe(fmt.Sprintf(":%d", *localAPIPort), nil)
+			err := http.ListenAndServe(fmt.Sprintf(":%d", localAPIPort), nil)
 			if err != nil {
-				log.Fatal(err)
+				lg.Fatal("failed to start the status server", zap.Error(err))
+			}
+			lg.Info("status server running", zap.Int("port", localAPIPort))
+		}()
+	}
+
+}
+
+type metrics struct {
+	inRecs prometheus.Counter
+}
+
+func setupMetrics() *metrics {
+	ms := metrics{
+		inRecs: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "receiver",
+			Name:      "in_records_total",
+			Help:      "Incoming records counter.",
+		}),
+	}
+	err := prometheus.Register(ms.inRecs)
+	if err != nil {
+		log.Fatalf("error registering the in_records_total metric: %v", err)
+	}
+
+	return &ms
+}
+
+func main() {
+	portsStr := flag.String("ports", "", `List of the ports to listen on. Has to be supplied in the from "XXXX YYYY ZZZZ AAAA-BBBB" in quotes.`)
+	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
+	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
+	profiler := flag.String("profiler", "", "Where should the profiler listen?")
+	localAPIPort := flag.Int("local-api-port", 0, "specify which port the local HTTP API should be listening on")
+	promPort := flag.Int("prom-port", 0, "Prometheus port. If unset, Prometheus metrics are not exposed.")
+
+	flag.Parse()
+
+	lg, err := zap.NewProduction()
+	if err != nil {
+		log.Fatal("failed to create logger: ", err)
+	}
+
+	if *portsStr == "" {
+		lg.Fatal("please supply the ports argument")
+	}
+
+	ms := setupMetrics()
+
+	if *promPort != 0 {
+		go func() {
+			l, err := net.Listen("tcp", fmt.Sprintf(":%d", *promPort))
+			if err != nil {
+				lg.Error("opening TCP port for Prometheus failed", zap.Error(err))
+			}
+			err = http.Serve(l, promhttp.Handler())
+			if err != nil {
+				lg.Error("prometheus server failed", zap.Error(err))
 			}
 		}()
 	}
 
 	if *profiler != "" {
 		go func() {
-			log.Println(http.ListenAndServe(*profiler, nil))
+			lg.Info("profiler server exited", zap.Error(http.ListenAndServe(*profiler, nil)))
 		}()
 	}
-	ports := parsePorts(*portsStr)
+	ports := parsePorts(*portsStr, lg)
+
+	currentStatus := &status{sync.Mutex{}, false, false, time.Now(), 0}
+
+	if *localAPIPort != 0 {
+		setupStatusServer(*localAPIPort, currentStatus, lg)
+	}
 
 	fs := make(map[int]io.Writer)
 
-	s := &stats.Stats{}
-	if *outDir == "" {
-		s = stats.NewStats(time.Second, *exitAfter, func() {
-			log.Printf("Exiting after %s duration of inactivity", *exitAfter)
-			os.Exit(0)
-		})
-	}
 	for _, p := range ports {
 		fs[p] = ioutil.Discard
 		if *outDir != "" {
 			fPath := fmt.Sprintf("%s/%s%d", *outDir, *outPrefix, p)
 			f, err := os.Create(fPath)
 			if err != nil {
-				log.Fatalf("failed to create file %s%d : %v", *outPrefix, p, err)
+				lg.Fatal("failed to create file", zap.String("path", fPath), zap.Error(err))
 			}
 			defer func(p int) {
 				err := f.Close()
 				if err != nil {
-					log.Printf("could not close file for port %d : %v", p, err)
+					lg.Error("could not close file for port", zap.Int("port", p), zap.Error(err))
 				}
 
 			}(p)
@@ -144,7 +188,7 @@ func main() {
 	for _, p := range ports {
 		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
 		if err != nil {
-			log.Fatalf("failed to open connection on port %d : %v", p, err)
+			lg.Fatal("failed to open connection on port", zap.Int("port", p), zap.Error(err))
 		}
 		ls[p] = l
 	}
@@ -164,7 +208,7 @@ func main() {
 				go func() {
 					conn, err := lst.Accept()
 					if err != nil {
-						log.Fatalf("failed to accept connection on addr %s: %v", lst.Addr(), err)
+						lg.Fatal("failed to accept connection on addr %s: %v", zap.String("address", lst.Addr().String()), zap.Error(err))
 					}
 					connCh <- conn
 				}()
@@ -180,30 +224,29 @@ func main() {
 						defer func() {
 							err := conn.Close()
 							if err != nil {
-								log.Fatalf("connection close failed: %v", err)
+								lg.Fatal("connection close failed", zap.Error(err))
 							}
 						}()
 						scanner := bufio.NewScanner(conn)
 						scanner.Buffer(make([]byte, bufio.MaxScanTokenSize*100), bufio.MaxScanTokenSize)
 						if *outDir == "" {
 							for scanner.Scan() {
-								s.Inc()
+								ms.inRecs.Inc()
 							}
 							if err := scanner.Err(); err != nil {
-								log.Printf("failed reading data: %v", err)
+								lg.Info("failed scan when reading data", zap.Error(err))
 							}
-							// ignore scanner.Err()
 						} else {
-							nb, err := io.Copy(fs[prt], conn)
-							log.Printf("wrote %d bytes to port %d", nb, prt)
+							_, err := io.Copy(fs[prt], conn)
 							if err != nil {
-								log.Printf("failed during data copy: %v", err)
+								lg.Error("failed when dumping data", zap.Error(err))
 							}
-							currentStatus.Lock()
-							currentStatus.dataProcessed = true
-							currentStatus.timestampLastProcessed = time.Now()
-							currentStatus.Unlock()
 						}
+
+						currentStatus.Lock()
+						currentStatus.dataProcessed = true
+						currentStatus.timestampLastProcessed = time.Now()
+						currentStatus.Unlock()
 					}(conn)
 				}
 			}

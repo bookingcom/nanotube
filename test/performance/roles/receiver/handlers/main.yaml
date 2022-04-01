@@ -1,0 +1,5 @@
+---
+- name: restart-receiver
+  service:
+    name: receiver
+    state: restarted

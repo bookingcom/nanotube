@@ -1,0 +1,4 @@
+---
+bin_location: "/usr/local/bin/nanotube"
+conf_path: "/etc/nanotube"
+receiver: "localhost"

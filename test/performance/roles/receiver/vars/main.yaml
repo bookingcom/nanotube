@@ -1,0 +1,4 @@
+---
+bin_location: "/usr/local/bin/receiver"
+ports: "7000-7362"
+prom_port: 9090

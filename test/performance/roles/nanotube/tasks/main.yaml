@@ -1,0 +1,72 @@
+---
+- name: create group
+  group:
+    name: nanotube
+    state: present
+    system: true
+
+- name: create user
+  user:
+    name: nanotube
+    group: nanotube
+    system: true
+
+- name: copy the binary
+  ansible.builtin.copy:
+    src: nanotube
+    dest: "{{ bin_location }}"
+    owner: nanotube
+    group: nanotube
+    mode: "0744"
+  notify: restart-nanotube
+
+- name: create config folder
+  file:
+    path: "{{ conf_path }}"
+    state: directory
+    owner: nanotube
+    group: nanotube
+    mode: "0774"
+
+- name: copy clusters config
+  template:
+    src: clusters.toml.j2
+    dest: "{{ conf_path }}/clusters.toml"
+    owner: nanotube
+    group: nanotube
+    mode: "0744"
+  notify: restart-nanotube
+
+- name: copy config
+  template:
+    src: config.toml.j2
+    dest: "{{ conf_path }}/config.toml"
+    owner: nanotube
+    group: nanotube
+    mode: "0744"
+  notify: restart-nanotube
+
+- name: copy the rules
+  ansible.builtin.copy:
+    src: rules.toml
+    dest: "{{ conf_path }}/rules.toml"
+    owner: nanotube
+    group: nanotube
+    mode: "0744"
+  notify: restart-nanotube
+
+- name: copy systemd unit file
+  template:
+    src: nanotube.service.j2
+    dest: /etc/systemd/system/nanotube.service
+    owner: nanotube
+    group: nanotube
+    mode: "0644"
+  notify: restart-nanotube
+
+- name: run systemd
+  ansible.builtin.systemd:
+    name: nanotube
+    state: started
+    daemon_reload: yes
+    enabled: yes
