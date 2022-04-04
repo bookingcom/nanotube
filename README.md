@@ -62,7 +62,7 @@ Is defined in the [rules config](config/rules.toml) that is in turn referred to 
   - If no regex or prefix matches, continue down the list of rules;
 - Multiple rules can be matched to each record;
 - Each record is sent to a single cluster only once. If two rules send it to same cluster, only one instance will be sent;
-- Cluster names must be from the set in the [clusters config](clonfig/clusters.toml).
+- Cluster names must be from the set in the [clusters config](config/clusters.toml).
 
 ### Rewrites
 
