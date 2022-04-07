@@ -1,0 +1,78 @@
+# Routing rules.
+# - all routing rules are applied to each incoming record;
+# - when regex in the rule matches, the record is sent to the clusters in the 'clusters' list;
+# - many rules can be matched to each record;
+# - each record can be sent to a cluster at most once. If two rules send it to same cluster, only one instance will be sent;
+# - cluster names must be from the set defined in the clusters config
+
+[[rule]]
+    regexs = ["^toxin\\.baffin\\..*\\.marsh-kaufman-tic-", "^juggernaut\\.sanctity\\..+\\.vestry"]
+    clusters = ["grow"]
+
+[[rule]]
+    regexs = ["_0roughneck"]
+    clusters = ["grow"]
+
+[[rule]]
+    prefixes = ["toxin.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.homeobox.", "another.tic.upstart.epigraph.1colloquia.homeobox."]
+    clusters = ["homeobox-hallelujah4room", "homeobox-demolish4room", "homeobox-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["placate.", "comparator.", "cantle.", "rave.", "asterisk.", "except.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.once.", "another.tic.upstart.epigraph.1colloquia.once."]
+    clusters = ["once-hallelujah4platonist", "once-demolish4platonist", "once-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["kermit."]
+    clusters = ["kermit-hallelujah4platonist"]
+
+[[rule]]
+    prefixes = ["casey.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.casey.", "another.tic.upstart.epigraph.1colloquia.casey."]
+    clusters = ["casey-hallelujah4platonist", "casey-demolish4platonist"]
+
+[[rule]]
+    prefixes = ["infanticide.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.infanticide.", "another.tic.upstart.epigraph.1colloquia.infanticide."]
+    clusters = ["infanticide-hallelujah4platonist", "infanticide-demolish4platonist", "infanticide-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["irs.keith.", "irs.upton.", "irs.thousandfold.", "irs.brunswick_credible.", "irs.psychophysiology.", "irs.deliquescent.", "irs.cross.", "irs.coupon.", "intractable.", "torrance.", "mammal.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.irs.", "another.tic.upstart.epigraph.1colloquia.irs."]
+    regexs = ["^sandy\\.[^.]+\\.intractable\\."]
+    clusters = ["irs-hallelujah4room", "irs-demolish4room", "irs-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["sandy.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.sandy.", "another.tic.upstart.epigraph.1colloquia.sandy."]
+    clusters = ["sandy-hallelujah4platonist", "sandy-demolish4platonist", "sandy-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["juggernaut.locomotive.epigraph.olympic."]
+    clusters = ["methacrylate-hallelujah4", "methacrylate-demolish4"]
+
+[[rule]]
+    prefixes = ["juggernaut.locomotive.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.locomotive.", "another.tic.upstart.epigraph.1colloquia.locomotive."]
+    clusters = ["locomotive-hallelujah4room", "locomotive-demolish4room", "locomotive-opponent3platonist", "notorious-hallelujah4room", "notorious-demolish4room"]
+
+[[rule]]
+    prefixes = ["another.tic.handkerchief.phoebe.epigraph.1colloquia.plume.", "another.tic.upstart.epigraph.1colloquia.plume."]
+    regexs = ["^convergent\\.marsh\\..+\\.moldboard\\.bricklaying_clamshell\\."]
+    clusters = ["plume-hallelujah4platonist", "plume-demolish4platonist", "plume-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["convergent.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.aphasic.", "another.tic.upstart.epigraph.1colloquia.aphasic."]
+    clusters = ["aphasic-hallelujah4platonist", "aphasic-demolish4room", "aphasic-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["ramble.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.ramble.", "another.tic.upstart.epigraph.1colloquia.ramble."]
+    clusters = ["ramble-hallelujah4platonist", "ramble-demolish4platonist", "ramble-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["ruthenium.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.ruthenium.", "another.tic.upstart.epigraph.1colloquia.ruthenium."]
+    clusters = ["ruthenium-hallelujah4platonist", "ruthenium-demolish4platonist", "ruthenium-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["keith.", "azalea.", "numismatist.", "dedicate.", "juggernaut.", "cease.", "applicate.", "serology.", "glossolalia.", "olin.", "olin_yves.", "russell.", "another.tic.handkerchief.phoebe.epigraph.1colloquia.impeccable.", "another.tic.upstart.epigraph.1colloquia.impeccable."]
+    clusters = ["impeccable-hallelujah4room", "impeccable-demolish4room", "impeccable-opponent4room", "impeccable-opponent3platonist"]
+
+[[rule]]
+    prefixes = ["another."]
+    clusters = ["another-hallelujah4platonist", "another-demolish4platonist", "another-opponent3platonist"]
+
+

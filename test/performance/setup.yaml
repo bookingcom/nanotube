@@ -1,0 +1,19 @@
+---
+- hosts: sender
+  gather_facts: no
+  become: yes
+  roles:
+    - role: sender
+
+- hosts: nanotube
+  gather_facts: no
+  become: yes
+  roles:
+    - role: nanotube
+      receiver: "<receiver_host>"
+
+- hosts: receiver
+  gather_facts: no
+  become: yes
+  roles:
+    - role: receiver

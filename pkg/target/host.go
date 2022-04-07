@@ -3,6 +3,7 @@ package target
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"net"
 	"strconv"
 	"sync"
@@ -31,6 +32,10 @@ type Host struct {
 	Ms *metrics.Prom
 
 	conf *conf.Main
+
+	jitterEnabled        bool
+	rnd                  *rand.Rand
+	minJitterAmplitudeMs uint32
 
 	outRecs                   prometheus.Counter
 	outRecsTotal              prometheus.Counter
@@ -102,6 +107,9 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 
 		conf: &mainCfg,
 
+		jitterEnabled:        mainCfg.TargetConnectionJitter,
+		minJitterAmplitudeMs: mainCfg.TargetConnectionJitterMinAmplitudeMs,
+
 		outRecs:                   ms.OutRecs.With(promLabels),
 		outRecsTotal:              ms.OutRecsTotal,
 		throttled:                 ms.ThrottledHosts.With(promLabels),
@@ -113,6 +121,7 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 		oldConnectionRefreshTotal: ms.OldConnectionRefreshTotal,
 		targetState:               ms.TargetStates.With(promLabels),
 	}
+	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	h.Ms = ms
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
 
@@ -263,13 +272,23 @@ func (h *Host) keepConnectionFresh() {
 // Requires h.Conn.Mutex lock.
 // This function may take a long time.
 func (h *Host) ensureConnection() {
-	for reconnectWait, attemptCount := uint32(0), 1; h.Conn.Conn == nil; {
-		time.Sleep(time.Duration(reconnectWait) * time.Millisecond)
-		if reconnectWait < h.conf.MaxHostReconnectPeriodMs {
-			reconnectWait = reconnectWait*2 + h.conf.HostReconnectPeriodDeltaMs
+	for waitMs, attemptCount := uint32(0), 1; h.Conn.Conn == nil; {
+
+		if h.jitterEnabled {
+			jitterAmplitude := waitMs / 2
+			if h.minJitterAmplitudeMs > jitterAmplitude {
+				jitterAmplitude = h.minJitterAmplitudeMs
+			}
+			waitMs = waitMs/2 + uint32(h.rnd.Intn(int(jitterAmplitude*2)))
 		}
-		if reconnectWait >= h.conf.MaxHostReconnectPeriodMs {
-			reconnectWait = h.conf.MaxHostReconnectPeriodMs
+
+		time.Sleep(time.Duration(waitMs) * time.Millisecond)
+
+		if waitMs < h.conf.MaxHostReconnectPeriodMs {
+			waitMs = waitMs*2 + h.conf.HostReconnectPeriodDeltaMs
+		}
+		if waitMs >= h.conf.MaxHostReconnectPeriodMs {
+			waitMs = h.conf.MaxHostReconnectPeriodMs
 		}
 
 		h.connect(attemptCount)

@@ -97,6 +97,11 @@ type Main struct {
 	// Perform connection check to target right away?
 	TCPInitialConnCheck bool
 
+	// Enable jitter when connecting to targets?
+	TargetConnectionJitter bool
+	// Minimal amplitude when adding jitter to target connections. Has to be >0.
+	TargetConnectionJitterMinAmplitudeMs uint32
+
 	// gRPC target (client) params
 	// gRPC HTTP2 keepalive ping period https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
 	GRPCOutKeepAlivePeriodSec      uint32
@@ -177,6 +182,9 @@ func ReadMain(r io.Reader) (Main, error) {
 			return cfg, errors.New("pidfile path is not valid or not an absolute path")
 		}
 	}
+	if cfg.TargetConnectionJitterMinAmplitudeMs == 0 {
+		return cfg, errors.New("TargetConnectionJitterMinAmplitudeMs is 0")
+	}
 
 	return cfg, nil
 }
@@ -215,7 +223,8 @@ func MakeDefault() Main {
 		TCPOutBufSize:                    0,
 		TCPOutBufFlushPeriodSec:          2,
 		TCPOutConnectionRefreshPeriodSec: 0,
-		TCPInitialConnCheck:              false,
+
+		TargetConnectionJitterMinAmplitudeMs: 200,
 
 		GRPCOutKeepAlivePeriodSec:      5,
 		GRPCOutKeepAlivePingTimeoutSec: 1,
@@ -231,8 +240,7 @@ func MakeDefault() Main {
 
 		GRPCTracing: true,
 
-		NormalizeRecords:  true,
-		LogSpecialRecords: false,
+		NormalizeRecords: true,
 
 		PprofPort:           -1,
 		PromPort:            9090,

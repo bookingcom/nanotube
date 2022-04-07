@@ -1,0 +1,5 @@
+---
+- name: restart-nanotube
+  service:
+    name: nanotube
+    state: restarted
