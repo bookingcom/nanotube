@@ -77,29 +77,38 @@ func (rw Rewrites) compile() error {
 	return nil
 }
 
-// RewriteMetricBytes executes all rewrite rules on a record
-// If copy is true and rule matches, we generate new record
-func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) ([]*rec.RecBytes, error) {
+// RewriteMetricBytes executes all rewrite rules on a record.
+// If copy is true and rule matches, we generate new record.
+func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes, ms *metrics.Prom) ([]*rec.RecBytes, error) {
 	var timer *prometheus.Timer
 
 	result := []*rec.RecBytes{record}
+
+	wasMatched := false
 
 	for _, r := range rw.rewrites {
 		if rw.measureRegex {
 			timer = prometheus.NewTimer(r.matchDuration)
 		}
+
 		matched := r.CompiledFrom.Match(record.Path)
 		if rw.measureRegex {
 			timer.ObserveDuration()
 		}
+
 		if matched {
+			wasMatched = true
+
 			if rw.measureRegex {
 				timer = prometheus.NewTimer(r.replaceDuration)
 			}
+
 			newPath := r.CompiledFrom.ReplaceAll(record.Path, []byte(r.To))
+
 			if rw.measureRegex {
 				timer.ObserveDuration()
 			}
+
 			if r.Copy {
 				// keep both old and new value
 				copy, err := record.Copy()
@@ -115,5 +124,10 @@ func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes) ([]*rec.RecBytes, er
 			}
 		}
 	}
+
+	if wasMatched {
+		ms.RewrittenRecsTotal.Inc()
+	}
+
 	return result, nil
 }
