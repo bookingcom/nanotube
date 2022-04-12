@@ -31,7 +31,7 @@ fi
 
 echo "2. going to create a new git tag and push it to trigger rpm build"
 
-git_tag="subnanotube-${tag_day}-${tag_time}"
+git_tag="${tag_day}.${tag_time}"
 echo "   tagging new release $git_tag"
 git tag "$git_tag"
 echo "   pushing tag to trigger packaging CI"
