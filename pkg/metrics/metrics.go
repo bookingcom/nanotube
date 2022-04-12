@@ -14,19 +14,17 @@ type Prom struct {
 	InRecsBySource *prometheus.CounterVec
 	ThrottledRecs  prometheus.Counter
 
-	// TODO: Rename
-	StateChangeHosts *prometheus.CounterVec
-	// TODO: Rename
-	StateChangeHostsTotal prometheus.Counter
-	// TODO: Maybe remove after adoption is complete.
-	OldConnectionRefresh *prometheus.CounterVec
-	// TODO: Maybe remove after adoption is complete.
+	StateChangeHosts          *prometheus.CounterVec
+	StateChangeHostsTotal     prometheus.Counter
+	OldConnectionRefresh      *prometheus.CounterVec
 	OldConnectionRefreshTotal prometheus.Counter
 	ThrottledHosts            *prometheus.CounterVec
 	ThrottledHostsTotal       prometheus.Counter
 	HostQueueLength           prometheus.Histogram
 	OutRecs                   *prometheus.CounterVec
 	OutRecsTotal              prometheus.Counter
+
+	RewrittenRecsTotal prometheus.Counter
 
 	BlackholedRecs prometheus.Counter
 	ErrorRecs      prometheus.Counter
@@ -77,6 +75,11 @@ func New(conf *conf.Main) *Prom {
 			Namespace: "nanotube",
 			Name:      "out_records_total",
 			Help:      "Total outgoing records.",
+		}),
+		RewrittenRecsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "rewritten_records_total",
+			Help:      "Number of records that matched at least one rewrite rule at least once.",
 		}),
 		ThrottledRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
@@ -214,6 +217,11 @@ func Register(m *Prom, cfg *conf.Main) {
 	err = prometheus.Register(m.OutRecsTotal)
 	if err != nil {
 		log.Fatalf("error registering the out_records_total metric: %v", err)
+	}
+
+	err = prometheus.Register(m.RewrittenRecsTotal)
+	if err != nil {
+		log.Fatalf("error registering the rewritten_records_total metric: %v", err)
 	}
 
 	err = prometheus.Register(m.ErrorRecs)

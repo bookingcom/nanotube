@@ -60,7 +60,7 @@ func TestRewrites(t *testing.T) {
 		record := &rec.RecBytes{
 			Path: test.in,
 		}
-		resultRecords, err := rewrites.RewriteMetricBytes(record)
+		resultRecords, err := rewrites.RewriteMetricBytes(record, ms)
 		if err != nil {
 			t.Error("could not rewrite record")
 		}
