@@ -54,7 +54,7 @@ func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 		return
 	}
 
-	recs, err := rewrites.RewriteMetricBytes(r)
+	recs, err := rewrites.RewriteMetricBytes(r, metrics)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record", string(s)), zap.Error(err))
 		return
