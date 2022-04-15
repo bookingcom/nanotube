@@ -125,7 +125,7 @@ func normalizePathBytes(s []byte) ([]byte, error) {
 		return []byte{}, errors.New("path contains only dots")
 	}
 
-	end := len(s) - 1 // points to the last char in path
+	end := len(s) - 1 // points to the last non-. char in path
 	for ; end >= start && s[end] == '.'; end-- {
 	}
 	// check for string consisting only of points was done above
@@ -133,7 +133,10 @@ func normalizePathBytes(s []byte) ([]byte, error) {
 	needsNormalization := false
 	for i := start; i <= end; i++ {
 		if s[i] == '.' {
-			if s[i+1] == '.' { // safe, a dot cannot be the last
+			if i == len(s)-1 {
+				needsNormalization = true
+				break
+			} else if s[i+1] == '.' {
 				needsNormalization = true
 				break
 			}
@@ -149,8 +152,9 @@ func normalizePathBytes(s []byte) ([]byte, error) {
 	if needsNormalization {
 		for i := start; i <= end; i++ {
 			if s[i] == '.' {
-				// a dot cannot be the last char
-				if s[i+1] == '.' {
+				if i == len(s)-1 {
+					continue
+				} else if s[i+1] == '.' {
 					continue
 				}
 			}
