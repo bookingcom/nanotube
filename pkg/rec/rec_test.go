@@ -196,6 +196,7 @@ func TestNormalization(t *testing.T) {
 	tt := []struct {
 		in  string
 		out string
+		err bool
 	}{
 		{
 			in:  "a.b.c",
@@ -237,12 +238,45 @@ func TestNormalization(t *testing.T) {
 			in:  "ab^%+=.cdef.jk&",
 			out: "ab____.cdef.jk_",
 		},
+		{
+			in:  "a.",
+			out: "a",
+		},
+		{
+			in:  ".",
+			out: "",
+			err: true,
+		},
+		{
+			in:  "...",
+			out: "",
+			err: true,
+		},
+		{
+			in:  ".a.",
+			out: "a",
+		},
+		{
+			in:  ".a.b.c",
+			out: "a.b.c",
+		},
+		{
+			in:  "",
+			out: "",
+		},
+		{
+			in:  "...-..-..-.",
+			out: "-.-.-",
+		},
 	}
 
 	for _, test := range tt {
 		s, err := normalizePathBytes([]byte(test.in))
-		if err != nil {
-			t.Fatalf("got error while normalizing: %v", err)
+		if err != nil && !test.err {
+			t.Fatalf("got unexpected error while normalizing: %v", err)
+		}
+		if err == nil && test.err {
+			t.Fatalf("no error when error expected, record: %s", test.in)
 		}
 		if string(s) != test.out {
 			t.Fatalf("Got %s after normalization of %s, expected %s", s, test.in, test.out)
