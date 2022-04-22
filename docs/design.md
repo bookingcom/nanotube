@@ -4,7 +4,7 @@
 
 The design overview diagram:
 
-![design](design.png)
+![design](design.svg)
 
 
 ### Record processing order
@@ -33,4 +33,4 @@ The steps when the system is shut down:
 
 ## Config
 
-Please see _docs/config/_ for the config documentation.
+Please see [here](config/README.md) for the config documentation.
