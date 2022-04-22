@@ -22,15 +22,15 @@ Records coming in for routing are processed in the following order (as also seen
 
 The steps when the system is shut down:
 
-1. Get interrupt signal
-2. Stop accepting incoming connections
-3. Finish reading from already open connections
-4. Close open connections
-5. Empty *main queue*
-6. Empty *host queues*
-7. Close connections to hosts
-8. Ack termination finish
+1. Get interrupt signal.
+2. Stop accepting incoming connections.
+3. Finish reading from already open connections.
+4. Close open connections.
+5. Empty *main queue*.
+6. Empty *host queues*.
+7. Close connections to hosts.
+8. Ack termination finish.
 
 ## Config
 
-Please see _config/_ for the config documentation.
+Please see _docs/config/_ for the config documentation.
