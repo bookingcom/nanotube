@@ -46,17 +46,20 @@ func worker(wg *sync.WaitGroup, queue <-chan []byte, rules rules.Rules, rewrites
 	}
 }
 
-func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) { //nolint:golint,unparam
+func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
+	metrics *metrics.Prom) { //nolint:golint,unparam
 	r, err := rec.ParseRecBytes(s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
-		lg.Info("Error parsing incoming record", zap.String("record", string(s)), zap.Error(err))
+		lg.Info("Error parsing incoming record", zap.String("record_str", string(s)),
+			zap.Binary("record_base64", s), zap.Error(err))
 		metrics.ErrorRecs.Inc()
 		return
 	}
 
 	recs, err := rewrites.RewriteMetricBytes(r, metrics)
 	if err != nil {
-		lg.Info("Error parsing incoming record", zap.String("record", string(s)), zap.Error(err))
+		lg.Info("Error parsing incoming record", zap.String("record_str", string(s)),
+			zap.Binary("record_base64", s), zap.Error(err))
 		return
 	}
 

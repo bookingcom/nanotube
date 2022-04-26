@@ -80,20 +80,20 @@ func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan<- []byt
 
 func scanForRecordsTCP(conn net.Conn, queue chan<- []byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(conn)
-	scanin := make(chan []byte)
+	in := make(chan []byte)
 	go func() {
 		for sc.Scan() {
 			rec := []byte{}
 			rec = append(rec, sc.Bytes()...)
-			scanin <- rec
+			in <- rec
 		}
-		close(scanin)
+		close(in)
 	}()
 
 loop:
 	for {
 		select {
-		case rec, open := <-scanin:
+		case rec, open := <-in:
 			if !open {
 				break loop
 			} else {
