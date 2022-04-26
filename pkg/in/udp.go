@@ -15,29 +15,36 @@ func ListenUDP(conn net.PacketConn, queue chan []byte, stop <-chan struct{}, con
 	go func() {
 		<-stop
 		lg.Info("Termination: Closing the UDP connection.")
-		cerr := conn.Close()
-		if cerr != nil {
-			lg.Error("closing the incoming UDP connection failed", zap.Error(cerr))
+		closeErr := conn.Close()
+		if closeErr != nil {
+			lg.Error("closing the incoming UDP connection failed", zap.Error(closeErr))
 		}
 	}()
 
 	buf := make([]byte, 64*1024) // 64k is the max UDP datagram size
+loop:
 	for {
-		nRead, _, err := conn.ReadFrom(buf)
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				break
+		select {
+		case <-stop:
+			break loop
+		default:
+			nRead, _, err := conn.ReadFrom(buf)
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					break
+				}
+
+				lg.Error("error reading UDP datagram", zap.Error(err))
+				continue
 			}
 
-			lg.Error("error reading UDP datagram", zap.Error(err))
-			continue
-		}
+			lines := bytes.Split(buf[:nRead], []byte{'\n'})
 
-		// WARNING: The split does not copy the data.
-		lines := bytes.Split(buf[:nRead], []byte{'\n'})
-
-		for i := 0; i < len(lines)-1; i++ {
-			sendToMainQ(lines[i], queue, ms)
+			for i := 0; i < len(lines)-1; i++ { // last line is empty
+				rec := make([]byte, len(lines[i]))
+				copy(rec, lines[i])
+				sendToMainQ(rec, queue, ms)
+			}
 		}
 	}
 
