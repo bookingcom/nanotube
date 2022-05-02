@@ -3,7 +3,7 @@ Description=Receiver fro NT test
 After=network.target
 
 [Service]
-ExecStart={{ bin_location }} -ports {{ ports }} -prom-port {{ prom_port }}
+ExecStart={{ bin_location }} -ports {{ ports }} -prom-port {{ prom_port }} -profiler {{ pprof_port }}
 LimitNOFILE=5000
 User=nanotube
 Group=nanotube

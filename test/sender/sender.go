@@ -130,8 +130,6 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 		}
 	}()
 
-	s := NewStats(time.Second*5, 0, lg)
-
 	if rateIncrease != "" {
 
 		low, step, period, high, err := parseRateIncreaseFlag(rateIncrease)
@@ -164,7 +162,6 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 						}
 						conn = openTCPConnection(destination, retryTCP)
 					}
-					s.Inc()
 					ms.outRecs.Inc()
 				}
 
@@ -188,7 +185,6 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 					}
 					conn = openTCPConnection(destination, retryTCP)
 				}
-				s.Inc()
 				ms.outRecs.Inc()
 			}
 
@@ -273,7 +269,7 @@ func main() {
 	if targetPort == nil || *targetPort == 0 {
 		lg.Fatal("please supply target port")
 	}
-	if *connections != 1 && !*cycle {
+	if *connections != 1 && !*cycle && *rateIncrease == "" {
 		lg.Fatal("We can use >1 connection only with the cycle option")
 	}
 	if *profiler != "" {
