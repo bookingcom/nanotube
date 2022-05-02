@@ -1,0 +1,5 @@
+---
+bin_location: "/usr/local/bin/prometheus"
+conf_path: "/etc"
+data_path: "/var/lib/prometheus"
+prom_listening_port: 9091

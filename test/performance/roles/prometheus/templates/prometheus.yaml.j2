@@ -1,0 +1,11 @@
+global:
+  scrape_interval:     5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: default
+    static_configs:
+      - targets:
+          - {{ nanotube_host }}:{{ nanotube_prom_port }}
+          - {{ receiver_host }}:{{ receiver_prom_port }}
+          - {{ sender_host }}:{{ sender_prom_port }}

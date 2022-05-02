@@ -1,0 +1,21 @@
+# ansible-playbook presetup.yaml --extra-vars="presetup_sender_host=... presetup_receiver_host=... presetup_nanotube_host=..."
+
+---
+- name: install
+  hosts: localhost
+  connection: local all
+  tasks:
+    - name: generate hosts
+      ansible.builtin.template:
+        src: hosts.yaml.j2
+        dest: hosts.yaml
+
+    - name: generate setup
+      ansible.builtin.template:
+        src: setup.yaml.j2
+        dest: setup.yaml
+
+    - name: generate sender run script
+      ansible.builtin.template:
+        src: run-sender.sh.j2
+        dest: run-sender.sh

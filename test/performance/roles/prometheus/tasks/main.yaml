@@ -1,0 +1,54 @@
+---
+- name: create group
+  group:
+    name: prometheus
+    state: present
+    system: true
+
+- name: create user
+  user:
+    name: prometheus
+    group: prometheus
+    system: true
+
+- name: copy the binary
+  ansible.builtin.copy:
+    src: prometheus
+    dest: "{{ bin_location }}"
+    owner: prometheus
+    group: prometheus
+    mode: "0744"
+  notify: restart-prometheus
+
+- name: copy config
+  template:
+    src: prometheus.yaml.j2
+    dest: "{{ conf_path }}/prometheus.yaml"
+    owner: prometheus
+    group: prometheus
+    mode: "0744"
+  notify: restart-prometheus
+
+- name: make data directory
+  file:
+    path: "{{ data_path }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0774"
+
+- name: copy systemd unit file
+  template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    owner: prometheus
+    group: prometheus
+    mode: "0644"
+  notify: restart-prometheus
+
+- name: run systemd
+  ansible.builtin.systemd:
+    name: prometheus
+    state: started
+    daemon_reload: yes
+    enabled: yes

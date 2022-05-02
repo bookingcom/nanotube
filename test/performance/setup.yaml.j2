@@ -10,7 +10,12 @@
   become: yes
   roles:
     - role: nanotube
-      receiver: "<receiver_host>"
+      receiver: {{ presetup_receiver_host }}
+    - role: prometheus
+      nanotube_host: {{ presetup_nanotube_host }}
+      receiver_host: {{ presetup_receiver_host }}
+      nanotube_prom_port: 9090
+      receiver_prom_port: 9090
 
 - hosts: receiver
   gather_facts: no

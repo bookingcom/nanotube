@@ -14,12 +14,34 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.uber.org/ratelimit"
 	"go.uber.org/zap"
 )
 
-func connectAndSendUDP(destination string, cycle bool, ncycles int, messages [][]byte, rate int,
+type metrics struct {
+	outRecs prometheus.Counter
+}
+
+func setupMetrics() *metrics {
+	ms := metrics{
+		outRecs: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "sender",
+			Name:      "out_records_total",
+			Help:      "Outgoing records counter.",
+		}),
+	}
+	err := prometheus.Register(ms.outRecs)
+	if err != nil {
+		log.Fatalf("error registering the in_records_total metric: %v", err)
+	}
+
+	return &ms
+}
+
+func connectAndSendUDP(destination string, cycle bool, cycles int, messages [][]byte, rate int,
 	wg *sync.WaitGroup, lg *zap.Logger) {
 
 	s := NewStats(time.Second*5, 0, lg)
@@ -54,7 +76,7 @@ func connectAndSendUDP(destination string, cycle bool, ncycles int, messages [][
 		if !cycle {
 			break
 		} else {
-			if ncycles != 0 && i >= ncycles-1 {
+			if cycles != 0 && i >= cycles-1 {
 				break
 			}
 		}
@@ -97,7 +119,7 @@ func parseRateIncreaseFlag(rateIncrease string) (low int, step int, period int, 
 }
 
 func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles int, messages [][]byte, rate int, rateIncrease string,
-	wg *sync.WaitGroup, lg *zap.Logger) {
+	wg *sync.WaitGroup, ms *metrics, lg *zap.Logger) {
 
 	conn := openTCPConnection(destination, retryTCP)
 
@@ -143,6 +165,7 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 						conn = openTCPConnection(destination, retryTCP)
 					}
 					s.Inc()
+					ms.outRecs.Inc()
 				}
 
 				if done {
@@ -166,6 +189,7 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 					conn = openTCPConnection(destination, retryTCP)
 				}
 				s.Inc()
+				ms.outRecs.Inc()
 			}
 
 			if !cycle {
@@ -231,6 +255,7 @@ func main() {
 	connections := flag.Int("connections", 1, "number of concurrent connections")
 	profiler := flag.String("profiler", "", "Where should the profiler listen to?")
 	rateIncrease := flag.String("gradualLoadIncerase", "", "Has the form low:step:period:high. Rate starts at *low* and increases by *step* every *period* seconds until it reaches *high*. Only works for TCP.")
+	promPort := flag.Int("promPort", 0, "Prometheus server port. If 0, no server is started. Default is 0.")
 
 	flag.Parse()
 
@@ -258,6 +283,21 @@ func main() {
 
 	}
 
+	ms := setupMetrics()
+
+	if *promPort != 0 {
+		go func() {
+			l, err := net.Listen("tcp", fmt.Sprintf(":%d", *promPort))
+			if err != nil {
+				lg.Error("opening TCP port for Prometheus failed", zap.Error(err))
+			}
+			err = http.Serve(l, promhttp.Handler())
+			if err != nil {
+				lg.Error("prometheus server failed", zap.Error(err))
+			}
+		}()
+	}
+
 	data := readPlaybackData(*path)
 
 	var wg sync.WaitGroup
@@ -268,7 +308,7 @@ func main() {
 		if *useUDP {
 			go connectAndSendUDP(destination, *cycle, *nCycles, data, *rate, &wg, lg)
 		} else {
-			go connectAndSendTCP(destination, *retryTCP, *cycle, *nCycles, data, *rate, *rateIncrease, &wg, lg)
+			go connectAndSendTCP(destination, *retryTCP, *cycle, *nCycles, data, *rate, *rateIncrease, &wg, ms, lg)
 		}
 	}
 
