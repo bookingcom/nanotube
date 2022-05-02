@@ -1,0 +1,12 @@
+[Unit]
+Description=Prometheus
+After=network.target
+
+[Service]
+ExecStart={{ bin_location }} --config.file={{ conf_path }}/prometheus.yaml --storage.tsdb.path={{ data_path }} --web.listen-address=:{{ prom_listening_port }}
+LimitNOFILE=5000
+User=prometheus
+Group=prometheus
+
+[Install]
+WantedBy=multi-user.target
