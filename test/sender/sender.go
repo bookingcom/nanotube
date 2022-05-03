@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -42,9 +43,7 @@ func setupMetrics() *metrics {
 }
 
 func connectAndSendUDP(destination string, cycle bool, cycles int, messages [][]byte, rate int,
-	wg *sync.WaitGroup, lg *zap.Logger) {
-
-	s := NewStats(time.Second*5, 0, lg)
+	wg *sync.WaitGroup, ms *metrics, lg *zap.Logger) {
 
 	limiter := ratelimit.New(rate)
 
@@ -53,13 +52,13 @@ func connectAndSendUDP(destination string, cycle bool, cycles int, messages [][]
 
 	conn, err = net.Dial("udp", destination)
 	if err != nil {
-		log.Fatalf("could not connect to target host : %v", err)
+		lg.Fatal("could not connect to target host", zap.Error(err))
 	}
 
 	defer func() {
 		err = conn.Close()
 		if err != nil {
-			log.Fatalf("error closing connection: %v", err)
+			lg.Fatal("error closing connection", zap.Error(err))
 		}
 	}()
 
@@ -68,9 +67,9 @@ func connectAndSendUDP(destination string, cycle bool, cycles int, messages [][]
 			limiter.Take()
 			_, err := conn.Write(message)
 			if err != nil {
-				log.Printf("error sending data: %v", err)
+				lg.Error("error sending data", zap.Error(err))
 			}
-			s.Inc()
+			ms.outRecs.Inc()
 		}
 
 		if !cycle {
@@ -80,8 +79,6 @@ func connectAndSendUDP(destination string, cycle bool, cycles int, messages [][]
 				break
 			}
 		}
-
-		log.Printf("Finished passage through the file for cycle %d. Cycling...\n", i)
 	}
 
 	wg.Done()
@@ -118,10 +115,11 @@ func parseRateIncreaseFlag(rateIncrease string) (low int, step int, period int, 
 	return
 }
 
-func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles int, messages [][]byte, rate int, rateIncrease string,
+func connectAndSendTCP(destination string, retryTCP bool, TCPBufSize int, cycle bool, ncycles int, messages [][]byte, rate int, rateIncrease string,
 	wg *sync.WaitGroup, ms *metrics, lg *zap.Logger) {
 
-	conn := openTCPConnection(destination, retryTCP)
+	conn := openTCPConnection(destination, retryTCP, lg)
+	bufConn := bufio.NewWriterSize(conn, TCPBufSize)
 
 	defer func() {
 		err := conn.Close()
@@ -142,27 +140,32 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 
 		for rate = low; rate <= high; rate += step {
 			startTime := time.Now()
-			limiter := ratelimit.New(rate)
+			limiter := ratelimit.New(rate / 10)
 
 			done := false
 			for {
+				i := 0
 				for _, message := range messages {
 					if time.Since(startTime).Seconds() >= float64(period) {
 						done = true
 						break
 					}
 
-					limiter.Take()
-					_, err := conn.Write(message)
+					if i%10 == 0 {
+						limiter.Take()
+					}
+					_, err := bufConn.Write(message)
 					if err != nil {
-						lg.Info("error sending data", zap.Error(err))
+						lg.Error("error sending data", zap.Error(err))
 						err := conn.Close()
 						if err != nil {
 							lg.Fatal("error closing connection", zap.Error(err))
 						}
-						conn = openTCPConnection(destination, retryTCP)
+						conn = openTCPConnection(destination, retryTCP, lg)
+						bufConn = bufio.NewWriterSize(conn, TCPBufSize)
 					}
 					ms.outRecs.Inc()
+					i++
 				}
 
 				if done {
@@ -171,19 +174,25 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 			}
 		}
 	} else {
-		limiter := ratelimit.New(rate)
+		limiter := ratelimit.New(rate / 10)
 
 		for i := 0; ; i++ {
+			j := 0
 			for _, message := range messages {
-				limiter.Take()
-				_, err := conn.Write(message)
+				if j%10 == 0 {
+					limiter.Take()
+				}
+				j++
+
+				_, err := bufConn.Write(message)
 				if err != nil {
-					log.Printf("error sending data: %v", err)
+					lg.Error("error sending data", zap.Error(err))
 					err := conn.Close()
 					if err != nil {
-						log.Fatalf("error closing connection: %v", err)
+						lg.Fatal("error closing connection", zap.Error(err))
 					}
-					conn = openTCPConnection(destination, retryTCP)
+					conn = openTCPConnection(destination, retryTCP, lg)
+					bufConn = bufio.NewWriterSize(conn, TCPBufSize)
 				}
 				ms.outRecs.Inc()
 			}
@@ -195,21 +204,19 @@ func connectAndSendTCP(destination string, retryTCP bool, cycle bool, ncycles in
 					break
 				}
 			}
-
-			log.Printf("Finished passage through the file for cycle %d. Cycling...\n", i)
 		}
 	}
 
 	wg.Done()
 }
 
-func openTCPConnection(destination string, retryTCP bool) net.Conn {
+func openTCPConnection(destination string, retryTCP bool, lg *zap.Logger) net.Conn {
 	conn, err := net.Dial("tcp", destination)
 
 	if retryTCP {
 		for {
 			if err != nil {
-				log.Printf("could open TCP connection to NT on %s, error %v. Retrying...", destination, err)
+				lg.Warn("could open TCP connection to NT. Retrying...", zap.String("destination", destination), zap.Error(err))
 			} else {
 				break
 			}
@@ -218,17 +225,17 @@ func openTCPConnection(destination string, retryTCP bool) net.Conn {
 		}
 	} else {
 		if err != nil {
-			log.Fatalf("could not connect to target host : %v", err)
+			lg.Fatal("could not connect to target host", zap.Error(err))
 		}
 	}
 
 	return conn
 }
 
-func readPlaybackData(path string) [][]byte {
+func readPlaybackData(path string, lg *zap.Logger) [][]byte {
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Fatalf("could not open file : %v", err)
+		lg.Fatal("could not open file", zap.Error(err))
 	}
 	messageStrings := strings.SplitAfter(string(content), "\n")
 	var messages [][]byte
@@ -252,12 +259,13 @@ func main() {
 	profiler := flag.String("profiler", "", "Where should the profiler listen to?")
 	rateIncrease := flag.String("gradualLoadIncerase", "", "Has the form low:step:period:high. Rate starts at *low* and increases by *step* every *period* seconds until it reaches *high*. Only works for TCP.")
 	promPort := flag.Int("promPort", 0, "Prometheus server port. If 0, no server is started. Default is 0.")
+	TCPBufSize := flag.Int("TCPBufSize", 0, "Size of TCP buffer. 0 by default.")
 
 	flag.Parse()
 
 	lg, err := zap.NewProduction()
 	if err != nil {
-		log.Fatalf("failed to create logger: %v", err)
+		lg.Fatal("failed to create logger", zap.Error(err))
 	}
 
 	if path == nil || *path == "" {
@@ -274,7 +282,7 @@ func main() {
 	}
 	if *profiler != "" {
 		go func() {
-			log.Println(http.ListenAndServe(*profiler, nil))
+			lg.Info("pprof server exit status", zap.Error(http.ListenAndServe(*profiler, nil)))
 		}()
 
 	}
@@ -294,7 +302,7 @@ func main() {
 		}()
 	}
 
-	data := readPlaybackData(*path)
+	data := readPlaybackData(*path, lg)
 
 	var wg sync.WaitGroup
 
@@ -302,9 +310,9 @@ func main() {
 		wg.Add(1)
 		destination := net.JoinHostPort(*targetHost, strconv.Itoa(*targetPort))
 		if *useUDP {
-			go connectAndSendUDP(destination, *cycle, *nCycles, data, *rate, &wg, lg)
+			go connectAndSendUDP(destination, *cycle, *nCycles, data, *rate, &wg, ms, lg)
 		} else {
-			go connectAndSendTCP(destination, *retryTCP, *cycle, *nCycles, data, *rate, *rateIncrease, &wg, ms, lg)
+			go connectAndSendTCP(destination, *retryTCP, *TCPBufSize, *cycle, *nCycles, data, *rate, *rateIncrease, &wg, ms, lg)
 		}
 	}
 
