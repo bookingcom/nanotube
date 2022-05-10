@@ -10,7 +10,7 @@ JQ_BIN='jq'
 
 trap_pid() {
     PIDS+="$1 "
-    trap '{ echo "*** force-killing $PIDS ***"; kill -9 $PIDS 2>/dev/null; exit 255; }' SIGINT SIGTERM ERR
+    trap '{ echo "*** force-killing $PIDS ***"; kill -9 $PIDS 2>/dev/null; exit 255; }' SIGINT SIGTERM
 }
 
 for d in test* ; do
@@ -58,7 +58,7 @@ for d in test* ; do
     echo -e "\n>>> sender finished running"
 
     echo -e "\n>>> waiting for nanotube"
-    kill $ntPID
+    kill -TERM $ntPID
     wait $ntPID
 
     echo -e "\n>>> waiting for receiver to process"
@@ -69,7 +69,7 @@ for d in test* ; do
         (( "$t" > 2000 )) && break;
     done
 
-    kill $recPID
+    kill -TERM $recPID
     wait $recPID
 
     rm -f "${tmpdir}/in"

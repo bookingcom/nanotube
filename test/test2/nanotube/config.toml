@@ -27,4 +27,4 @@ PprofPort = 6060
 
 # Time between termination signal and forced termination of the process. This helps when graceful
 # shutdown is stuck or slow.
-TermTimeoutSec = 1
+TermTimeoutSec = 3

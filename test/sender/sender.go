@@ -140,7 +140,7 @@ func connectAndSendTCP(destination string, retryTCP bool, TCPBufSize int, cycle 
 
 		for rate = low; rate <= high; rate += step {
 			startTime := time.Now()
-			limiter := ratelimit.New(rate / 10)
+			limiter := ratelimit.New(rate / 100)
 
 			done := false
 			for {
@@ -151,7 +151,7 @@ func connectAndSendTCP(destination string, retryTCP bool, TCPBufSize int, cycle 
 						break
 					}
 
-					if i%10 == 0 {
+					if i%100 == 0 {
 						limiter.Take()
 					}
 					_, err := bufConn.Write(message)
@@ -174,12 +174,12 @@ func connectAndSendTCP(destination string, retryTCP bool, TCPBufSize int, cycle 
 			}
 		}
 	} else {
-		limiter := ratelimit.New(rate / 10)
+		limiter := ratelimit.New(rate / 100)
 
 		for i := 0; ; i++ {
 			j := 0
 			for _, message := range messages {
-				if j%10 == 0 {
+				if j%100 == 0 {
 					limiter.Take()
 				}
 				j++
@@ -196,6 +196,7 @@ func connectAndSendTCP(destination string, retryTCP bool, TCPBufSize int, cycle 
 				}
 				ms.outRecs.Inc()
 			}
+			bufConn.Flush()
 
 			if !cycle {
 				break
@@ -220,7 +221,7 @@ func openTCPConnection(destination string, retryTCP bool, lg *zap.Logger) net.Co
 			} else {
 				break
 			}
-			time.Sleep(time.Second * 10)
+			time.Sleep(time.Second)
 			conn, err = net.Dial("tcp", destination)
 		}
 	} else {
@@ -280,6 +281,10 @@ func main() {
 	if *connections != 1 && !*cycle && *rateIncrease == "" {
 		lg.Fatal("We can use >1 connection only with the cycle option")
 	}
+	if *rate < 100 {
+		lg.Fatal("rate too low, minimal rate 100", zap.Int("rate", *rate))
+	}
+
 	if *profiler != "" {
 		go func() {
 			lg.Info("pprof server exit status", zap.Error(http.ListenAndServe(*profiler, nil)))
