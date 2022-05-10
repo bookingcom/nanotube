@@ -113,7 +113,8 @@ func main() {
 
 	// TODO: Bring back
 	// gaugeQueues(queue, clusters, ms)
-	procDone := Process(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
+	// procDone := Process(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
+	procDone := ProcessBuf(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
 	done := clusters.Send(procDone)
 
 	// SIGTERM gracefully terminates with timeout
