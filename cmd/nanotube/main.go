@@ -142,10 +142,10 @@ func main() {
 			} else {
 				lg.Info("Reload: Started new process. Moved FDs.", zap.Int("pid", pid))
 			}
-			lg.Info("Termination: Staring termination sequence")
+			lg.Info("Termination: Staring termination sequence.")
 			close(stop)
 		} else {
-			lg.Info("Termination: Staring termination sequence")
+			lg.Info("Termination: Staring termination sequence.")
 			close(stop)
 		}
 
@@ -154,8 +154,9 @@ func main() {
 
 	select {
 	case <-time.After(time.Second * time.Duration(cfg.TermTimeoutSec)):
-		log.Fatalf("Termination: Force quit due to timeout. Queue not fully flushed")
+		log.Fatalf("Termination: Force quit due to timeout. Queue not fully flushed.")
 	case <-done:
+		lg.Info("Terminated gracefully.")
 	}
 }
 

@@ -90,6 +90,7 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 	go func() {
 		connWG.Wait()
 		lg.Info("Termination: All incoming connections closed. Draining the main queue.")
+		close(queueBuf)
 		close(queue)
 	}()
 
