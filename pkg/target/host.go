@@ -201,8 +201,8 @@ func (h *Host) tryToSend(r *rec.RecBytes) {
 		if err == nil {
 			h.outRecs.Inc()
 			h.outRecsTotal.Inc()
-			h.processingDuration.Observe(time.Since(r.Received).Seconds())
-			h.Conn.LastConnUse = time.Now()
+			// h.processingDuration.Observe(time.Since(r.Received).Seconds())
+			h.Conn.LastConnUse = time.Now() // TODO: This is not the las time conn was used. It is used when buffer is flushed.
 			break
 		}
 
