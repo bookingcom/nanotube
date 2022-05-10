@@ -14,10 +14,10 @@ ListenUDP = ""
 TargetPort = 2008
 
 # The size on main queue between listen and routing. Refer to docs for details.
-MainQueueSize = 100
+MainQueueSize = 10000
 # Each host has it's own queue that contains records to be sent to it. This is the size of it.
 # Refer to docs for more insight.
-HostQueueSize = 10
+HostQueueSize = 1000
 
 #Pool of workers processing the main queue
 WorkerPoolSize = 10

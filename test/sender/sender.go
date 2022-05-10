@@ -196,7 +196,10 @@ func connectAndSendTCP(destination string, retryTCP bool, TCPBufSize int, cycle 
 				}
 				ms.outRecs.Inc()
 			}
-			bufConn.Flush()
+			err := bufConn.Flush()
+			if err != nil {
+				lg.Error("could not flush connection buffer", zap.String("destination", destination), zap.Error(err))
+			}
 
 			if !cycle {
 				break
