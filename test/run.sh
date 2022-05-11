@@ -6,7 +6,6 @@
 # set -e
 
 PIDS=''
-JQ_BIN='jq'
 
 trap_pid() {
     PIDS+="$1 "
@@ -34,7 +33,7 @@ for d in test* ; do
     fi
 
     echo -en "\n>>> starting receiver..."
-    ./receiver/receiver -local-api-port 8024 -ports "$(ls -x "${d}/out")" -outdir "$tmpdir" &
+    ./receiver/receiver -promPort 8024 -ports "$(ls -x "${d}/out")" -outdir "$tmpdir" &
     recPID=$!
     trap_pid ${recPID}
     echo -e "\r>>> starting receiver: pid ${recPID}"
@@ -43,9 +42,10 @@ for d in test* ; do
     while true
     do
         sleep 1;
-        r=$(curl -sS localhost:8024/status | ${JQ_BIN} .Ready)
-        [[ $r = "true" ]] && break;
+        r=$(curl -sS localhost:8024/metrics | grep '^receiver_n_open_ports' | tr -d '\012\015' | cut -d' ' -f2)
+        [[ $r -gt 0 ]] && break;
     done
+    tOld=$(curl -sS localhost:8024/metrics | grep '^receiver_time_of_last_write' | tr -d '\012\015' | cut -d' ' -f2)
 
     if [ -e "${d}/in.bz2" ] && [ ! -f "${d}/in" ]; then
         echo -e "\n>>> decompressing input"
@@ -65,8 +65,9 @@ for d in test* ; do
 
     while true; do
         sleep 1;
-        t=$(curl -sS localhost:8024/status | ${JQ_BIN} .IdleTimeMilliSecs);
-        (( "$t" > 2000 )) && break;
+        t=$(curl -sS localhost:8024/metrics | grep '^receiver_time_of_last_write' | tr -d '\012\015' | cut -d' ' -f2)
+        [ "$t" -eq "$tOld" ] && break;
+        tOld=t
     done
 
     kill $recPID
