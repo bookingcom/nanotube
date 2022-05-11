@@ -53,6 +53,7 @@ loop:
 	connWG.Done()
 }
 
+// ListenUDPBuf is a buffered version of ListenUDP.
 func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	go func() {
 		<-stop
@@ -64,7 +65,7 @@ func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}
 	}()
 
 	buf := make([]byte, 64*1024) // 64k is the max UDP datagram size
-	qb := NewQBuf(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
+	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
 loop:
 	for {
 		select {

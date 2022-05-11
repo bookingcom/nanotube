@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// AcceptAndListenTCPBuf is batched version of AcceptAndListenTCP.
 func AcceptAndListenTCPBuf(l net.Listener, queue chan<- [][]byte, term <-chan struct{},
 	cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	var wg sync.WaitGroup
@@ -47,10 +48,10 @@ loop:
 			go readFromConnectionTCPBuf(&wg, conn, queue, term, cfg, ms, lg)
 		}
 	}
-	// TODO: Change logging level to debug
-	lg.Info("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
+
+	lg.Debug("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
 	wg.Wait()
-	lg.Info("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
+	lg.Debug("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
 
 	connWG.Done()
 }
@@ -92,10 +93,10 @@ loop:
 			go readFromConnectionTCP(&wg, conn, queue, term, cfg, ms, lg)
 		}
 	}
-	// TODO: Change logging level to debug
-	lg.Info("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
+
+	lg.Debug("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
 	wg.Wait()
-	lg.Info("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
+	lg.Debug("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
 
 	connWG.Done()
 }
@@ -141,7 +142,6 @@ func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- []
 			zap.String("sender", conn.RemoteAddr().String()))
 	}
 
-	// scanForRecordsTCP(conn, queue, stop, cfg, ms, lg)
 	scanForRecordsTCPBuf(conn, queue, stop, cfg, ms, lg)
 }
 
@@ -185,7 +185,7 @@ loop:
 func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(conn)
 
-	qb := NewQBuf(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
+	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
 	qb.Flush()
 
 	in := make(chan []byte)
@@ -230,67 +230,4 @@ func sendToMainQ(rec []byte, q chan<- []byte, ms *metrics.Prom) {
 	default:
 		ms.ThrottledRecs.Inc()
 	}
-}
-
-func sendToMainQBuf(recs [][]byte, q chan<- [][]byte, ms *metrics.Prom) {
-	select {
-	case q <- recs:
-		ms.InRecs.Add(float64(len(recs)))
-	default:
-		ms.ThrottledRecs.Add(float64(len(recs)))
-	}
-}
-
-// QBuf represents a buffer to send records into the main queue.
-// QBuf accumulates records in a buffer. When buffer is full, it sends it as a batch
-// to the main queue.
-type QBuf struct {
-	q       chan<- [][]byte
-	buf     [][]byte
-	bufSize int
-	ms      *metrics.Prom
-	m       sync.Mutex
-	period  time.Duration
-}
-
-func NewQBuf(q chan<- [][]byte, bufSize int, periodSec int, ms *metrics.Prom) *QBuf {
-	qb := &QBuf{
-		q:       q,
-		bufSize: bufSize,
-		ms:      ms,
-		period:  time.Second * time.Duration(periodSec),
-	}
-
-	go qb.periodicFlush()
-
-	return qb
-}
-
-func (qb *QBuf) periodicFlush() {
-	for {
-		time.Sleep(qb.period)
-		qb.Flush()
-	}
-}
-
-func (qb *QBuf) Push(rec []byte) {
-	qb.m.Lock()
-
-	qb.buf = append(qb.buf, rec)
-
-	if len(qb.buf) > qb.bufSize {
-		qb.m.Unlock()
-		qb.Flush()
-	} else {
-		qb.m.Unlock()
-	}
-}
-
-func (qb *QBuf) Flush() {
-	qb.m.Lock()
-	defer qb.m.Unlock()
-
-	sendToMainQBuf(qb.buf, qb.q, qb.ms)
-
-	qb.buf = [][]byte{}
 }

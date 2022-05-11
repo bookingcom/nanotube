@@ -13,6 +13,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rules"
 )
 
+// ProcessBuf contains all the CPU-intensive processing operations.
 func ProcessBuf(queue <-chan [][]byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize int,
 	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) chan struct{} {
 	done := make(chan struct{})
