@@ -14,8 +14,10 @@
     - role: prometheus
       nanotube_host: {{ presetup_nanotube_host }}
       receiver_host: {{ presetup_receiver_host }}
+      sender_host: {{ presetup_sender_host }}
       nanotube_prom_port: 9090
       receiver_prom_port: 9090
+      sender_prom_port: 9090
 
 - hosts: receiver
   gather_facts: no

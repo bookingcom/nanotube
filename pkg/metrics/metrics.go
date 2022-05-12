@@ -10,9 +10,10 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	InRecs         prometheus.Counter
-	InRecsBySource *prometheus.CounterVec
-	ThrottledRecs  prometheus.Counter
+	InRecs             prometheus.Counter
+	InRecsBySource     *prometheus.CounterVec
+	ThrottledRecs      prometheus.Counter
+	DemuxThrottledRecs prometheus.Counter
 
 	StateChangeHosts          *prometheus.CounterVec
 	StateChangeHostsTotal     prometheus.Counter
@@ -85,6 +86,11 @@ func New(conf *conf.Main) *Prom {
 			Namespace: "nanotube",
 			Name:      "throttled_records_total",
 			Help:      "Records dropped from the main queue because it's full.",
+		}),
+		DemuxThrottledRecs: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "demux_throttled_records_total",
+			Help:      "Records dropped from the demuxer.",
 		}),
 		ThrottledHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
@@ -232,6 +238,11 @@ func Register(m *Prom, cfg *conf.Main) {
 	err = prometheus.Register(m.ThrottledRecs)
 	if err != nil {
 		log.Fatalf("error registering the throttled_records_counter metric: %v", err)
+	}
+
+	err = prometheus.Register(m.DemuxThrottledRecs)
+	if err != nil {
+		log.Fatalf("error registering the demux_throttled_records_counter metric: %v", err)
 	}
 
 	err = prometheus.Register(m.ThrottledHostsTotal)
