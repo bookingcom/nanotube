@@ -12,9 +12,8 @@ import (
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
-	"golang.org/x/sync/errgroup"
-
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestMain(t *testing.T) {
@@ -62,7 +61,7 @@ func setup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}
-	done := Process(pipe, rules, rewrites, cfg.WorkerPoolSize, true, true, lg, ms)
+	done := ProcessBuf(pipe, rules, rewrites, cfg.WorkerPoolSize, true, true, lg, ms)
 	_ = clusters.Send(done)
 }
 

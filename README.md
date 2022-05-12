@@ -8,11 +8,10 @@ This is the router (or relay, or reverse-proxy) for Graphite. It routes incoming
 
 ## Build and run
 
-1. Get this repository with
-`go get -u github.com/bookingcom/nanotube`
+1. Clone the repo.
 2. Navigate to it and run
 `make`
-to build
+to build.
 3. Run it with
 
 ```
@@ -46,6 +45,8 @@ The main supported protocol is [line](https://graphite.readthedocs.io/en/latest/
 path.path.path value datetime
 ```
 
+See [here](docs/record_parsing.md) for more details.
+
 The support of [Open Telemetry gRPC](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto) is experimental.
 
 ## Zero-downtime reload
@@ -54,7 +55,7 @@ Nanotube supports zero-downtime reload that can be triggered with `USR2` signal.
 
 ## Tags support
 
-[Tags are not supported for now.](https://github.com/bookingcom/nanotube/issues/4)
+Tags are not supported. See [here]](https://github.com/bookingcom/nanotube/issues/4) for details.
 
 ## Design
 
@@ -64,6 +65,9 @@ Design details are in the design [doc](docs/design.md).
 
 We support OpenTelemetry by using [v0.7.0 of protobuf protocol](https://github.com/open-telemetry/opentelemetry-proto/releases/tag/v0.7.0).
 
+## K8s support
+
+Nanotube can run as a daemonset in k8s. It can play a role of the submission sidecar by injecting ports into tagged pods. See [k8s/launch.yml] for a sample setup.
 
 ## Acknowledgment
 

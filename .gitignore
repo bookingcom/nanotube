@@ -19,3 +19,7 @@ test/test2/in
 test/performance/roles/receiver/files/receiver
 test/performance/roles/sender/files/sender
 test/performance/roles/nanotube/files/nanotube
+test/performance/hosts.yaml
+test/performance/run-sender.sh
+test/performance/setup.yaml
+test/performance/roles/prometheus/files/prometheus

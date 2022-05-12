@@ -195,14 +195,13 @@ func (h *Host) tryToSend(r *rec.RecBytes) {
 			h.Lg.Warn("error setting write deadline", zap.Error(err))
 		}
 
-		// this may loose one record on disconnect
 		_, err = h.Conn.W.Write([]byte(r.Serialize()))
 
 		if err == nil {
 			h.outRecs.Inc()
 			h.outRecsTotal.Inc()
-			h.processingDuration.Observe(time.Since(r.Received).Seconds())
-			h.Conn.LastConnUse = time.Now()
+			// h.processingDuration.Observe(time.Since(r.Received).Seconds())
+			h.Conn.LastConnUse = time.Now() // TODO: This is not the last time conn was used. It is used when buffer is flushed.
 			break
 		}
 

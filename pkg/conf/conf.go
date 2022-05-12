@@ -57,6 +57,10 @@ type Main struct {
 	// Each host has it's own queue that contains records to be sent to it. This is the size of it.
 	// Refer to docs for more insight.
 	HostQueueSize uint64
+	// The size of records batch sent into main queue.
+	MainQueueBatchSize uint64
+	// Period to flush the buffer when making batches for the main q.
+	BatchFlushPerdiodSec uint32
 
 	// Number of workers processing main queue and putting records into host queues.
 	// If 0, set to be GOMAXPROCS / 2.
@@ -208,8 +212,11 @@ func MakeDefault() Main {
 
 		ListenTCP: ":2003",
 
-		MainQueueSize:  1000,
-		HostQueueSize:  1000,
+		MainQueueSize:        1000,
+		HostQueueSize:        1000,
+		MainQueueBatchSize:   1000,
+		BatchFlushPerdiodSec: 1,
+
 		WorkerPoolSize: 0,
 
 		IncomingConnIdleTimeoutSec: 90,

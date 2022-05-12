@@ -1,0 +1,12 @@
+---
+all:
+  children:
+    sender:
+      hosts:
+        {{ presetup_sender_host }}:
+    nanotube:
+      hosts:
+        {{ presetup_nanotube_host }}:
+    receiver:
+      hosts:
+        {{ presetup_receiver_host }}:

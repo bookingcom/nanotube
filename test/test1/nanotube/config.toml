@@ -1,30 +1,15 @@
-# Clusters config path. Mandatory.
 ClustersConfig = "clusters.toml"
-# Clusters config path. Mandatory.
 RulesConfig = "rules.toml"
-# Rewrites config path. Optional.
-RewritesConfig = ""
-# RewritesConfig = "config/rewrite.toml" to enable
 
-# The port to listen to for incoming connections.
 ListenTCP = ":2003"
-ListenUDP = ""
 
-# The default target port on receiver hosts. Can be overridden in the clusters setup.
 TargetPort = 2008
 
-# The size on main queue between listen and routing. Refer to docs for details.
 MainQueueSize = 100
-# Each host has it's own queue that contains records to be sent to it. This is the size of it.
-# Refer to docs for more insight.
 HostQueueSize = 10
 
-#Pool of workers processing the main queue
 WorkerPoolSize = 10
 
-# Profiling port
 PprofPort = 6060
 
-# Time between termination signal and forced termination of the process. This helps when graceful
-# shutdown is stuck or slow.
-TermTimeoutSec = 1
+TermTimeoutSec = 3

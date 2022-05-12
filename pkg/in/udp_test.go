@@ -21,9 +21,13 @@ type packetConnMock struct {
 	traffic [][]byte
 	done    chan struct{}
 	pos     int
+	m       *sync.Mutex
 }
 
 func (c *packetConnMock) ReadFrom(p []byte) (int, net.Addr, error) {
+	c.m.Lock()
+	defer c.m.Unlock()
+
 	if c.pos > len(c.traffic) {
 		return 0, &net.UDPAddr{}, nil
 	}
@@ -39,26 +43,44 @@ func (c *packetConnMock) ReadFrom(p []byte) (int, net.Addr, error) {
 	return nBytes, &net.UDPAddr{}, nil
 }
 
-func (c packetConnMock) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+func (c *packetConnMock) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	c.m.Lock()
+	defer c.m.Unlock()
+
 	return 0, nil
 }
-func (c packetConnMock) Close() error {
+func (c *packetConnMock) Close() error {
+	c.m.Lock()
+	defer c.m.Unlock()
+
 	return nil
 }
 
-func (c packetConnMock) LocalAddr() net.Addr {
+func (c *packetConnMock) LocalAddr() net.Addr {
+	c.m.Lock()
+	defer c.m.Unlock()
+
 	return &net.UDPAddr{}
 }
 
-func (c packetConnMock) SetDeadline(t time.Time) error {
+func (c *packetConnMock) SetDeadline(t time.Time) error {
+	c.m.Lock()
+	defer c.m.Unlock()
+
 	return nil
 }
 
-func (c packetConnMock) SetReadDeadline(t time.Time) error {
+func (c *packetConnMock) SetReadDeadline(t time.Time) error {
+	c.m.Lock()
+	defer c.m.Unlock()
+
 	return nil
 }
 
-func (c packetConnMock) SetWriteDeadline(t time.Time) error {
+func (c *packetConnMock) SetWriteDeadline(t time.Time) error {
+	c.m.Lock()
+	defer c.m.Unlock()
+
 	return nil
 }
 
@@ -103,6 +125,7 @@ func TestUdpStreaming(t *testing.T) {
 	conn := &packetConnMock{
 		traffic: data,
 		done:    stop,
+		m:       &sync.Mutex{},
 	}
 
 	q := make(chan []byte, len(data)) // should be >= num packets

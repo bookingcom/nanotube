@@ -17,8 +17,10 @@ import (
 )
 
 // Listen listens for incoming metric data
-func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan []byte, error) {
+func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan [][]byte, error) {
 	queue := make(chan []byte, cfg.MainQueueSize)
+	queueBuf := make(chan [][]byte, cfg.MainQueueSize)
+
 	var connWG sync.WaitGroup
 
 	if cfg.K8sMode {
@@ -46,7 +48,8 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 			lg.Info("Launch: Opened TCP connection for listening.", zap.String("ListenTCP", cfg.ListenTCP))
 
 			connWG.Add(1)
-			go in.AcceptAndListenTCP(l, queue, stop, cfg, &connWG, ms, lg)
+
+			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, cfg, &connWG, ms, lg)
 		}
 
 		if cfg.ListenUDP != "" {
@@ -59,7 +62,8 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 			lg.Info("Launch: Opened UDP connection for listening.", zap.String("ListenUDP", cfg.ListenUDP))
 
 			connWG.Add(1)
-			go in.ListenUDP(conn, queue, stop, &connWG, ms, lg)
+			// go in.ListenUDP(conn, queue, stop, &connWG, ms, lg)
+			go in.ListenUDPBuf(conn, queueBuf, stop, &connWG, cfg, ms, lg)
 		}
 
 		if cfg.ListenGRPC != "" {
@@ -78,6 +82,7 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 			lg.Info("Launch: Started GRPC server.", zap.String("ListenGRPC", cfg.ListenGRPC))
 
 			connWG.Add(1)
+			// TODO Use buffered q in GRPC
 			go in.ListenGRPC(l, queue, stop, &connWG, cfg, ms, lg)
 		}
 	}
@@ -85,10 +90,11 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 	go func() {
 		connWG.Wait()
 		lg.Info("Termination: All incoming connections closed. Draining the main queue.")
+		close(queueBuf)
 		close(queue)
 	}()
 
-	return queue, nil
+	return queueBuf, nil
 }
 
 // parse "ip:port" string that is used for ListenTCP and ListenUDP config options
