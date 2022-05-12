@@ -9,7 +9,7 @@ PIDS=''
 
 trap_pid() {
     PIDS+="$1 "
-    trap '{ echo "*** force-killing $PIDS ***"; kill -9 $PIDS 2>/dev/null; exit 255; }' SIGINT SIGTERM ERR
+    trap '{ echo "*** force-killing $PIDS ***"; kill -9 $PIDS 2>/dev/null; exit 255; }' SIGINT SIGTERM
 }
 
 for d in test* ; do
@@ -57,8 +57,21 @@ for d in test* ; do
     ./sender/sender -data "${d}/in" -host localhost -port 2003 -rate 4000
     echo -e "\n>>> sender finished running"
 
+    echo -e "\n>>> checking Nanotube for throttling"
+    nTh=$(curl -sS localhost:9090/metrics | grep '^nanotube_throttled_records_total' | tr -d '\012\015' | cut -d' ' -f2)
+    if [ "$nTh" -ne 0 ]; then
+        echo -e "\n>>> got throttled main q records"
+        exit 1
+    fi
+    nThHosts=$(curl -sS localhost:9090/metrics | grep '^nanotube_throttled_host_records_total' | tr -d '\012\015' | cut -d' ' -f2)
+    if [ "$nThHosts" -ne 0 ]; then
+        echo -e "\n>>> got throttled hosts records"
+        exit 1
+    fi
+
+    echo -e "\n>>> terminating Nanotube"
+    kill -TERM $ntPID
     echo -e "\n>>> waiting for nanotube"
-    kill $ntPID
     wait $ntPID
 
     echo -e "\n>>> waiting for receiver to process"
@@ -70,7 +83,7 @@ for d in test* ; do
         tOld=t
     done
 
-    kill $recPID
+    kill -TERM $recPID
     wait $recPID
 
     rm -f "${tmpdir}/in"
