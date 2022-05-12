@@ -45,7 +45,7 @@ loop:
 			lg.Error("accepting connection failed", zap.Error(err))
 		case conn := <-connCh:
 			wg.Add(1)
-			go readFromConnectionTCPBuf(&wg, conn, queue, term, cfg, ms, lg)
+			go readFromConnectionTCPBuf(&wg, conn, queue, cfg, ms, lg)
 		}
 	}
 
@@ -123,7 +123,7 @@ func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan<- []byt
 	scanForRecordsTCP(conn, queue, stop, cfg, ms, lg)
 }
 
-func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- [][]byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- [][]byte, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	defer wg.Done() // executed after the connection is closed
 	defer func() {
 		err := conn.Close()
@@ -142,7 +142,7 @@ func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- []
 			zap.String("sender", conn.RemoteAddr().String()))
 	}
 
-	scanForRecordsTCPBuf(conn, queue, stop, cfg, ms, lg)
+	scanForRecordsTCPBuf(conn, queue, cfg, ms, lg)
 }
 
 func scanForRecordsTCP(conn net.Conn, queue chan<- []byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
