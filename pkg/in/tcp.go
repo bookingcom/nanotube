@@ -186,40 +186,23 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, stop <-chan stru
 	sc := bufio.NewScanner(conn)
 
 	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
-	qb.Flush()
 
-	in := make(chan []byte)
-	go func() {
-		for sc.Scan() {
-			rec := []byte{}
-			rec = append(rec, sc.Bytes()...)
+	for sc.Scan() {
+		rec := []byte{}
+		rec = append(rec, sc.Bytes()...)
 
-			err := conn.SetReadDeadline(time.Now().Add(
-				time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second))
-			if err != nil {
-				lg.Error("error setting read deadline",
-					zap.Error(err),
-					zap.String("sender", conn.RemoteAddr().String()))
-			}
-			in <- rec
+		err := conn.SetReadDeadline(time.Now().Add(
+			time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second))
+		if err != nil {
+			lg.Error("error setting read deadline",
+				zap.Error(err),
+				zap.String("sender", conn.RemoteAddr().String()))
 		}
-		close(in)
-	}()
-
-loop:
-	for {
-		select {
-		case rec, open := <-in:
-			if !open {
-				break loop
-			} else {
-				qb.Push(rec)
-			}
-		case <-stop:
-			// give the reader the ability to drain the queue and close afterwards
-			break loop
-		}
+		qb.Push(rec)
 	}
+
+	lg.Debug("finished scanning for records", zap.Stringer("addr", conn.RemoteAddr()))
+
 	qb.Flush()
 }
 
