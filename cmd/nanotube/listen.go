@@ -48,7 +48,7 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 			lg.Info("Launch: Opened TCP connection for listening.", zap.String("ListenTCP", cfg.ListenTCP))
 
 			connWG.Add(1)
-			// go in.AcceptAndListenTCP(l, queue, stop, cfg, &connWG, ms, lg)
+
 			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, cfg, &connWG, ms, lg)
 		}
 
