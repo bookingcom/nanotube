@@ -186,6 +186,7 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, cfg *conf.Main, 
 	sc := bufio.NewScanner(conn)
 
 	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
+	defer qb.Close()
 
 	for sc.Scan() {
 		rec := []byte{}
