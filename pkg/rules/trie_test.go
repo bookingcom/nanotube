@@ -37,7 +37,7 @@ func TestTrie(t *testing.T) {
 }
 
 func TestTrieArr(t *testing.T) {
-	tr := NewPrefixTrieArr()
+	tr := NewPrefixTrie()
 
 	tr.Add([]byte("abc"))
 	tr.Add([]byte("a"))
@@ -111,40 +111,6 @@ func BenchmarkTrie(b *testing.B) {
 	}
 
 	trie := NewPrefixTrie()
-	for _, r := range rules.Rule {
-		for _, p := range r.Prefixes {
-			trie.Add([]byte(p))
-		}
-	}
-
-	b.StartTimer()
-
-	for i := 0; i < b.N; i++ {
-		for _, path := range paths {
-			trie.Check(path)
-		}
-	}
-}
-
-func BenchmarkTrieArr(b *testing.B) {
-	b.StopTimer()
-
-	data, _, _, err := test.Setup()
-	if err != nil {
-		b.Fatalf("error during benchmark setup: %v", err)
-	}
-
-	paths, err := extractPaths(data)
-	if err != nil {
-		b.Fatalf("error during paths extraction: %v", err)
-	}
-
-	rules, err := readRules()
-	if err != nil {
-		b.Fatalf("error while reading rules: %v", err)
-	}
-
-	trie := NewPrefixTrieArr()
 	for _, r := range rules.Rule {
 		for _, p := range r.Prefixes {
 			trie.Add([]byte(p))
