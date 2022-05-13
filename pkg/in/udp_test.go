@@ -85,7 +85,7 @@ func (c *packetConnMock) SetWriteDeadline(t time.Time) error {
 }
 
 func setup(t *testing.T) (data [][]byte, ms *metrics.Prom, lg *zap.Logger) {
-	fixturesPath := "testdata/"
+	fixturesPath := "../testdata/"
 
 	in, err := os.Open(filepath.Join(fixturesPath, "in"))
 	if err != nil {
