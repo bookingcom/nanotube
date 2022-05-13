@@ -1,18 +1,15 @@
 package rules
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
-	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/test"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
 )
 
 func TestTrie(t *testing.T) {
@@ -63,43 +60,6 @@ func TestTrieArr(t *testing.T) {
 	}
 }
 
-func setup() (data [][]byte, ms *metrics.Prom, lg *zap.Logger, errRet error) {
-	fixturesPath := "../testdata/"
-
-	in, err := os.Open(filepath.Join(fixturesPath, "in"))
-	if err != nil {
-		errRet = errors.Wrap(err, "error opening the in data file")
-		return
-	}
-	defer func() {
-		err := in.Close()
-		if err != nil {
-			errRet = errors.Wrap(err, "error closing in data test file")
-			return
-		}
-	}()
-
-	scanner := bufio.NewScanner(in)
-	for scanner.Scan() {
-		token := scanner.Bytes()
-		rec := make([]byte, len(token))
-		copy(rec, token)
-		data = append(data, rec)
-	}
-
-	if err := scanner.Err(); err != nil {
-		errRet = errors.Wrap(err, "error while scan-reading the sample in metrics")
-		return
-	}
-
-	lg, _ = zap.NewProduction()
-
-	cfg := conf.MakeDefault()
-	ms = metrics.New(&cfg)
-
-	return
-}
-
 func extractPaths(data [][]byte) (paths [][]byte, errRet error) {
 	for _, rec := range data {
 		tokens := bytes.Split(rec, []byte{' '})
@@ -135,7 +95,7 @@ func readRules() (rules conf.Rules, retErr error) {
 func BenchmarkTrie(b *testing.B) {
 	b.StopTimer()
 
-	data, _, _, err := setup()
+	data, _, _, err := test.Setup()
 	if err != nil {
 		b.Fatalf("error during benchmark setup: %v", err)
 	}
@@ -169,7 +129,7 @@ func BenchmarkTrie(b *testing.B) {
 func BenchmarkTrieArr(b *testing.B) {
 	b.StopTimer()
 
-	data, _, _, err := setup()
+	data, _, _, err := test.Setup()
 	if err != nil {
 		b.Fatalf("error during benchmark setup: %v", err)
 	}
