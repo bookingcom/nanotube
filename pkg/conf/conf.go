@@ -215,7 +215,7 @@ func MakeDefault() Main {
 		MainQueueSize:        1000,
 		HostQueueSize:        1000,
 		MainQueueBatchSize:   1000,
-		BatchFlushPerdiodSec: 1,
+		BatchFlushPerdiodSec: 5,
 
 		WorkerPoolSize: 0,
 
