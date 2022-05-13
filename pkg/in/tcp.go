@@ -202,8 +202,6 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, cfg *conf.Main, 
 		qb.Push(rec)
 	}
 
-	lg.Debug("finished scanning for records", zap.Stringer("addr", conn.RemoteAddr()))
-
 	qb.Flush()
 }
 
