@@ -66,6 +66,8 @@ func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}
 
 	buf := make([]byte, 64*1024) // 64k is the max UDP datagram size
 	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
+	defer qb.Close()
+
 loop:
 	for {
 		select {
