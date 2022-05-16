@@ -21,7 +21,7 @@ type BatchChan struct {
 }
 
 // NewBatchChan makes a new batched chan buffer.
-// It also starts a flushing goroutine in the background.
+// It also starts a flushing goroutine in the background if periodSec > 0.
 func NewBatchChan(q chan<- [][]byte, bufSize int, periodSec int, ms *metrics.Prom) *BatchChan {
 	qb := &BatchChan{
 		q:       q,
@@ -31,7 +31,9 @@ func NewBatchChan(q chan<- [][]byte, bufSize int, periodSec int, ms *metrics.Pro
 		stop:    make(chan bool),
 	}
 
-	go qb.periodicFlush()
+	if periodSec > 0 {
+		go qb.periodicFlush()
+	}
 
 	return qb
 }
