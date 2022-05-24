@@ -73,7 +73,7 @@ func worker(wg *sync.WaitGroup, queue <-chan []byte, rules rules.Rules, rewrites
 
 func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
 	metrics *metrics.Prom) { //nolint:golint,unparam
-	r, err := rec.ParseRecBytes(s, shouldNormalize, shouldLog, time.Now, lg)
+	r, err := rec.ParseRec(s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record_str", string(s)),
 			zap.Binary("record_base64", s), zap.Error(err))
@@ -89,7 +89,7 @@ func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 	}
 
 	for _, rec := range recs {
-		rules.RouteRecBytes(rec, lg)
+		rules.RouteRec(rec, lg)
 	}
 }
 

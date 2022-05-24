@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Setup a basic system to test input and rulse. Read and return test data.
+// Setup a basic system for testing. Reads and returns test data.
 func Setup() (data [][]byte, ms *metrics.Prom, lg *zap.Logger, errRet error) {
 	fixturesPath := "../test/"
 
