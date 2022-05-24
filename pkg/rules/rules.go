@@ -132,12 +132,12 @@ func TestBuild(crs conf.Rules, clusters map[string]*target.TestTarget, measureRe
 	return rs, nil
 }
 
-// RouteRecBytes a record by following the rules
-func (rs Rules) RouteRecBytes(r *rec.RecBytes, lg *zap.Logger) {
+// RouteRec a record by following the rules
+func (rs Rules) RouteRec(r *rec.RecBytes, lg *zap.Logger) {
 	pushedTo := make(map[target.ClusterTarget]struct{})
 
 	for _, rl := range rs.rules {
-		matchedRule := rl.MatchBytes(r, rs.measureRegex)
+		matchedRule := rl.Match(r, rs.measureRegex)
 		if matchedRule {
 			for _, cl := range rl.Targets {
 				if _, pushedBefore := pushedTo[cl]; pushedBefore {
@@ -160,8 +160,8 @@ func (rs Rules) RouteRecBytes(r *rec.RecBytes, lg *zap.Logger) {
 	}
 }
 
-// MatchBytes a record with any of the rule regexps
-func (rl Rule) MatchBytes(r *rec.RecBytes, measureRegex bool) bool {
+// Match a record with any of the rule regexps
+func (rl Rule) Match(r *rec.RecBytes, measureRegex bool) bool {
 	if rl.PrefixTrie.Check(r.Path) {
 		return true
 	}

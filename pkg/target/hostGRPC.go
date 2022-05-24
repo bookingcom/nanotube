@@ -87,12 +87,12 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 		}
 
 		if stream != nil {
-			time, err := strconv.ParseFloat(string(r.RawTime), 64)
+			time, err := strconv.ParseFloat(string(r.Time), 64)
 			if err != nil {
 				h.Lg.Warn("failed to parse record timestamp", zap.Error(err))
 				continue
 			}
-			val, err := strconv.ParseFloat(string(r.RawVal), 64)
+			val, err := strconv.ParseFloat(string(r.Val), 64)
 			if err != nil {
 				h.Lg.Warn("failed to parse record value", zap.Error(err))
 				continue
