@@ -130,7 +130,7 @@ func main() {
 	portsStr := flag.String("ports", "", `List of the ports to listen on. Has to be supplied in the from "XXXX YYYY ZZZZ AAAA-BBBB" in quotes.`)
 	outPrefix := flag.String("prefix", "", "Prefix for the output files.")
 	outDir := flag.String("outdir", "", "Output directory. Absolute path. Optional.")
-	profPort := flag.String("profPort", "", "Where should the profiler listen?")
+	profPort := flag.Int("profPort", 0, "Where should the profiler listen?")
 	promPort := flag.Int("promPort", 0, "Prometheus port. If unset, Prometheus metrics are not exposed.")
 
 	flag.Parse()
@@ -146,15 +146,18 @@ func main() {
 		go promListen(*promPort, lg)
 	}
 
-	if *profPort != "" {
+	if *profPort != 0 {
 		go func() {
-			lg.Info("profiler server exited", zap.Error(http.ListenAndServe(*profPort, nil)))
+			lg.Info("profiler server exited", zap.Error(http.ListenAndServe(fmt.Sprintf(":%d", *profPort), nil)))
 		}()
 	}
 
 	ports := parsePorts(*portsStr, lg)
-	fs := openFiles(*outDir, *outPrefix, ports, lg)
-	defer closeFiles(fs, lg)
+	var fs map[int]*os.File
+	if *outDir != "" {
+		fs = openFiles(*outDir, *outPrefix, ports, lg)
+		defer closeFiles(fs, lg)
+	}
 	ls := openPorts(ports, lg)
 
 	ms.nOpenPorts.Set(float64(len(ls)))
@@ -165,7 +168,7 @@ func main() {
 	for _, p := range ports {
 		portsWG.Add(1)
 
-		go listen(ls[p], p, *outDir, stop, &portsWG, fs, ms, lg)
+		go listen(ls[p], p, stop, &portsWG, fs, ms, lg)
 	}
 
 	sgn := make(chan os.Signal, 1)
@@ -205,7 +208,7 @@ func openPorts(ports []int, lg *zap.Logger) map[int]net.Listener {
 	return ls
 }
 
-func listen(lst net.Listener, prt int, outDir string, stop chan struct{}, portsWG *sync.WaitGroup, fs map[int]*os.File, ms *metrics, lg *zap.Logger) {
+func listen(lst net.Listener, prt int, stop chan struct{}, portsWG *sync.WaitGroup, fs map[int]*os.File, ms *metrics, lg *zap.Logger) {
 	defer portsWG.Done()
 	var connectionWG sync.WaitGroup
 out:
@@ -233,7 +236,7 @@ out:
 						lg.Fatal("connection close failed", zap.Error(err))
 					}
 				}()
-				if outDir == "" {
+				if fs == nil {
 					scanner := bufio.NewScanner(conn)
 					scanner.Buffer(make([]byte, bufio.MaxScanTokenSize*100), bufio.MaxScanTokenSize)
 					for scanner.Scan() {
