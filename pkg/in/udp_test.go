@@ -1,20 +1,14 @@
 package in
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
-	"log"
 	"net"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/bookingcom/nanotube/pkg/conf"
-	"github.com/bookingcom/nanotube/pkg/metrics"
-	"go.uber.org/zap"
+	"github.com/bookingcom/nanotube/pkg/test"
 )
 
 type packetConnMock struct {
@@ -84,42 +78,11 @@ func (c *packetConnMock) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func setup(t *testing.T) (data [][]byte, ms *metrics.Prom, lg *zap.Logger) {
-	fixturesPath := "testdata/"
-
-	in, err := os.Open(filepath.Join(fixturesPath, "in"))
-	if err != nil {
-		t.Fatalf("error opening the in data file %v", err)
-	}
-	defer func() {
-		err := in.Close()
-		if err != nil {
-			t.Fatalf("error closing in data test file: %v", err)
-		}
-	}()
-
-	scanner := bufio.NewScanner(in)
-	for scanner.Scan() {
-		token := scanner.Bytes()
-		rec := make([]byte, len(token))
-		copy(rec, token)
-		data = append(data, rec)
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatalf("error while scan-reading the sample in metrics %v", err)
-	}
-
-	lg, _ = zap.NewProduction()
-
-	cfg := conf.MakeDefault()
-	ms = metrics.New(&cfg)
-
-	return
-}
-
 func TestUdpStreaming(t *testing.T) {
-	data, ms, lg := setup(t)
+	data, ms, lg, err := test.Setup()
+	if err != nil {
+		t.Fatalf("failed to setup the test: %v", err)
+	}
 
 	stop := make(chan struct{})
 	conn := &packetConnMock{
@@ -147,7 +110,7 @@ func TestUdpStreaming(t *testing.T) {
 	wg.Wait()
 	close(q)
 
-	err := <-errCh
+	err = <-errCh
 	if err != nil {
 		t.Fatal(err)
 	}

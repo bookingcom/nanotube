@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bookingcom/nanotube/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"go.uber.org/zap"
 )
@@ -27,36 +28,36 @@ func TestRec(t *testing.T) {
 		{
 			s: "a a a",
 			res: RecBytes{
-				Path:    []byte("a"),
-				RawVal:  []byte("a"),
-				RawTime: []byte("a"),
+				Path: []byte("a"),
+				Val:  []byte("a"),
+				Time: []byte("a"),
 			},
 			isErr: false,
 		},
 		{
 			s: "1 a 1",
 			res: RecBytes{
-				Path:    []byte("1"),
-				RawVal:  []byte("a"),
-				RawTime: []byte("1"),
+				Path: []byte("1"),
+				Val:  []byte("a"),
+				Time: []byte("1"),
 			},
 			isErr: false,
 		},
 		{
 			s: "a 1 1",
 			res: RecBytes{
-				Path:    []byte("a"),
-				RawVal:  []byte("1"),
-				RawTime: []byte("1"),
+				Path: []byte("a"),
+				Val:  []byte("1"),
+				Time: []byte("1"),
 			},
 			isErr: false,
 		},
 		{
 			s: "a.a.a 1.1e3 123",
 			res: RecBytes{
-				Path:    []byte("a.a.a"),
-				RawVal:  []byte("1.1e3"),
-				RawTime: []byte("123"),
+				Path: []byte("a.a.a"),
+				Val:  []byte("1.1e3"),
+				Time: []byte("123"),
 			},
 			isErr: false,
 		},
@@ -67,18 +68,18 @@ func TestRec(t *testing.T) {
 		{
 			s: "a 1 a",
 			res: RecBytes{
-				Path:    []byte("a"),
-				RawVal:  []byte("1"),
-				RawTime: []byte("a"),
+				Path: []byte("a"),
+				Val:  []byte("1"),
+				Time: []byte("a"),
 			},
 			isErr: false,
 		},
 		{
 			s: "asdf.fdsa.a.1.c 12e-3 1234567890",
 			res: RecBytes{
-				Path:    []byte("asdf.fdsa.a.1.c"),
-				RawVal:  []byte("12e-3"),
-				RawTime: []byte("1234567890"),
+				Path: []byte("asdf.fdsa.a.1.c"),
+				Val:  []byte("12e-3"),
+				Time: []byte("1234567890"),
 			},
 			isErr: false,
 		},
@@ -86,18 +87,18 @@ func TestRec(t *testing.T) {
 		{
 			s: ".abc.abc.abc 1.23 12345678",
 			res: RecBytes{
-				Path:    []byte("abc.abc.abc"),
-				RawVal:  []byte("1.23"),
-				RawTime: []byte("12345678"),
+				Path: []byte("abc.abc.abc"),
+				Val:  []byte("1.23"),
+				Time: []byte("12345678"),
 			},
 			isErr: false,
 		},
 		{
 			s: "..abc..ab&+=.jklm.jk% 1.234 1234567890",
 			res: RecBytes{
-				Path:    []byte("abc.ab___.jklm.jk_"),
-				RawVal:  []byte("1.234"),
-				RawTime: []byte("1234567890"),
+				Path: []byte("abc.ab___.jklm.jk_"),
+				Val:  []byte("1.234"),
+				Time: []byte("1234567890"),
 			},
 			isErr: false,
 		},
@@ -109,54 +110,58 @@ func TestRec(t *testing.T) {
 		{
 			s: "abc.jkl.mno    1.23   12345",
 			res: RecBytes{
-				Path:    []byte("abc.jkl.mno"),
-				RawVal:  []byte("1.23"),
-				RawTime: []byte("12345"),
+				Path: []byte("abc.jkl.mno"),
+				Val:  []byte("1.23"),
+				Time: []byte("12345"),
 			},
 			isErr: false,
 		},
 		{
 			s: "some.thing.here			98.7  12345",
 			res: RecBytes{
-				Path:    []byte("some.thing.here"),
-				RawVal:  []byte("98.7"),
-				RawTime: []byte("12345"),
+				Path: []byte("some.thing.here"),
+				Val:  []byte("98.7"),
+				Time: []byte("12345"),
 			},
 			isErr: false,
 		},
 		{
 			s: "fractional.time.test 3.3 123.45",
 			res: RecBytes{
-				Path:    []byte("fractional.time.test"),
-				RawVal:  []byte("3.3"),
-				RawTime: []byte("123.45"),
+				Path: []byte("fractional.time.test"),
+				Val:  []byte("3.3"),
+				Time: []byte("123.45"),
 			},
 		},
 		{
 			s: "large.float.test 1.79769313486231e+308 12345",
 			res: RecBytes{
-				Path:    []byte("large.float.test"),
-				RawVal:  []byte("1.79769313486231e+308"),
-				RawTime: []byte("12345"),
+				Path: []byte("large.float.test"),
+				Val:  []byte("1.79769313486231e+308"),
+				Time: []byte("12345"),
 			},
 		},
 		{
 			s: ". 0 0",
 			res: RecBytes{
-				Path:    []byte(""),
-				RawVal:  []byte("0"),
-				RawTime: []byte("0"),
+				Path: []byte(""),
+				Val:  []byte("0"),
+				Time: []byte("0"),
 			},
 			isErr: true,
 		},
 		{
 			s: "a.b.c NaN 12345",
 			res: RecBytes{
-				Path:    []byte("a.b.c"),
-				RawVal:  []byte("NaN"),
-				RawTime: []byte("12345"),
+				Path: []byte("a.b.c"),
+				Val:  []byte("NaN"),
+				Time: []byte("12345"),
 			},
 			isErr: false,
+		},
+		{
+			s:     "0",
+			isErr: true,
 		},
 	}
 	nowF := func() time.Time {
@@ -170,7 +175,7 @@ func TestRec(t *testing.T) {
 	})
 	for _, tst := range tt {
 		t.Run(tst.s, func(t *testing.T) {
-			res, err := ParseRecBytes([]byte(tst.s), true, true, nowF, lg)
+			res, err := ParseRec([]byte(tst.s), true, true, nowF, lg)
 			if err != nil {
 				if !tst.isErr {
 					t.Error("unexpected error", err)
@@ -271,7 +276,7 @@ func TestNormalization(t *testing.T) {
 	}
 
 	for _, test := range tt {
-		s, err := normalizePathBytes([]byte(test.in))
+		s, err := normalizePath([]byte(test.in))
 		if err != nil && !test.err {
 			t.Fatalf("got unexpected error while normalizing: %v", err)
 		}
@@ -292,17 +297,17 @@ func testSerialization(t testing.TB) {
 	}{
 		{
 			in: RecBytes{
-				Path:    []byte("this.is.a.path"),
-				RawVal:  []byte("1.23"),
-				RawTime: []byte("987654"),
+				Path: []byte("this.is.a.path"),
+				Val:  []byte("1.23"),
+				Time: []byte("987654"),
 			},
 			out: []byte("this.is.a.path 1.23 987654\n"),
 		},
 		{
 			in: RecBytes{
-				Path:    []byte("a.b.c.d.path"),
-				RawVal:  []byte("89.0987"),
-				RawTime: []byte("1568889265"),
+				Path: []byte("a.b.c.d.path"),
+				Val:  []byte("89.0987"),
+				Time: []byte("1568889265"),
 			},
 			out: []byte("a.b.c.d.path 89.0987 1568889265\n"),
 		},
@@ -320,4 +325,37 @@ func BenchmarkSerialization(b *testing.B) {
 		// This also benches string comparison in the test, but let's keep it simple.
 		testSerialization(b)
 	}
+}
+
+func FuzzParseRecBytes(f *testing.F) {
+	data, _, _, _ := test.Setup()
+	data = data[:10]
+	for _, rec := range data {
+		f.Add(rec)
+	}
+
+	f.Fuzz(func(t *testing.T, in []byte) {
+		rec, err := ParseRec(in, true, false, func() time.Time { return time.Unix(1e8, 0) }, nil)
+		if err != nil {
+			return
+		}
+
+		if len(rec.Path) == 0 {
+			t.Error("got 0 length path")
+		}
+		if len(rec.Time) == 0 {
+			t.Error("got 0 length time")
+		}
+		if len(rec.Val) == 0 {
+			t.Error("got 0 length value")
+		}
+
+		norm2, err := normalizePath(rec.Path)
+		if err != nil {
+			t.Errorf("error on second normalization, %v", err)
+		}
+		if !bytes.Equal(rec.Path, norm2) {
+			t.Errorf("second normalization %s differs from the first %s", norm2, rec.Path)
+		}
+	})
 }

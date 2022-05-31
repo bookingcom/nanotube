@@ -57,6 +57,7 @@ loop:
 }
 
 // AcceptAndListenTCP listens for incoming TCP connections.
+// TODO: Remove after changing NK mechanics.
 func AcceptAndListenTCP(l net.Listener, queue chan<- []byte, term <-chan struct{},
 	cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	var wg sync.WaitGroup
@@ -101,6 +102,7 @@ loop:
 	connWG.Done()
 }
 
+// TODO: Remove after changing NK mechanics.
 func readFromConnectionTCP(wg *sync.WaitGroup, conn net.Conn, queue chan<- []byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	defer wg.Done() // executed after the connection is closed
 	defer func() {
@@ -145,6 +147,7 @@ func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- []
 	scanForRecordsTCPBuf(conn, queue, cfg, ms, lg)
 }
 
+// TODO: Remove after changing NK mechanics.
 func scanForRecordsTCP(conn net.Conn, queue chan<- []byte, stop <-chan struct{}, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(conn)
 	in := make(chan []byte)
@@ -185,7 +188,11 @@ loop:
 func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(conn)
 
+	buf := make([]byte, 2048)
+	sc.Buffer(buf, bufio.MaxScanTokenSize)
+
 	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
+	defer qb.Close()
 
 	for sc.Scan() {
 		rec := []byte{}
@@ -200,8 +207,6 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, cfg *conf.Main, 
 		}
 		qb.Push(rec)
 	}
-
-	lg.Debug("finished scanning for records", zap.Stringer("addr", conn.RemoteAddr()))
 
 	qb.Flush()
 }
