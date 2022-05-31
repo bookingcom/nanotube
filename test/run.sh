@@ -3,7 +3,8 @@
 # Run all tests in directories named test*
 
 # Expects compiled sender, receiver, and nanotube in corresponding dirs.
-# set -e
+
+set -euo pipefail
 
 PIDS=''
 
@@ -43,7 +44,9 @@ for d in test* ; do
     do
         sleep 1;
         r=$(curl -sS localhost:8024/metrics | grep '^receiver_n_open_ports' | tr -d '\012\015' | cut -d' ' -f2)
-        [[ $r -gt 0 ]] && break;
+        if [ "$r" -ne 0 ]; then
+            break;
+        fi
     done
     tOld=$(curl -sS localhost:8024/metrics | grep '^receiver_time_of_last_write' | tr -d '\012\015' | cut -d' ' -f2)
 
@@ -79,8 +82,10 @@ for d in test* ; do
     while true; do
         sleep 1;
         t=$(curl -sS localhost:8024/metrics | grep '^receiver_time_of_last_write' | tr -d '\012\015' | cut -d' ' -f2)
-        [ "$t" -eq "$tOld" ] && break;
-        tOld=t
+        if [ "$t" = "$tOld" ]; then
+            break;
+        fi
+        tOld=$t
     done
 
     kill -TERM $recPID
