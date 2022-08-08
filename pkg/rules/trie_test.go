@@ -125,3 +125,23 @@ func BenchmarkTrie(b *testing.B) {
 		}
 	}
 }
+
+func FuzzTrie(f *testing.F) {
+	f.Fuzz(func(t *testing.T, prefixes []byte, ul1 uint8, ul2 uint8, ul3 uint8, path []byte) {
+		l1 := int(ul1)
+		l2 := int(ul2)
+		l3 := int(ul3)
+
+		if len(prefixes) <= l1+l2+l3 {
+			return
+		}
+		tr := NewPrefixTrie()
+
+		tr.Add(prefixes[:l1])
+		tr.Add(prefixes[l1 : l1+l2])
+		tr.Add(prefixes[l1+l2 : l1+l2+l3])
+		tr.Add(prefixes[l1+l2+l3:])
+
+		tr.Check(path)
+	})
+}

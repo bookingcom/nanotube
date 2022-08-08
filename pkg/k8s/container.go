@@ -21,8 +21,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: Move debug logging to appropriate zap.Debug level.
-
 // Cont represents a container.
 type Cont struct {
 	ID           string

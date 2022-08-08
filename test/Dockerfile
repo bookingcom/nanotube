@@ -5,7 +5,7 @@ WORKDIR /nanotube
 
 COPY . .
 
-RUN apt-get -y update && apt-get -y install bzip2 jq
+RUN apt-get -y update && apt-get -y install bzip2 bc
 
 RUN make nanotube
 RUN make test/sender/sender
