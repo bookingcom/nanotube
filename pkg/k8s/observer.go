@@ -81,9 +81,6 @@ func Observe(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.Wai
 }
 
 func updateWatchedContainersLocal(q chan<- []byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
-	// TODO: Forwarding setups are potentially long and blocking.
-	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
-
 	freshCs, err := getLocalContainers(cfg)
 	if err != nil {
 		return errors.Wrap(err, "getting containers via k8s API failed")
@@ -112,9 +109,6 @@ func updateWatchedContainersLocal(q chan<- []byte, stop <-chan struct{}, wg *syn
 }
 
 func updateWatchedContainers(q chan<- []byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
-	// TODO: Forwarding setups are potentially long and blocking.
-	// Note: Chances are low, but Docker and containerd IDs can potentially collide.
-
 	freshCs, err := getContainers(cfg)
 	if err != nil {
 		return errors.Wrap(err, "getting containers via k8s API failed")
@@ -171,8 +165,6 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 
 	listOpts.LabelSelector = fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)
 
-	// TODO: Try to use Watch.
-	// TODO: Check timeouts etc.
 	pods, err := clientset.CoreV1().Pods("").List(
 		context.TODO(),
 		listOpts,
@@ -183,7 +175,6 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 
 	cs := map[string]contInfo{}
 	for _, pod := range pods.Items {
-		// TODO Add fine-graining by container. Currently we open ports in all containers.
 		for _, contStatus := range pod.Status.ContainerStatuses {
 			// contStatus looks like docker://<id>
 			if contStatus.ContainerID == "" {
