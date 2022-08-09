@@ -111,9 +111,6 @@ func main() {
 		log.Fatalf("error launching listener, %v", err)
 	}
 
-	// TODO: Bring back
-	// gaugeQueues(queue, clusters, ms)
-	// procDone := Process(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
 	procDone := ProcessBuf(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
 	done := clusters.Send(procDone)
 
@@ -276,21 +273,3 @@ func buildPipeline(cfg *conf.Main, clustersConf *conf.Clusters, rulesConf *conf.
 
 	return
 }
-
-// gaugeQueue starts and maintains a goroutine to measure the main queue size.
-// TODO: Fix and bring back
-// func gaugeQueues(queue chan string, clusters target.Clusters, metrics *metrics.Prom) {
-// 	queueGaugeIntervalMs := 1000
-
-// 	ticker := time.NewTicker(time.Duration(queueGaugeIntervalMs) * time.Millisecond)
-// 	go func() {
-// 		for range ticker.C {
-// 			metrics.MainQueueLength.Set(float64(len(queue)))
-// 			for _, cl := range clusters {
-// 				for _, h := range cl.Hosts {
-// 					metrics.HostQueueLength.Observe(float64(len(h.Ch)))
-// 				}
-// 			}
-// 		}
-// 	}()
-// }

@@ -45,7 +45,6 @@ type Host struct {
 	stateChangesTotal         prometheus.Counter
 	oldConnectionRefresh      prometheus.Counter
 	oldConnectionRefreshTotal prometheus.Counter
-	processingDuration        prometheus.Histogram
 	targetState               prometheus.Gauge
 }
 
@@ -114,7 +113,6 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 		outRecsTotal:              ms.OutRecsTotal,
 		throttled:                 ms.ThrottledHosts.With(promLabels),
 		throttledTotal:            ms.ThrottledHostsTotal,
-		processingDuration:        ms.ProcessingDuration,
 		stateChanges:              ms.StateChangeHosts.With(promLabels),
 		stateChangesTotal:         ms.StateChangeHostsTotal,
 		oldConnectionRefresh:      ms.OldConnectionRefresh.With(promLabels),

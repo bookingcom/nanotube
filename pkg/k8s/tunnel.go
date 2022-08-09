@@ -26,7 +26,6 @@ func OpenTCPTunnelByPID(pid uint32, port uint16) (listener *net.TCPListener, ret
 	defer func() {
 		err := ownNetns.Close()
 		if err != nil {
-			// TODO Add recursive wrapping
 			returnErr = errors.Wrap(err, "error while closing own network namespace")
 		}
 	}()
@@ -40,7 +39,6 @@ func OpenTCPTunnelByPID(pid uint32, port uint16) (listener *net.TCPListener, ret
 	defer func() {
 		err := newns.Close()
 		if err != nil {
-			// TODO Add recursive wrapping
 			returnErr = errors.Wrap(err, "error while closing container net namespace")
 		}
 	}()
@@ -51,7 +49,6 @@ func OpenTCPTunnelByPID(pid uint32, port uint16) (listener *net.TCPListener, ret
 	defer func() {
 		err := netns.Set(ownNetns)
 		if err != nil {
-			// TODO This should probably cause a panic. All subsequent net operations will be faulty.
 			returnErr = errors.Wrap(err, "error while setting back to the original net namespace")
 		}
 	}()
@@ -89,7 +86,6 @@ func OpenTCPTunnelToDocker(containerID string, port uint16) (listener *net.TCPLi
 	defer func() {
 		err := ownNetns.Close()
 		if err != nil {
-			// TODO Add recursive wrapping
 			returnErr = errors.Wrap(err, "error while closing own network namespace")
 		}
 	}()
@@ -103,7 +99,6 @@ func OpenTCPTunnelToDocker(containerID string, port uint16) (listener *net.TCPLi
 	defer func() {
 		err := newns.Close()
 		if err != nil {
-			// TODO Add recursive wrapping
 			returnErr = errors.Wrap(err, "error while closing docker net namespace")
 		}
 	}()
@@ -114,7 +109,6 @@ func OpenTCPTunnelToDocker(containerID string, port uint16) (listener *net.TCPLi
 	defer func() {
 		err := netns.Set(ownNetns)
 		if err != nil {
-			// TODO This should probably cause a panic. All subsequent net operations will be faulty.
 			returnErr = errors.Wrap(err, "error while setting back to the original net namespace")
 		}
 	}()

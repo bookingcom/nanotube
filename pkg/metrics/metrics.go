@@ -10,10 +10,9 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	InRecs             prometheus.Counter
-	InRecsBySource     *prometheus.CounterVec
-	ThrottledRecs      prometheus.Counter
-	DemuxThrottledRecs prometheus.Counter
+	InRecs         prometheus.Counter
+	InRecsBySource *prometheus.CounterVec
+	ThrottledRecs  prometheus.Counter
 
 	StateChangeHosts          *prometheus.CounterVec
 	StateChangeHostsTotal     prometheus.Counter
@@ -21,7 +20,6 @@ type Prom struct {
 	OldConnectionRefreshTotal prometheus.Counter
 	ThrottledHosts            *prometheus.CounterVec
 	ThrottledHostsTotal       prometheus.Counter
-	HostQueueLength           prometheus.Histogram
 	OutRecs                   *prometheus.CounterVec
 	OutRecsTotal              prometheus.Counter
 
@@ -29,10 +27,6 @@ type Prom struct {
 
 	BlackholedRecs prometheus.Counter
 	ErrorRecs      prometheus.Counter
-
-	MainQueueLength prometheus.Gauge
-
-	ProcessingDuration prometheus.Histogram
 
 	ActiveTCPConnections  prometheus.Gauge
 	InConnectionsTotalTCP prometheus.Counter
@@ -87,11 +81,6 @@ func New(conf *conf.Main) *Prom {
 			Name:      "throttled_records_total",
 			Help:      "Records dropped from the main queue because it's full.",
 		}),
-		DemuxThrottledRecs: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "nanotube",
-			Name:      "demux_throttled_records_total",
-			Help:      "Records dropped from the demuxer.",
-		}),
 		ThrottledHosts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "throttled_host_records",
@@ -131,23 +120,6 @@ func New(conf *conf.Main) *Prom {
 			Namespace: "nanotube",
 			Name:      "error_records_total",
 			Help:      "Records that we were not able to parse.",
-		}),
-		MainQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "nanotube",
-			Name:      "main_queue_length",
-			Help:      "The length of the main queue. Updated every second.",
-		}),
-		HostQueueLength: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace: "nanotube",
-			Name:      "host_queue_length",
-			Help:      "The histogram of the lengths of the host queues.",
-			Buckets:   prometheus.ExponentialBuckets(1, conf.HostQueueLengthBucketFactor, conf.HostQueueLengthBuckets),
-		}),
-		ProcessingDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace: "nanotube",
-			Name:      "processing_duration_seconds",
-			Help:      "Time to process one record.",
-			Buckets:   prometheus.ExponentialBuckets(0.001, conf.ProcessingDurationBucketFactor, conf.ProcessingDurationBuckets),
 		}),
 		ActiveTCPConnections: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "nanotube",
@@ -240,11 +212,6 @@ func Register(m *Prom, cfg *conf.Main) {
 		log.Fatalf("error registering the throttled_records_counter metric: %v", err)
 	}
 
-	err = prometheus.Register(m.DemuxThrottledRecs)
-	if err != nil {
-		log.Fatalf("error registering the demux_throttled_records_counter metric: %v", err)
-	}
-
 	err = prometheus.Register(m.ThrottledHostsTotal)
 	if err != nil {
 		log.Fatalf("error registering the throttled_host_records_total metric: %v", err)
@@ -309,21 +276,6 @@ func Register(m *Prom, cfg *conf.Main) {
 		err = prometheus.Register(m.ThrottledHosts)
 		if err != nil {
 			log.Fatalf("error registering the throttled_host_records metric: %v", err)
-		}
-
-		err = prometheus.Register(m.MainQueueLength)
-		if err != nil {
-			log.Fatalf("error registering the main_queue_length_hist metric: %v", err)
-		}
-
-		err = prometheus.Register(m.HostQueueLength)
-		if err != nil {
-			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
-		}
-
-		err = prometheus.Register(m.ProcessingDuration)
-		if err != nil {
-			log.Fatalf("error registering the host_queue_length_hist metric: %v", err)
 		}
 
 		err = prometheus.Register(m.ActiveTCPConnections)
