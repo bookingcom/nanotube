@@ -12,14 +12,14 @@ TCPOutBufSize=4096
 TargetPort = 2008
 
 # The size on main queue between listen and routing. Refer to docs for details.
-MainQueueSize = 50000
+MainQueueSize = 1000000
 # Each host has it's own queue that contains records to be sent to it. This is the size of it.
 # Refer to docs for more insight.
 # around 200 ml datapoints can be stored in memory if main queue is overflown
-HostQueueSize = 400000
+HostQueueSize = 10000
 BatchFlushPerdiodSec = 10
-MainQueueBatchSize = 2000
-TCPOutConnectionRefreshPeriodSec = 55
+MainQueueBatchSize = 1000
+TCPOutConnectionRefreshPeriodSec = 40
 
 # Profiling port
 PprofPort = 6060
