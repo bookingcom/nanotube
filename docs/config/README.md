@@ -22,4 +22,4 @@ Optionally, it is possible to apply the [rewrite rules](rewrite.toml). This is h
 - all rules are applied to each record one-by-one in order. The record may be modified along the way;
 - rule matches if `from` matches;
   - then metric path is rewritten to `to` in place;
-  - if `copy` is `true` the original metric is copied and sent directly to be routed skipping the following re-writes. `copy` is `false` be default.
+  - if `copy` is `true` the original metric is copied and sent directly to be routed skipping the following re-writes. `copy` is `false` by default.

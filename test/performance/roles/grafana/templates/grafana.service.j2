@@ -1,0 +1,12 @@
+[Unit]
+Description=Grafana
+After=network.target
+
+[Service]
+ExecStart=/usr/local/grafana-9.0.6/bin/grafana-server -homepath /usr/local/grafana-9.0.6/
+LimitNOFILE=5000
+User=grafana
+Group=grafana
+
+[Install]
+WantedBy=multi-user.target

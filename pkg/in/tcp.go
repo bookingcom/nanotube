@@ -195,7 +195,7 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, cfg *conf.Main, 
 	defer qb.Close()
 
 	for sc.Scan() {
-		rec := []byte{}
+		var rec []byte
 		rec = append(rec, sc.Bytes()...)
 
 		err := conn.SetReadDeadline(time.Now().Add(

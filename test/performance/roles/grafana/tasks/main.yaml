@@ -1,0 +1,51 @@
+---
+- name: create group
+  group:
+    name: grafana
+    state: present
+    system: true
+
+- name: create user
+  user:
+    name: grafana
+    group: grafana
+    system: true
+
+- name: unarchive grafana
+  ansible.builtin.unarchive:
+      src: grafana-enterprise-9.0.6.linux-amd64.tar.gz
+      dest: /usr/local
+  notify: restart-grafana
+
+- name: Make grafana binary executable
+  file:
+    path: /usr/local/grafana-9.0.6/bin/grafana-server
+    state: file
+    owner: grafana
+    group: grafana
+    mode: 0755
+  notify: restart-grafana
+
+- name: Recursively change ownership of a grafana dir
+  ansible.builtin.file:
+    path: /usr/local/grafana-9.0.6/
+    state: directory
+    recurse: yes
+    owner: grafana
+    group: grafana
+
+- name: copy systemd unit file
+  template:
+    src: grafana.service.j2
+    dest: /etc/systemd/system/grafana.service
+    owner: grafana
+    group: grafana
+    mode: "0644"
+  notify: restart-grafana
+
+- name: run systemd
+  ansible.builtin.systemd:
+    name: grafana
+    state: started
+    daemon_reload: yes
+    enabled: yes
