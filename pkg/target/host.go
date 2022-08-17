@@ -157,7 +157,7 @@ func (h *Host) Stop() {
 	close(h.Ch)
 }
 
-// Stream launches the the sending to target host.
+// Stream launches the sending to target host.
 // Exits when queue is closed and sending is finished.
 func (h *Host) Stream(wg *sync.WaitGroup) {
 	if h.conf.TCPOutBufFlushPeriodSec != 0 {
@@ -193,12 +193,12 @@ func (h *Host) tryToSend(r *rec.RecBytes) {
 			h.Lg.Warn("error setting write deadline", zap.Error(err))
 		}
 
-		_, err = h.Conn.W.Write([]byte(r.Serialize()))
+		_, err = h.Conn.W.Write(r.Serialize())
 
 		if err == nil {
 			h.outRecs.Inc()
 			h.outRecsTotal.Inc()
-			// h.processingDuration.Observe(time.Since(r.Received).Seconds())
+			//h.processingDuration.Observe(time.Since(r.Received).Seconds())
 			h.Conn.LastConnUse = time.Now() // TODO: This is not the last time conn was used. It is used when buffer is flushed.
 			break
 		}
