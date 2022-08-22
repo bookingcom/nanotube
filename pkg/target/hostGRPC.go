@@ -25,7 +25,6 @@ type HostGRPC struct {
 }
 
 // NewHostGRPC builds new host object from config.
-// TODO: Add logger tag to specify protocol
 func NewHostGRPC(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *HostGRPC {
 	grpc.EnableTracing = mainCfg.GRPCTracing
 
