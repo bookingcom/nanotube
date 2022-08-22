@@ -97,7 +97,7 @@ func main() {
 		if err != nil {
 			lg.Error("opening TCP port for Prometheus failed", zap.Error(err))
 		}
-		err = http.Serve(l, promhttp.Handler())
+		err = http.Serve(l, http.AllowQuerySemicolons(promhttp.Handler()))
 		if err != nil {
 			lg.Error("Prometheus server failed", zap.Error(err))
 		}
