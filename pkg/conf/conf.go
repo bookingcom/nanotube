@@ -201,7 +201,7 @@ func MakeDefault() Main {
 		RewritesConfig: "",
 
 		K8sMode:                  false,
-		K8sUseK8sServer:        false,
+		K8sUseK8sServer:          false,
 		K8sInjectPortTCP:         2003,
 		K8sSwitchLabelKey:        "graphite_tcp_port",
 		K8sSwitchLabelVal:        "enabled",

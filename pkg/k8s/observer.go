@@ -49,7 +49,7 @@ func ObserveViaK8sAPI(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg 
 	}()
 }
 
-// Observe is a function to observe and check for labeled pods via the local Docker service.
+// ObserveLocal is a function to observe and check for labeled pods via the local Docker service.
 // Non-blocking. Dones wg on finish.
 func ObserveLocal(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
