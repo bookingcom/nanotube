@@ -18,9 +18,9 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// ObserveByLabel is a function to observe and check for labeled pods via k8s API server.
+// ObserveViaK8sAPI is a function to observe and check for labeled pods via k8s API server.
 // Non-blocking. Dones wg on finish.
-func ObserveByLabel(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+func ObserveViaK8sAPI(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
 	go func() {
 		cs := map[string]*Cont{}
@@ -49,9 +49,9 @@ func ObserveByLabel(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *s
 	}()
 }
 
-// Observe is a function to observe and check for labeled pods via k8s API server.
+// Observe is a function to observe and check for labeled pods via the local Docker service.
 // Non-blocking. Dones wg on finish.
-func Observe(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+func ObserveLocal(q chan<- []byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
 	go func() {
 		cs := map[string]*Cont{}

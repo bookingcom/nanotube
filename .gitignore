@@ -1,10 +1,13 @@
-/nanotube
 .deploy
 .vscode
 .idea
 cover.out
+
+sender
 test/sender/sender
+receiver
 test/receiver/receiver
+nanotube
 
 test/fuzz/corpus/*
 !test/fuzz/corpus/seed
