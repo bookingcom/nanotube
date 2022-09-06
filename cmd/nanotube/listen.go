@@ -27,9 +27,9 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 		connWG.Add(1)
 
 		if cfg.K8sUseK8sServer {
-			k8s.ObserveViaK8sAPI(queue, cfg, stop, &connWG, lg, ms)
+			k8s.ObserveViaK8sAPI(queueBuf, cfg, stop, &connWG, lg, ms)
 		} else {
-			k8s.ObserveLocal(queue, cfg, stop, &connWG, lg, ms)
+			k8s.ObserveLocal(queueBuf, cfg, stop, &connWG, lg, ms)
 		}
 	} else {
 		if cfg.ListenTCP != "" {
@@ -62,7 +62,6 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 			lg.Info("Launch: Opened UDP connection for listening.", zap.String("ListenUDP", cfg.ListenUDP))
 
 			connWG.Add(1)
-			// go in.ListenUDP(conn, queue, stop, &connWG, ms, lg)
 			go in.ListenUDPBuf(conn, queueBuf, stop, &connWG, cfg, ms, lg)
 		}
 
