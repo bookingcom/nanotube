@@ -27,7 +27,7 @@ type Cont struct {
 	Name         string
 	IsContainerd bool
 
-	Q    chan<- []byte
+	Q    chan<- [][]byte
 	Cfg  *conf.Main
 	Port uint16
 
@@ -40,7 +40,7 @@ type Cont struct {
 }
 
 // NewCont is a constructor.
-func NewCont(id string, name string, isContainerd bool, q chan<- []byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
+func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
 	return &Cont{
 		ID:           id,
 		Name:         name,
@@ -86,7 +86,7 @@ func (c *Cont) StartForwarding() {
 	}
 
 	c.Wg.Add(1)
-	go in.AcceptAndListenTCP(listener, c.Q, c.OwnStop, c.Cfg, c.Wg, c.Ms, c.Lg)
+	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, c.Cfg, c.Wg, c.Ms, c.Lg)
 
 	go func() {
 		select {

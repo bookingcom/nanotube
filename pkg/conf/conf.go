@@ -22,7 +22,7 @@ type Main struct {
 	// Launch NT as a k8s daemonset forwarding metrics from pods.
 	K8sMode bool
 	// Use filter pods by label?
-	K8sLabelFiltering bool
+	K8sUseK8sServer bool
 	// Pods to inject for TCP listening on selected pods. Metics sent to that port will be forwarded
 	// to the running daemon-set.
 	K8sInjectPortTCP uint16
@@ -201,7 +201,7 @@ func MakeDefault() Main {
 		RewritesConfig: "",
 
 		K8sMode:                  false,
-		K8sLabelFiltering:        false,
+		K8sUseK8sServer:          false,
 		K8sInjectPortTCP:         2003,
 		K8sSwitchLabelKey:        "graphite_tcp_port",
 		K8sSwitchLabelVal:        "enabled",
