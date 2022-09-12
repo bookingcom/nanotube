@@ -39,7 +39,6 @@ func (cls Clusters) Send(finish chan struct{}) chan struct{} {
 
 // NewClusters builds new set of clusters from config.
 func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *metrics.Prom) (Clusters, error) {
-	// TODO (grzkv): Add duplicate defense
 	cls := make(map[string]*Cluster)
 	var err error
 	for _, cc := range cfg.Cluster {

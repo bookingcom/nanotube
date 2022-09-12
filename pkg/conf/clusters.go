@@ -61,6 +61,7 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 	if err != nil {
 		return cls, errors.Wrap(err, "error while decoding")
 	}
+
 	if len(cls.Cluster) == 0 {
 		return cls, errors.New("could not find any cluster in clusters configuration")
 	}
@@ -74,10 +75,20 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster {
 			return cls, fmt.Errorf("cluster with index %d does not have any hosts", idx)
 		}
-		for hostIdx, host := range cluster.Hosts {
+
+		inxs := map[int]bool{}
+		for _, host := range cluster.Hosts {
 			if host.Name == "" {
-				return cls, fmt.Errorf("host %d in cluster with index %d does not have a name", hostIdx, idx)
+				return cls, fmt.Errorf("host %d in cluster does not have a name", idx)
 			}
+
+			if host.Index < 0 || host.Index >= len(cluster.Hosts) {
+				return cls, fmt.Errorf("host %s index is %d; it is out of bounds in cluster %s", host.Name, host.Index, cluster.Name)
+			}
+			if inxs[host.Index] {
+				return cls, fmt.Errorf("duplicate host index %d in cluster %s", host.Index, cluster.Name)
+			}
+			inxs[host.Index] = true
 		}
 	}
 	return cls, nil

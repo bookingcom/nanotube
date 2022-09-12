@@ -12,7 +12,6 @@ import (
 
 	"github.com/dgryski/go-jump"
 	"github.com/pkg/errors"
-	// "github.com/segmentio/fasthash/fnv1a"
 )
 
 // ClusterTarget is abstract notion of a target to send the records to during processing.
@@ -121,12 +120,7 @@ func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
 	}()
 }
 
-// func jumpHash(path string, ringSize int) int32 {
-// 	key := fnv1a.HashString64(path)
-// 	return jump.Hash(key, ringSize)
-// }
-
-// hashing for the rind of hosts in a cluster based on the record path
+// Hashing for the ring of hosts in a cluster based on the record path
 // using https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function and
 // https://arxiv.org/abs/1406.2294
 func jumpHashStd(path []byte, ringSize int) int32 {
