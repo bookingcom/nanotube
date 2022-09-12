@@ -5,10 +5,6 @@
   gather_facts: no
 
   tasks:
-    - name: Build NT
-      make:
-        chdir: ..
-        target: build
     - name: Ensure the NT image is built
       docker_image:
         name: nt
@@ -49,43 +45,43 @@
 
     # k8s setup
     - name: nanokube namespace
-      community.kubernetes.k8s:
+      kubernetes.core.k8s:
         context: kind-nttest
         state: present
         src: nanokube-namespace.yaml
 
     - name: nanokube serviceaccount
-      community.kubernetes.k8s:
+      kubernetes.core.k8s:
         context: kind-nttest
         state: present
         src: nanokube-serviceaccount.yaml
 
     - name: Nanokube role
-      community.kubernetes.k8s:
+      kubernetes.core.k8s:
         context: kind-nttest
         state: present
         src: nanokube-role.yaml
 
     - name: Bind Nanokube role
-      community.kubernetes.k8s:
+      kubernetes.core.k8s:
         context: kind-nttest
         state: present
         src: nanokube-rolebinding.yaml
 
     - name: Deploy Nanokube daemonset
-      community.kubernetes.k8s:
+      kubernetes.core.k8s:
         context: kind-nttest
         state: present
         src: nanokube-daemonset.yaml
 
     - name: sender namespace
-      community.kubernetes.k8s:
+      kubernetes.core.k8s:
         context: kind-nttest
         state: present
         src: sender-namespace.yaml
 
     - name: Deploy sender
-      community.kubernetes.k8s:
+      kubernetes.core.k8s:
         context: kind-nttest
         state: present
         src: sender-deployment.yaml
