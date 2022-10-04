@@ -26,3 +26,6 @@ test/performance/hosts.yaml
 test/performance/run-sender.sh
 test/performance/setup.yaml
 test/performance/roles/prometheus/files/prometheus
+/local/config/clusters.toml
+/local/config/config.toml
+/local/config/rules.toml

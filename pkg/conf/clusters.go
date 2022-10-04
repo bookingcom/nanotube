@@ -75,20 +75,21 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster {
 			return cls, fmt.Errorf("cluster with index %d does not have any hosts", idx)
 		}
+		if cluster.Type == JumpCluster {
+			inxs := map[int]bool{}
+			for _, host := range cluster.Hosts {
+				if host.Name == "" {
+					return cls, fmt.Errorf("host %d in cluster does not have a name", idx)
+				}
 
-		inxs := map[int]bool{}
-		for _, host := range cluster.Hosts {
-			if host.Name == "" {
-				return cls, fmt.Errorf("host %d in cluster does not have a name", idx)
+				if host.Index < 0 || host.Index >= len(cluster.Hosts) {
+					return cls, fmt.Errorf("host %s index is %d; it is out of bounds in cluster %s", host.Name, host.Index, cluster.Name)
+				}
+				if inxs[host.Index] {
+					return cls, fmt.Errorf("duplicate host index %d in cluster %s", host.Index, cluster.Name)
+				}
+				inxs[host.Index] = true
 			}
-
-			if host.Index < 0 || host.Index >= len(cluster.Hosts) {
-				return cls, fmt.Errorf("host %s index is %d; it is out of bounds in cluster %s", host.Name, host.Index, cluster.Name)
-			}
-			if inxs[host.Index] {
-				return cls, fmt.Errorf("duplicate host index %d in cluster %s", host.Index, cluster.Name)
-			}
-			inxs[host.Index] = true
 		}
 	}
 	return cls, nil
