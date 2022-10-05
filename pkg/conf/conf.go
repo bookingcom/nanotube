@@ -156,6 +156,15 @@ type Main struct {
 	// Histogram parameters for the processing duration
 	ProcessingDurationBucketFactor float64
 	ProcessingDurationBuckets      int
+
+	// RateLimiter config
+	RateLimiterEnabled                  bool
+	RateLimiterWindowSizeSec            int
+	RateLimiterContainerRecordLimit     int
+	RateLimiterGlobalRecordLimit        int
+	RateLimiterIntervalSec              int
+	RateLimiterPerReaderRecordThreshold int
+	RateLimiterRetryDurationSec         int
 }
 
 // ReadMain reads the main config

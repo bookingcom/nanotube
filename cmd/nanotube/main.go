@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"io/ioutil"
 	"log"
 	"net"
@@ -105,8 +106,12 @@ func main() {
 
 	stop := make(chan struct{})
 
+	var rateLimiterSet *ratelimiter.Set
+	if cfg.RateLimiterEnabled {
+		rateLimiterSet = ratelimiter.NewRateLimiterSet(&cfg)
+	}
 	n := gracenet.Net{}
-	queue, err := Listen(&n, &cfg, stop, lg, ms)
+	queue, err := Listen(&n, rateLimiterSet, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"net"
 	"os"
 	"path/filepath"
@@ -56,8 +57,9 @@ func setup(t *testing.T) {
 	}
 
 	term := make(chan struct{})
+	var rls *ratelimiter.Set
 	n := gracenet.Net{}
-	pipe, err := Listen(&n, &cfg, term, lg, ms)
+	pipe, err := Listen(&n, rls, &cfg, term, lg, ms)
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"net"
 	"strings"
 	"sync"
@@ -35,12 +36,14 @@ type Cont struct {
 	OwnStop    chan struct{}   // used to stop operation independently
 	Wg         *sync.WaitGroup
 
+	Rls *ratelimiter.Set
+
 	Lg *zap.Logger
 	Ms *metrics.Prom
 }
 
 // NewCont is a constructor.
-func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
+func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, rls *ratelimiter.Set, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
 	return &Cont{
 		ID:           id,
 		Name:         name,
@@ -53,6 +56,8 @@ func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, stop 
 		GlobalStop: stop,
 		OwnStop:    make(chan struct{}),
 		Wg:         wg,
+
+		Rls: rls,
 
 		Lg: lg.With(zap.String("ID", id), zap.String("name", name), zap.Bool("isContainerd", isContainerd)),
 		Ms: ms,
@@ -86,7 +91,16 @@ func (c *Cont) StartForwarding() {
 	}
 
 	c.Wg.Add(1)
-	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, c.Cfg, c.Wg, c.Ms, c.Lg)
+	var rateLimiters []ratelimiter.RateLimiter
+	if c.Rls != nil {
+		if c.Rls.GlobalRateLimiter() != nil {
+			rateLimiters = append(rateLimiters, c.Rls.GlobalRateLimiter())
+		}
+		if c.Cfg.RateLimiterContainerRecordLimit > 0 {
+			rateLimiters = append(rateLimiters, c.Rls.GetOrCreateContainerRateLimiterWithID(c.ID, c.Cfg))
+		}
+	}
+	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, rateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg)
 
 	go func() {
 		select {

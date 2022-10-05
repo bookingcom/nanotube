@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"math/rand"
 	"os"
 	"strings"
@@ -20,7 +21,7 @@ import (
 
 // ObserveViaK8sAPI is a function to observe and check for labeled pods via k8s API server.
 // Non-blocking. Dones wg on finish.
-func ObserveViaK8sAPI(q chan<- [][]byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+func ObserveViaK8sAPI(q chan<- [][]byte, rls *ratelimiter.Set, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
 	go func() {
 		cs := map[string]*Cont{}
@@ -35,7 +36,7 @@ func ObserveViaK8sAPI(q chan<- [][]byte, cfg *conf.Main, stop <-chan struct{}, w
 			<-tick.C
 			time.Sleep(time.Second * time.Duration(rnd.Intn(cfg.K8sObserveJitterRangeSec+1)))
 
-			err := updateWatchedContainers(q, stop, &contWG, cfg, cs, lg, ms)
+			err := updateWatchedContainers(q, rls, stop, &contWG, cfg, cs, lg, ms)
 			if err != nil {
 				lg.Error("error updating watched containers", zap.Error(err))
 			}
@@ -51,7 +52,7 @@ func ObserveViaK8sAPI(q chan<- [][]byte, cfg *conf.Main, stop <-chan struct{}, w
 
 // ObserveLocal is a function to observe and check for labeled pods via the local Docker service.
 // Non-blocking. Dones wg on finish.
-func ObserveLocal(q chan<- [][]byte, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
+func ObserveLocal(q chan<- [][]byte, rls *ratelimiter.Set, cfg *conf.Main, stop <-chan struct{}, wg *sync.WaitGroup, lg *zap.Logger, ms *metrics.Prom) {
 	var contWG sync.WaitGroup
 	go func() {
 		cs := map[string]*Cont{}
@@ -66,7 +67,7 @@ func ObserveLocal(q chan<- [][]byte, cfg *conf.Main, stop <-chan struct{}, wg *s
 			<-tick.C
 			time.Sleep(time.Second * time.Duration(rnd.Intn(cfg.K8sObserveJitterRangeSec+1)))
 
-			err := updateWatchedContainersLocal(q, stop, &contWG, cfg, cs, lg, ms)
+			err := updateWatchedContainersLocal(q, rls, stop, &contWG, cfg, cs, lg, ms)
 			if err != nil {
 				lg.Error("error updating watched containers", zap.Error(err))
 			}
@@ -80,7 +81,7 @@ func ObserveLocal(q chan<- [][]byte, cfg *conf.Main, stop <-chan struct{}, wg *s
 	}()
 }
 
-func updateWatchedContainersLocal(q chan<- [][]byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
+func updateWatchedContainersLocal(q chan<- [][]byte, rls *ratelimiter.Set, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
 	freshCs, err := getLocalContainers(cfg)
 	if err != nil {
 		return errors.Wrap(err, "getting containers via k8s API failed")
@@ -98,7 +99,7 @@ func updateWatchedContainersLocal(q chan<- [][]byte, stop <-chan struct{}, wg *s
 
 	for id, c := range freshCs {
 		if _, ok := cs[id]; !ok {
-			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, stop, wg, cfg, lg, ms)
+			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, rls, stop, wg, cfg, lg, ms)
 			ms.K8sPickedUpContainers.Inc()
 			ms.K8sCurrentForwardedContainers.Inc()
 			go cs[id].StartForwarding()
@@ -108,7 +109,7 @@ func updateWatchedContainersLocal(q chan<- [][]byte, stop <-chan struct{}, wg *s
 	return nil
 }
 
-func updateWatchedContainers(q chan<- [][]byte, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
+func updateWatchedContainers(q chan<- [][]byte, rls *ratelimiter.Set, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
 	freshCs, err := getContainers(cfg)
 	if err != nil {
 		return errors.Wrap(err, "getting containers via k8s API failed")
@@ -129,7 +130,7 @@ func updateWatchedContainers(q chan<- [][]byte, stop <-chan struct{}, wg *sync.W
 
 	for id, c := range freshCs {
 		if _, ok := cs[id]; !ok {
-			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, stop, wg, cfg, lg, ms)
+			cs[id] = NewCont(id, c.Name, c.IsContainerd, q, rls, stop, wg, cfg, lg, ms)
 			ms.K8sPickedUpContainers.Inc()
 			ms.K8sCurrentForwardedContainers.Inc()
 			go cs[id].StartForwarding()
