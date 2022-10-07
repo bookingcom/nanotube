@@ -159,12 +159,12 @@ type Main struct {
 
 	// RateLimiter config
 	RateLimiterEnabled                  bool
-	RateLimiterWindowSizeSec            int
 	RateLimiterContainerRecordLimit     int
 	RateLimiterGlobalRecordLimit        int
-	RateLimiterIntervalSec              int
+	RateLimiterWindowSizeSec            int
+	RateLimiterIntervalMs               int
 	RateLimiterPerReaderRecordThreshold int
-	RateLimiterRetryDurationSec         int
+	RateLimiterRetryDurationMs          int
 }
 
 // ReadMain reads the main config
@@ -274,6 +274,11 @@ func MakeDefault() Main {
 
 		ProcessingDurationBucketFactor: 2,
 		ProcessingDurationBuckets:      10,
+
+		RateLimiterWindowSizeSec:            10,
+		RateLimiterIntervalMs:               1000,
+		RateLimiterPerReaderRecordThreshold: 1000,
+		RateLimiterRetryDurationMs:          100,
 	}
 }
 

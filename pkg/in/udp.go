@@ -71,14 +71,14 @@ func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}
 	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
 	defer qb.Close()
 
-	intervalDuration := time.Duration(cfg.RateLimiterIntervalSec) * time.Second
 	var rlTickerChan <-chan time.Time
-	if rateLimiters != nil {
+	if rateLimiters != nil && cfg.RateLimiterIntervalMs > 0 {
+		intervalDuration := time.Duration(cfg.RateLimiterIntervalMs) * time.Millisecond
 		ch, stopCh := newRateLimiterTicker(intervalDuration)
 		defer stopCh()
 		rlTickerChan = ch
 	}
-	retryDuration := time.Duration(cfg.RateLimiterRetryDurationSec) * time.Second
+	retryDuration := time.Duration(cfg.RateLimiterRetryDurationMs) * time.Millisecond
 
 	recCount := 0
 loop:
