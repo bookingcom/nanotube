@@ -97,7 +97,7 @@ func (c *Cont) StartForwarding() {
 			rateLimiters = append(rateLimiters, c.Rls.GlobalRateLimiter())
 		}
 		if c.Cfg.RateLimiterContainerRecordLimit > 0 {
-			rateLimiters = append(rateLimiters, c.Rls.GetOrCreateContainerRateLimiterWithID(c.ID, c.Cfg))
+			rateLimiters = append(rateLimiters, c.Rls.GetOrCreateContainerRateLimiterWithID(c.ID, c.Cfg, c.Ms))
 		}
 	}
 	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, rateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg)

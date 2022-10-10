@@ -37,6 +37,9 @@ type Prom struct {
 	NumberOfAvailableTargets *prometheus.GaugeVec
 	NumberOfTargets          *prometheus.GaugeVec
 
+	GlobalRateLimiterBlockedRecords    prometheus.Counter
+	ContainerRateLimiterBlockedRecords *prometheus.CounterVec
+
 	K8sPickedUpContainers         prometheus.Counter
 	K8sCurrentForwardedContainers prometheus.Gauge
 
@@ -151,6 +154,16 @@ func New(conf *conf.Main) *Prom {
 			Name:      "number_of_targets",
 			Help:      "Number of targets by cluster as seen by LB. Only counted for LB clusters.",
 		}, []string{"cluster"}),
+		GlobalRateLimiterBlockedRecords: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "global_rate_limiter_blocked_records",
+			Help:      "Number of records that global rate limiter has blocked.",
+		}),
+		ContainerRateLimiterBlockedRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "nanotube",
+			Name:      "container_rate_limiter_blocked_records",
+			Help:      "Number of records that container rate limiter has blocked.",
+		}, []string{"container_id"}),
 		K8sPickedUpContainers: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "k8s_picked_up_containers_total",
@@ -252,6 +265,11 @@ func Register(m *Prom, cfg *conf.Main) {
 		log.Fatalf("error registering the clusters_version metric: %v", err)
 	}
 
+	err = prometheus.Register(m.GlobalRateLimiterBlockedRecords)
+	if err != nil {
+		log.Fatalf("error while registering global_rate_limiter_blocking metric: %v", err)
+	}
+
 	if !cfg.LessMetrics {
 		err = prometheus.Register(m.OutRecs)
 		if err != nil {
@@ -303,6 +321,11 @@ func Register(m *Prom, cfg *conf.Main) {
 			log.Fatalf("error while registering number_of_targets metric: %v", err)
 		}
 
+		err = prometheus.Register(m.ContainerRateLimiterBlockedRecords)
+		if err != nil {
+			log.Fatalf("error while registering container_rate_limiter_blocking metric: %v", err)
+		}
+
 		err = prometheus.Register(m.K8sPickedUpContainers)
 		if err != nil {
 			log.Fatalf("error registering the k8s_picked_up_containers_total metric: %v", err)
@@ -320,4 +343,5 @@ func Register(m *Prom, cfg *conf.Main) {
 			}
 		}
 	}
+
 }

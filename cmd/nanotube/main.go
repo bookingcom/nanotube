@@ -108,7 +108,7 @@ func main() {
 
 	var rateLimiterSet *ratelimiter.Set
 	if cfg.RateLimiterEnabled {
-		rateLimiterSet = ratelimiter.NewRateLimiterSet(&cfg)
+		rateLimiterSet = ratelimiter.NewRateLimiterSet(&cfg, ms)
 	}
 	n := gracenet.Net{}
 	queue, err := Listen(&n, rateLimiterSet, &cfg, stop, lg, ms)
