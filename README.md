@@ -67,7 +67,7 @@ We support OpenTelemetry by using [v0.7.0 of protobuf protocol](https://github.c
 
 ## K8s support
 
-Nanotube can run as a daemonset in k8s. It can play a role of the submission sidecar by injecting ports into tagged pods. See [k8s/launch.yml] for a sample setup.
+Nanotube can run as a daemonset in k8s. It can play a role of the submission sidecar by injecting ports into tagged pods. See [Nanokube doc](k8s/README.md) for more info.
 
 ## Acknowledgment
 
