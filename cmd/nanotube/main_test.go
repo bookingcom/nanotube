@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
+
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -57,9 +58,9 @@ func setup(t *testing.T) {
 	}
 
 	term := make(chan struct{})
-	var rls *ratelimiter.Set
+	var rateLimiters []*ratelimiter.SlidingWindow
 	n := gracenet.Net{}
-	pipe, err := Listen(&n, rls, &cfg, term, lg, ms)
+	pipe, err := Listen(&n, rateLimiters, &cfg, term, lg, ms)
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}

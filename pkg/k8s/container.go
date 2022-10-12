@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
@@ -36,14 +37,22 @@ type Cont struct {
 	OwnStop    chan struct{}   // used to stop operation independently
 	Wg         *sync.WaitGroup
 
-	Rls *ratelimiter.Set
+	RateLimiters []*ratelimiter.SlidingWindow
 
 	Lg *zap.Logger
 	Ms *metrics.Prom
 }
 
 // NewCont is a constructor.
-func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, rls *ratelimiter.Set, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
+func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, lg *zap.Logger, ms *metrics.Prom) *Cont {
+	var containerRateLimiters []*ratelimiter.SlidingWindow
+	containerRateLimiters = append(containerRateLimiters, rateLimiters...)
+	if cfg.RateLimiterContainerRecordLimit > 0 {
+		windowSize := time.Duration(cfg.RateLimiterWindowSizeSec) * time.Second
+		containerRateLimiter := ratelimiter.NewSlidingWindowRateLimiter(windowSize,
+			int64(cfg.RateLimiterContainerRecordLimit), ms.ContainerRateLimiterBlockedReaders.WithLabelValues(id))
+		containerRateLimiters = append(containerRateLimiters, containerRateLimiter)
+	}
 	return &Cont{
 		ID:           id,
 		Name:         name,
@@ -57,7 +66,7 @@ func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, rls *
 		OwnStop:    make(chan struct{}),
 		Wg:         wg,
 
-		Rls: rls,
+		RateLimiters: containerRateLimiters,
 
 		Lg: lg.With(zap.String("ID", id), zap.String("name", name), zap.Bool("isContainerd", isContainerd)),
 		Ms: ms,
@@ -91,16 +100,7 @@ func (c *Cont) StartForwarding() {
 	}
 
 	c.Wg.Add(1)
-	var rateLimiters []ratelimiter.RateLimiter
-	if c.Rls != nil {
-		if c.Rls.GlobalRateLimiter() != nil {
-			rateLimiters = append(rateLimiters, c.Rls.GlobalRateLimiter())
-		}
-		if c.Cfg.RateLimiterContainerRecordLimit > 0 {
-			rateLimiters = append(rateLimiters, c.Rls.GetOrCreateContainerRateLimiterWithID(c.ID, c.Cfg, c.Ms))
-		}
-	}
-	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, rateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg)
+	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, c.RateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg)
 
 	go func() {
 		select {

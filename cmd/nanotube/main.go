@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"io/ioutil"
 	"log"
 	"net"
@@ -19,16 +18,16 @@ import (
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
 	"github.com/bookingcom/nanotube/pkg/target"
 	"github.com/facebookgo/pidfile"
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/libp2p/go-reuseport"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -106,12 +105,15 @@ func main() {
 
 	stop := make(chan struct{})
 
-	var rateLimiterSet *ratelimiter.Set
-	if cfg.RateLimiterEnabled {
-		rateLimiterSet = ratelimiter.NewRateLimiterSet(&cfg, ms)
+	var rateLimiters []*ratelimiter.SlidingWindow
+	if cfg.RateLimiterGlobalRecordLimit > 0 {
+		windowSize := time.Duration(cfg.RateLimiterWindowSizeSec) * time.Second
+		globalRateLimiter := ratelimiter.NewSlidingWindowRateLimiter(windowSize,
+			int64(cfg.RateLimiterGlobalRecordLimit), ms.GlobalRateLimiterBlockedReaders)
+		rateLimiters = append(rateLimiters, globalRateLimiter)
 	}
 	n := gracenet.Net{}
-	queue, err := Listen(&n, rateLimiterSet, &cfg, stop, lg, ms)
+	queue, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms)
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}

@@ -3,13 +3,13 @@ package in
 import (
 	"bytes"
 	"errors"
-	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"go.uber.org/zap"
 )
 
@@ -56,7 +56,7 @@ loop:
 }
 
 // ListenUDPBuf is a buffered version of ListenUDP.
-func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}, rateLimiters []ratelimiter.RateLimiter,
+func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow,
 	connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	go func() {
 		<-stop
@@ -74,9 +74,9 @@ func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}
 	var rlTickerChan <-chan time.Time
 	if rateLimiters != nil && cfg.RateLimiterIntervalMs > 0 {
 		intervalDuration := time.Duration(cfg.RateLimiterIntervalMs) * time.Millisecond
-		ch, stopCh := newRateLimiterTicker(intervalDuration)
-		defer stopCh()
-		rlTickerChan = ch
+		rateLimiterUpdateTicker := time.NewTicker(intervalDuration)
+		rlTickerChan = rateLimiterUpdateTicker.C
+		defer rateLimiterUpdateTicker.Stop()
 	}
 	retryDuration := time.Duration(cfg.RateLimiterRetryDurationMs) * time.Millisecond
 
@@ -88,7 +88,7 @@ loop:
 			break loop
 		case <-rlTickerChan:
 			if rateLimiters != nil {
-				rateLimit(rateLimiters, recCount, retryDuration)
+				ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
 				recCount = 0
 			}
 		default:
@@ -113,7 +113,7 @@ loop:
 			if rateLimiters != nil {
 				recCount += packetRecCount
 				if recCount > cfg.RateLimiterPerReaderRecordThreshold {
-					rateLimit(rateLimiters, recCount, retryDuration)
+					ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
 					recCount = 0
 				}
 			}

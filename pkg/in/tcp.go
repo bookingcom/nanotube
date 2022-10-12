@@ -2,19 +2,19 @@ package in
 
 import (
 	"bufio"
-	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"go.uber.org/zap"
 )
 
 // AcceptAndListenTCPBuf is batched version of AcceptAndListenTCP.
 func AcceptAndListenTCPBuf(l net.Listener, queue chan<- [][]byte, term <-chan struct{},
-	rateLimiters []ratelimiter.RateLimiter, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+	rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
 	var wg sync.WaitGroup
 
 loop:
@@ -57,7 +57,7 @@ loop:
 	connWG.Done()
 }
 
-func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- [][]byte, rateLimiters []ratelimiter.RateLimiter, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	defer wg.Done() // executed after the connection is closed
 	defer func() {
 		err := conn.Close()
@@ -79,7 +79,7 @@ func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- []
 	scanForRecordsTCPBuf(conn, queue, rateLimiters, cfg, ms, lg)
 }
 
-func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []ratelimiter.RateLimiter, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(conn)
 
 	buf := make([]byte, 2048)
@@ -90,9 +90,9 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []r
 	var rlTickerChan <-chan time.Time
 	if rateLimiters != nil && cfg.RateLimiterIntervalMs > 0 {
 		intervalDuration := time.Duration(cfg.RateLimiterIntervalMs) * time.Millisecond
-		ch, stopCh := newRateLimiterTicker(intervalDuration)
-		defer stopCh()
-		rlTickerChan = ch
+		rateLimiterUpdateTicker := time.NewTicker(intervalDuration)
+		rlTickerChan = rateLimiterUpdateTicker.C
+		defer rateLimiterUpdateTicker.Stop()
 	}
 	retryDuration := time.Duration(cfg.RateLimiterRetryDurationMs) * time.Millisecond
 	recCount := 0
@@ -114,11 +114,11 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []r
 			recCount++
 			select {
 			case <-rlTickerChan:
-				rateLimit(rateLimiters, recCount, retryDuration)
+				ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
 				recCount = 0
 			default:
 				if recCount > cfg.RateLimiterPerReaderRecordThreshold {
-					rateLimit(rateLimiters, recCount, retryDuration)
+					ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
 					recCount = 0
 				}
 			}
