@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"go.uber.org/zap"
 )
 
@@ -54,7 +56,8 @@ loop:
 }
 
 // ListenUDPBuf is a buffered version of ListenUDP.
-func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}, connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow,
+	connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	go func() {
 		<-stop
 		lg.Info("Termination: Closing the UDP connection.")
@@ -68,11 +71,26 @@ func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}
 	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
 	defer qb.Close()
 
+	var rlTickerChan <-chan time.Time
+	if rateLimiters != nil && cfg.RateLimiterIntervalMs > 0 {
+		intervalDuration := time.Duration(cfg.RateLimiterIntervalMs) * time.Millisecond
+		rateLimiterUpdateTicker := time.NewTicker(intervalDuration)
+		rlTickerChan = rateLimiterUpdateTicker.C
+		defer rateLimiterUpdateTicker.Stop()
+	}
+	retryDuration := time.Duration(cfg.RateLimiterRetryDurationMs) * time.Millisecond
+
+	recCount := 0
 loop:
 	for {
 		select {
 		case <-stop:
 			break loop
+		case <-rlTickerChan:
+			if rateLimiters != nil {
+				ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
+				recCount = 0
+			}
 		default:
 			nRead, _, err := conn.ReadFrom(buf)
 			if err != nil {
@@ -83,13 +101,21 @@ loop:
 				lg.Error("error reading UDP datagram", zap.Error(err))
 				continue
 			}
-
 			lines := bytes.Split(buf[:nRead], []byte{'\n'})
 
+			packetRecCount := 0
 			for i := 0; i < len(lines)-1; i++ { // last line is empty
 				rec := make([]byte, len(lines[i]))
 				copy(rec, lines[i])
 				qb.Push(rec)
+				packetRecCount++
+			}
+			if rateLimiters != nil {
+				recCount += packetRecCount
+				if recCount > cfg.RateLimiterPerReaderRecordThreshold {
+					ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
+					recCount = 0
+				}
 			}
 		}
 	}

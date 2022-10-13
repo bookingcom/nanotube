@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
+
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -56,8 +58,9 @@ func setup(t *testing.T) {
 	}
 
 	term := make(chan struct{})
+	var rateLimiters []*ratelimiter.SlidingWindow
 	n := gracenet.Net{}
-	pipe, err := Listen(&n, &cfg, term, lg, ms)
+	pipe, err := Listen(&n, rateLimiters, &cfg, term, lg, ms)
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}

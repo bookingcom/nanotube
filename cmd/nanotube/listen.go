@@ -9,15 +9,16 @@ import (
 	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/k8s"
 	"github.com/bookingcom/nanotube/pkg/metrics"
-	"github.com/libp2p/go-reuseport"
+	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 
 	"github.com/facebookgo/grace/gracenet"
+	"github.com/libp2p/go-reuseport"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // Listen listens for incoming metric data
-func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan [][]byte, error) {
+func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan [][]byte, error) {
 	queue := make(chan []byte, cfg.MainQueueSize)
 	queueBuf := make(chan [][]byte, cfg.MainQueueSize)
 
@@ -27,9 +28,9 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 		connWG.Add(1)
 
 		if cfg.K8sUseK8sServer {
-			k8s.ObserveViaK8sAPI(queueBuf, cfg, stop, &connWG, lg, ms)
+			k8s.ObserveViaK8sAPI(queueBuf, rateLimiters, cfg, stop, &connWG, lg, ms)
 		} else {
-			k8s.ObserveLocal(queueBuf, cfg, stop, &connWG, lg, ms)
+			k8s.ObserveLocal(queueBuf, rateLimiters, cfg, stop, &connWG, lg, ms)
 		}
 	} else {
 		if cfg.ListenTCP != "" {
@@ -49,7 +50,7 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 
 			connWG.Add(1)
 
-			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, cfg, &connWG, ms, lg)
+			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, rateLimiters, cfg, &connWG, ms, lg)
 		}
 
 		if cfg.ListenUDP != "" {
@@ -62,7 +63,7 @@ func Listen(n *gracenet.Net, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logge
 			lg.Info("Launch: Opened UDP connection for listening.", zap.String("ListenUDP", cfg.ListenUDP))
 
 			connWG.Add(1)
-			go in.ListenUDPBuf(conn, queueBuf, stop, &connWG, cfg, ms, lg)
+			go in.ListenUDPBuf(conn, queueBuf, stop, rateLimiters, &connWG, cfg, ms, lg)
 		}
 
 		if cfg.ListenGRPC != "" {

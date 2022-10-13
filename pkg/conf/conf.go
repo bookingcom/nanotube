@@ -156,6 +156,23 @@ type Main struct {
 	// Histogram parameters for the processing duration
 	ProcessingDurationBucketFactor float64
 	ProcessingDurationBuckets      int
+
+	// Limits the number of records in the time window a container can send to maximum of
+	// RateLimiterContainerRecordLimit records. Setting this to zero, disables container rate limiters.
+	RateLimiterContainerRecordLimit int
+	// Limits the number of records in the time window that generally can be sent to maximum of
+	// RateLimiterGlobalRecordLimit records. Setting this to zero, disables the global rate limiter.
+	RateLimiterGlobalRecordLimit int
+	// Time window size of rate limiter.
+	RateLimiterWindowSizeSec int
+	// Record threshold for updating rate limiter in a reader. If set to zero or lower, rate limiter is
+	// updated on each record
+	RateLimiterPerReaderRecordThreshold int
+	// Interval in which rate limiter is updated. If set equal or lower than zero, rate limiter updates only on record
+	// threshold.
+	RateLimiterIntervalMs int
+	// Duration in which rate limiter hangs until trying again.
+	RateLimiterRetryDurationMs int
 }
 
 // ReadMain reads the main config
@@ -265,6 +282,11 @@ func MakeDefault() Main {
 
 		ProcessingDurationBucketFactor: 2,
 		ProcessingDurationBuckets:      10,
+
+		RateLimiterWindowSizeSec:            10,
+		RateLimiterIntervalMs:               1000,
+		RateLimiterPerReaderRecordThreshold: 1000,
+		RateLimiterRetryDurationMs:          100,
 	}
 }
 
