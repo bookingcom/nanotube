@@ -4,10 +4,10 @@ metadata:
   name: nanokube
   namespace: nanokube
   labels:
-    k8s-app: nanokube
+    app: nanokube
 spec:
   selector:
-    name: nanokube
+    app: nanokube
   ports:
     - name: prom
       port: 9090
@@ -19,7 +19,7 @@ metadata:
   name: nanokube-sender
   namespace: nanokube-sender
   labels:
-    k8s-app: nanokube
+    app: nanokube-sender
 spec:
   selector:
     app: nanokube-sender

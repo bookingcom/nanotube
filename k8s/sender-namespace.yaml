@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: nanokube-sender
   labels:
-    name: nanokube
+    monitor: nanokube

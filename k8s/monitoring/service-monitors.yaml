@@ -4,11 +4,11 @@ metadata:
   name: nanokube
   namespace: nanokube
   labels:
-    k8s-app: nanokube
+    monitor: nanokube
 spec:
   selector:
     matchLabels:
-      k8s-app: nanokube
+      app: nanokube
   endpoints:
     - port: prom
       path: /
@@ -17,14 +17,14 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: nanokube
+  name: nanokube-sender
   namespace: nanokube-sender
   labels:
-    k8s-app: nanokube
+    monitor: nanokube
 spec:
   selector:
     matchLabels:
-      k8s-app: nanokube
+      app: nanokube-sender
   endpoints:
     - port: prom
       path: /

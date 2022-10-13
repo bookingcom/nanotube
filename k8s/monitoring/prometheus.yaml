@@ -52,10 +52,10 @@ spec:
   serviceAccountName: prometheus
   serviceMonitorSelector:
     matchLabels:
-      k8s-app: nanokube
+      monitor: nanokube
   serviceMonitorNamespaceSelector:
     matchLabels:
-      name: nanokube
+      monitor: nanokube
   resources:
     requests:
       memory: 400Mi
