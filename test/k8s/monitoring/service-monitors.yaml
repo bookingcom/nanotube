@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nanokube
+  namespace: nanokube
+  labels:
+    monitor: nanokube
+spec:
+  selector:
+    matchLabels:
+      app: nanokube
+  endpoints:
+    - port: prom
+      path: /
+---
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nanokube-sender
+  namespace: nanokube-sender
+  labels:
+    monitor: nanokube
+spec:
+  selector:
+    matchLabels:
+      app: nanokube-sender
+  endpoints:
+    - port: prom
+      path: /

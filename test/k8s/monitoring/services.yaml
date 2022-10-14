@@ -1,0 +1,29 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: nanokube
+  namespace: nanokube
+  labels:
+    app: nanokube
+spec:
+  selector:
+    app: nanokube
+  ports:
+    - name: prom
+      port: 9090
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: nanokube-sender
+  namespace: nanokube-sender
+  labels:
+    app: nanokube-sender
+spec:
+  selector:
+    app: nanokube-sender
+  ports:
+    - name: prom
+      port: 9090
+---
