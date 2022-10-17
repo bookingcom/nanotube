@@ -35,3 +35,10 @@ HostQueueLengthBucketFactor = 3.0
 HostQueueLengthBuckets = 10
 ProcessingDurationBucketFactor = 2.0
 ProcessingDurationBuckets = 10
+
+RateLimiterContainerRecordLimit = 900
+RateLimiterGlobalRecordLimit = 1500
+RateLimiterWindowSizeSec = 10
+RateLimiterPerReaderRecordThreshold = 10
+RateLimiterIntervalMs = 0
+RateLimiterRetryDurationMs = 50

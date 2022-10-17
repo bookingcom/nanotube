@@ -4,15 +4,15 @@ metadata:
   name: nanokube
   namespace: nanokube
   labels:
-    k8s-app: nanokube
+    app: nanokube
 spec:
   selector:
     matchLabels:
-      name: nanokube
+      app: nanokube
   template:
     metadata:
       labels:
-        name: nanokube
+        app: nanokube
     spec:
       serviceAccountName: nanokube
       hostNetwork: true
