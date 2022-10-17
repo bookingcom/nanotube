@@ -27,6 +27,8 @@ Command line options:
     Validate configuration files.
 -version
     Print version info.
+-confighash
+    Print config hash info.
 ```
 
 ### Go version

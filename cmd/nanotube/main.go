@@ -35,14 +35,18 @@ import (
 var version string
 
 func main() {
-	cfgPath, validateConfig, versionInfo := parseFlags()
+	cfgPath, validateConfig, versionInfo, configHashInfo := parseFlags()
 
 	if versionInfo {
 		fmt.Println(version)
 		return
 	}
 
-	cfg, clustersConf, rulesConf, rewritesConf, hash, clustersHash, err := readConfigs(cfgPath)
+	cfg, clustersConf, rulesConf, rewritesConf, configHash, clustersHash, err := readConfigs(cfgPath)
+	if configHashInfo {
+		fmt.Println(configHash)
+		return
+	}
 	if err != nil {
 		log.Fatalf("error reading and compiling config: %v", err)
 	}
@@ -75,7 +79,7 @@ func main() {
 	}
 
 	ms.Version.WithLabelValues(version).Inc()
-	ms.ConfVersion.WithLabelValues(hash).Inc()
+	ms.ConfVersion.WithLabelValues(configHash).Inc()
 	ms.ClustersVersion.WithLabelValues(clustersHash).Inc()
 
 	if cfg.PprofPort != -1 {
@@ -164,23 +168,27 @@ func main() {
 	}
 }
 
-func parseFlags() (string, bool, bool) {
+func parseFlags() (string, bool, bool, bool) {
 	cfgPath := flag.String("config", "", "Path to config file.")
 	testConfig := flag.Bool("validate", false, "Validate configuration files.")
 	versionInfo := flag.Bool("version", false, "Print version info.")
+	configHashInfo := flag.Bool("confighash", false, "Print config hash info.")
 
 	flag.Parse()
 
 	// if --version is specified, only print the version, nothing else matters
 	if *versionInfo {
-		return *cfgPath, *testConfig, true
+		return *cfgPath, *testConfig, true, false
+	}
+	if *configHashInfo {
+		return *cfgPath, *testConfig, false, true
 	}
 
 	if cfgPath == nil || *cfgPath == "" {
 		log.Fatal("config file path not specified")
 	}
 
-	return *cfgPath, *testConfig, false
+	return *cfgPath, *testConfig, false, false
 }
 
 func buildLogger(cfg *conf.Main) (*zap.Logger, error) {
@@ -193,7 +201,7 @@ func buildLogger(cfg *conf.Main) (*zap.Logger, error) {
 	}))
 }
 
-func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rulesConf conf.Rules, rewritesConf *conf.Rewrites, hash string, clustersHash string, retErr error) {
+func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rulesConf conf.Rules, rewritesConf *conf.Rewrites, confHash string, clustersHash string, retErr error) {
 	bs, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading config file")
@@ -242,7 +250,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		rewritesConf = &rewritesConfVal
 	}
 
-	hash, err = conf.Hash(&cfg, &clustersConf, &rulesConf, rewritesConf)
+	confHash, err = conf.Hash(&cfg, &clustersConf, &rulesConf, rewritesConf)
 	if err != nil {
 		retErr = fmt.Errorf("error calculating hash config: %w", err)
 	}
