@@ -24,12 +24,12 @@ loop:
 		go func() {
 			conn, err := l.Accept()
 
-			ms.ActiveTCPConnections.Inc()
-			ms.InConnectionsTotalTCP.Inc()
-
 			if err != nil {
 				errCh <- err
 			} else {
+				ms.ActiveTCPConnections.Inc()
+				ms.InConnectionsTotalTCP.Inc()
+
 				connCh <- conn
 			}
 		}()
