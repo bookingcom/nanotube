@@ -49,8 +49,7 @@ func TestRewrites(t *testing.T) {
 		},
 	}
 
-	cfg := conf.MakeDefault()
-	ms := metrics.New(&cfg)
+	ms := metrics.New()
 
 	for _, test := range tests {
 		rewrites, err := Build(&rewrites, false, ms)

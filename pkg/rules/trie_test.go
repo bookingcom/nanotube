@@ -3,7 +3,7 @@ package rules
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -76,7 +76,7 @@ func extractPaths(data [][]byte) (paths [][]byte, errRet error) {
 func readRules() (rules conf.Rules, retErr error) {
 	fixturesPath := "../testdata/"
 
-	f, err := ioutil.ReadFile(filepath.Join(fixturesPath, "rules.toml"))
+	f, err := os.ReadFile(filepath.Join(fixturesPath, "rules.toml"))
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading rules file")
 		return

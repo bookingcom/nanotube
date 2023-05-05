@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -43,8 +42,7 @@ func Setup() (data [][]byte, ms *metrics.Prom, lg *zap.Logger, errRet error) {
 
 	lg, _ = zap.NewProduction()
 
-	cfg := conf.MakeDefault()
-	ms = metrics.New(&cfg)
+	ms = metrics.New()
 
 	return
 }

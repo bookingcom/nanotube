@@ -50,7 +50,7 @@ func setup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error reading and compiling config: %v", err)
 	}
-	ms := metrics.New(&cfg)
+	ms := metrics.New()
 	metrics.Register(ms, &cfg)
 	clusters, rules, rewrites, err := buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, ms, lg)
 	if err != nil {

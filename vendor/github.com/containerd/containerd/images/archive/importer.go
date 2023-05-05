@@ -31,6 +31,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/labels"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/platforms"
 	digest "github.com/opencontainers/go-digest"
@@ -94,6 +95,7 @@ func ImportIndex(ctx context.Context, store content.Store, reader io.Reader, opt
 			symlinks[hdr.Name] = path.Join(path.Dir(hdr.Name), hdr.Linkname)
 		}
 
+		//nolint:staticcheck // TypeRegA is deprecated but we may still receive an external tar with TypeRegA
 		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
 			if hdr.Typeflag != tar.TypeDir {
 				log.G(ctx).WithField("file", hdr.Name).Debug("file type ignored")
@@ -232,12 +234,14 @@ func ImportIndex(ctx context.Context, store content.Store, reader io.Reader, opt
 	return writeManifest(ctx, store, idx, ocispec.MediaTypeImageIndex)
 }
 
+const (
+	kib       = 1024
+	mib       = 1024 * kib
+	jsonLimit = 20 * mib
+)
+
 func onUntarJSON(r io.Reader, j interface{}) error {
-	b, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(b, j)
+	return json.NewDecoder(io.LimitReader(r, jsonLimit)).Decode(j)
 }
 
 func onUntarBlob(ctx context.Context, r io.Reader, store content.Ingester, size int64, ref string) (digest.Digest, error) {
@@ -261,11 +265,11 @@ func resolveLayers(ctx context.Context, store content.Store, layerFiles []string
 		}
 		layers[i] = desc
 		descs[desc.Digest] = &layers[i]
-		filters = append(filters, "labels.\"containerd.io/uncompressed\"=="+desc.Digest.String())
+		filters = append(filters, fmt.Sprintf("labels.\"%s\"==%s", labels.LabelUncompressed, desc.Digest.String()))
 	}
 
 	err := store.Walk(ctx, func(info content.Info) error {
-		dgst, ok := info.Labels["containerd.io/uncompressed"]
+		dgst, ok := info.Labels[labels.LabelUncompressed]
 		if ok {
 			desc := descs[digest.Digest(dgst)]
 			if desc != nil {
@@ -305,7 +309,7 @@ func resolveLayers(ctx context.Context, store content.Store, layerFiles []string
 				}
 				ref := fmt.Sprintf("compress-blob-%s-%s", desc.Digest.Algorithm().String(), desc.Digest.Encoded())
 				labels := map[string]string{
-					"containerd.io/uncompressed": desc.Digest.String(),
+					labels.LabelUncompressed: desc.Digest.String(),
 				}
 				layers[i], err = compressBlob(ctx, store, s, ref, content.WithLabels(labels))
 				if err != nil {
