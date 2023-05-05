@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -68,7 +67,7 @@ func main() {
 		log.Fatalf("error building logger config: %v", err)
 	}
 
-	ms := metrics.New(&cfg)
+	ms := metrics.New()
 	metrics.Register(ms, &cfg)
 
 	lg.Info("GOMAXPROCS value", zap.Int("GOMAXPROCS", runtime.GOMAXPROCS(0)))
@@ -141,9 +140,8 @@ func main() {
 			if err != nil {
 				lg.Error("Reload: Cannot reload: config invalid", zap.Error(err))
 				continue
-			} else {
-				lg.Info("Reload: Config OK. Starting a new instance.")
 			}
+			lg.Info("Reload: Config OK. Starting a new instance.")
 			pid, err := n.StartProcess()
 			if err != nil {
 				lg.Error("Reload: Failed to start new process", zap.Error(err))
@@ -202,7 +200,7 @@ func buildLogger(cfg *conf.Main) (*zap.Logger, error) {
 }
 
 func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rulesConf conf.Rules, rewritesConf *conf.Rewrites, confHash string, clustersHash string, retErr error) {
-	bs, err := ioutil.ReadFile(cfgPath)
+	bs, err := os.ReadFile(cfgPath)
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading config file")
 		return
@@ -213,7 +211,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(cfg.ClustersConfig)
+	bs, err = os.ReadFile(cfg.ClustersConfig)
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading clusters file")
 		return
@@ -224,7 +222,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 		return
 	}
 
-	bs, err = ioutil.ReadFile(cfg.RulesConfig)
+	bs, err = os.ReadFile(cfg.RulesConfig)
 	if err != nil {
 		retErr = errors.Wrap(err, "error reading rules file")
 		return
@@ -237,7 +235,7 @@ func readConfigs(cfgPath string) (cfg conf.Main, clustersConf conf.Clusters, rul
 
 	rewritesConf = nil
 	if cfg.RewritesConfig != "" {
-		bs, err := ioutil.ReadFile(cfg.RewritesConfig)
+		bs, err := os.ReadFile(cfg.RewritesConfig)
 		if err != nil {
 			retErr = errors.Wrap(err, "error reading rewrites config")
 			return
