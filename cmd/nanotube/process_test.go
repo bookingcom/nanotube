@@ -61,8 +61,7 @@ func BenchmarkProcessREs(b *testing.B) {
 	benchMetrics, REs, _ := testData()
 
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	cls := map[string]*target.TestTarget{
 		"1": {Name: "1"},
@@ -101,8 +100,7 @@ func BenchmarkProcessPrefix(b *testing.B) {
 	benchMetrics, _, prefixes := testData()
 
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	cls := map[string]*target.TestTarget{
 		"1": {Name: "1"},
@@ -143,8 +141,7 @@ func BenchmarkProcWithoutConcurrentWorkers(b *testing.B) {
 	benchMetrics, regexs, prefixes := testData()
 
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	cls := map[string]*target.TestTarget{
 		"1": {Name: "1"},
@@ -186,8 +183,7 @@ func BenchmarkProcessFunc(b *testing.B) {
 	benchMetrics, regexs, prefixes := testData()
 
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	cls := map[string]*target.TestTarget{
 		"1": {Name: "1"},
@@ -263,7 +259,7 @@ func setupRealisticBench(b *testing.B) (benchMetrics []string, clusters target.C
 
 	lg = zap.NewNop()
 
-	ms = metrics.New(&cfg)
+	ms = metrics.New()
 	clusters, rules, rewrites, err = buildPipeline(&cfg, &clustersConf, &rulesConf, rewritesConf, ms, lg)
 	if err != nil {
 		b.Fatalf("error building pipline components: %v", err)
@@ -315,8 +311,7 @@ func benchRealisticBytes(b *testing.B, nWorkers int) {
 
 func TestContinueRuleProcessing(t *testing.T) {
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	testMetric := []byte("ab.c 123 123")
 	cls := target.Clusters{
@@ -380,8 +375,7 @@ func TestContinueRuleProcessing(t *testing.T) {
 
 func TestStopRuleProcessing(t *testing.T) {
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	testMetric := []byte(" ab.c 123 123")
 	cls := target.Clusters{
@@ -446,8 +440,7 @@ func TestStopRuleProcessing(t *testing.T) {
 
 func TestRewriteNoCopy(t *testing.T) {
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	testMetric := []byte("ab.c 123 123")
 	cls := target.Clusters{
@@ -498,8 +491,7 @@ func TestRewriteNoCopy(t *testing.T) {
 
 func TestRewriteCopy(t *testing.T) {
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	testMetric := []byte("ab.c 123 123")
 	cls := target.Clusters{
@@ -550,8 +542,7 @@ func TestRewriteCopy(t *testing.T) {
 
 func TestProcessing(t *testing.T) {
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	testMetrics := [][]byte{
 		[]byte("ab.c 123 123"),
@@ -612,8 +603,7 @@ func TestProcessing(t *testing.T) {
 
 func TestProcessingPrefix(t *testing.T) {
 	lg := zap.NewNop()
-	defaultConfig := conf.MakeDefault()
-	ms := metrics.New(&defaultConfig)
+	ms := metrics.New()
 
 	testMetrics := [][]byte{
 		[]byte("ab.c 123 123"),

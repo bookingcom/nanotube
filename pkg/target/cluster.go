@@ -136,7 +136,7 @@ type TestTarget struct {
 }
 
 // PushBytes is a push in tests. It does nothing, just increases the counter.
-func (tt *TestTarget) PushBytes(rec *rec.RecBytes, ms *metrics.Prom) error {
+func (tt *TestTarget) PushBytes(_ *rec.RecBytes, _ *metrics.Prom) error {
 	tt.ReceivedRecsNum++
 	return nil
 }

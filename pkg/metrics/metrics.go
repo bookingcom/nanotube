@@ -52,7 +52,7 @@ type Prom struct {
 
 // New creates a new set of metrics from the main config.
 // This does not include metrics registration.
-func New(conf *conf.Main) *Prom {
+func New() *Prom {
 	return &Prom{
 		InRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",

@@ -64,14 +64,14 @@ func (c *packetConnMock) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (c *packetConnMock) SetReadDeadline(t time.Time) error {
+func (c *packetConnMock) SetReadDeadline(_ time.Time) error {
 	c.m.Lock()
 	defer c.m.Unlock()
 
 	return nil
 }
 
-func (c *packetConnMock) SetWriteDeadline(t time.Time) error {
+func (c *packetConnMock) SetWriteDeadline(_ time.Time) error {
 	c.m.Lock()
 	defer c.m.Unlock()
 

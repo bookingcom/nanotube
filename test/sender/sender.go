@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,10 +74,10 @@ func connectAndSendUDP(destination string, cycle bool, cycles int, messages [][]
 
 		if !cycle {
 			break
-		} else {
-			if cycles != 0 && i >= cycles-1 {
-				break
-			}
+		}
+
+		if cycles != 0 && i >= cycles-1 {
+			break
 		}
 	}
 
@@ -203,10 +203,10 @@ func connectAndSendTCP(destination string, retryTCP bool, TCPBufSize int, cycle 
 
 			if !cycle {
 				break
-			} else {
-				if ncycles != 0 && i >= ncycles-1 {
-					break
-				}
+			}
+
+			if ncycles != 0 && i >= ncycles-1 {
+				break
 			}
 		}
 	}
@@ -237,7 +237,7 @@ func openTCPConnection(destination string, retryTCP bool, lg *zap.Logger) net.Co
 }
 
 func readPlaybackData(path string, lg *zap.Logger) [][]byte {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		lg.Fatal("could not open file", zap.Error(err))
 	}
