@@ -12,7 +12,7 @@ default:
 
 variables:
   RPMBUILD_CENTOS_VERSIONS: "7 8 9"
-  RPMBUILD_TARGET_REPO: /yum/booking-extras/$${CENTOS_VER}/x86_64/RPMS
+  RPMBUILD_TARGET_REPO: /yum/booking.com/$${CENTOS_VER}/booking-extras/x86_64/RPMS
   RPMBUILD_TAG_MATCH: "^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]\\.[0-9][0-9][0-9][0-9][0-9][0-9]$"
 
 ## linter is broken, blocking releases
