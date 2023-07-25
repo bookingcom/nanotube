@@ -18,6 +18,6 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.52.2
-          args: -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false --timeout 2m0s ./...
+          args: -E gofmt -E gochecknoglobals -E unparam -E misspell --exclude-use-default=false --timeout 5m0s ./...
       - name: test
         run: make test
