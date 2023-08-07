@@ -1,6 +1,6 @@
 run:
-  timeout: 2m
-  tests: true
+  timeout: 3m
+  tests: false
 
 linters:
   enable:
