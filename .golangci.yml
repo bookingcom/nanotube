@@ -1,0 +1,29 @@
+run:
+  timeout: 2m
+  tests: true
+
+linters:
+  enable:
+    - asciicheck
+    - bodyclose
+    - gochecknoinits
+    - gofmt
+    - goimports
+    - misspell
+    - unparam
+    - gochecknoglobals
+
+# Enable in the future
+    # - gosec
+
+issues:
+  # Maximum issues count per one linter. Set to 0 to disable. Default is 50.
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text. Set to 0 to disable. Default is 3.
+  max-same-issues: 0
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  # exclude-rules:
+    # Exclude some linters from running on tests files.
+    # - path:
+    #   linters:
+    #     - errcheck
