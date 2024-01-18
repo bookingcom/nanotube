@@ -12,6 +12,9 @@ WORKDIR /nt
 COPY --from=builder /nt/nanotube /nt
 COPY ./k8s/config /nt/config
 
+RUN     adduser graphite --disabled-password
+USER    graphite
+
 # main listening port
 EXPOSE 2003
 # Prometheus port

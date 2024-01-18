@@ -11,4 +11,7 @@ WORKDIR /nt
 COPY --from=builder /nt/sender /nt
 COPY --from=builder /nt/k8s/in /nt/in
 
+RUN     adduser graphite --disabled-password
+USER    graphite
+
 ENTRYPOINT ["./sender", "-data", "in", "-host", "localhost", "-port", "2003", "-rate", "100", "-cycle", "-retryTCP", "-promPort", "9090"]
