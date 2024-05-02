@@ -12,19 +12,17 @@ default:
 
 variables:
   RPMBUILD_CENTOS_VERSIONS: "7 8 9"
-  RPMBUILD_TARGET_REPO: /yum/booking.com/$${CENTOS_VER}/booking-extras/x86_64/RPMS
+  RPMBUILD_TARGET_REPO: /yum/booking.com/$${CENTOS_VER}/graphite
   RPMBUILD_TAG_MATCH: "^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]\\.[0-9][0-9][0-9][0-9][0-9][0-9]$"
 
-## linter is broken, blocking releases
-## should be fixed - dzhdanov
-#lint:
-#  stage: validate
-#  before_script:
-#  - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v1.46.2
-#  script:
-#  - make lint
-#  tags:
-#  - docker
+lint:
+  stage: validate
+  before_script:
+  - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v1.56.2
+  script:
+  - make lint
+  tags:
+  - docker
 
 # NOTE: This is a throw-away build; the artifact is not used anywhere.
 build:
