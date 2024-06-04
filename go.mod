@@ -15,6 +15,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.1
 	github.com/vishvananda/netns v0.0.4
+	go.nanomsg.org/mangos/v3 v3.4.2
 	go.uber.org/atomic v1.11.0
 	go.uber.org/ratelimit v0.2.0
 	go.uber.org/zap v1.24.0
@@ -63,6 +64,7 @@ require (
 	github.com/google/gnostic v0.6.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
