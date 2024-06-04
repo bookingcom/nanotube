@@ -19,7 +19,7 @@ jobs:
           https://github.com/AlekSi/golang-tip/releases/download/tip/master.linux-amd64.tar.gz
           sudo tar -C /usr/local -xzf go.tar.gz
           sudo ln -s /usr/local/go/bin/* /usr/local/bin/
-          /usr/local/bin/bin/go version
+          /usr/local/bin/go version
           echo "PATH=$HOME/go/bin:/usr/local/bin/:$PATH" >> $GITHUB_ENV
       - name: checkout code
         uses: actions/checkout@v3

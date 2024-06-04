@@ -122,16 +122,12 @@ func ConstructHostMANGOS(clusterName string, mainCfg conf.Main, hostCfg conf.Hos
 	h.Ms = ms
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
 
-	if mainCfg.TCPInitialConnCheck {
-		h.setAvailability(false)
-		go func() {
-			h.Conn.Lock()
-			defer h.Conn.Unlock()
-			h.ensureConnection()
-		}()
-	} else {
-		h.setAvailability(true)
-	}
+	h.setAvailability(false)
+	go func() {
+		h.Conn.Lock()
+		defer h.Conn.Unlock()
+		h.ensureConnection()
+	}()
 
 	return &h
 }
@@ -176,22 +172,25 @@ func (h *HostMANGOS) tryToSend(r *rec.RecBytes) {
 	// retry until successful
 	for {
 		var err error
-
-		err = h.Conn.Send(r.Serialize())
-
-		if err == nil {
-			h.outRecs.Inc()
-			h.outRecsTotal.Inc()
-			//h.processingDuration.Observe(time.Since(r.Received).Seconds())
-			h.Conn.LastConnUse = time.Now() // TODO: This is not the last time conn was used. It is used when buffer is flushed.
-			break
-		}
-
-		h.Lg.Warn("error sending value to host. Reconnect and retry..", zap.Error(err))
-		err = h.Conn.Close()
-		if err != nil {
-			// not retrying here, file descriptor may be lost
-			h.Lg.Error("error closing the connection", zap.Error(err))
+		if r != nil {
+			s := r.Serialize()
+			h.Lg.Info("Sending value to host", zap.ByteString("value", s))
+			proto := h.Conn.Info()
+			h.Lg.Info("Connection info", zap.String("PeerName", proto.PeerName))
+			err = h.Conn.Send(s)
+			if err == nil {
+				h.outRecs.Inc()
+				h.outRecsTotal.Inc()
+				//h.processingDuration.Observe(time.Since(r.Received).Seconds())
+				h.Conn.LastConnUse = time.Now() // TODO: This is not the last time conn was used. It is used when buffer is flushed.
+				break
+			}
+			h.Lg.Warn("error sending value to host. Reconnect and retry..", zap.Error(err))
+			err = h.Conn.Close()
+			if err != nil {
+				// not retrying here, file descriptor may be lost
+				h.Lg.Error("error closing the connection", zap.Error(err))
+			}
 		}
 	}
 }
