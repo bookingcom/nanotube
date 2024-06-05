@@ -84,6 +84,9 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 	if hostCfg.GRPC {
 		return NewHostGRPC(clusterName, mainCfg, hostCfg, lg, ms)
 	}
+	if hostCfg.HTTP {
+		return NewHostHTTP(clusterName, mainCfg, hostCfg, lg, ms)
+	}
 	return NewHostTCP(clusterName, mainCfg, hostCfg, lg, ms)
 }
 
