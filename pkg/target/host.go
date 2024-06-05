@@ -25,8 +25,8 @@ type Host struct {
 	Ch        chan *rec.RecBytes
 	Available atomic.Bool
 	Conn      Connection
-
-	stop chan int
+	batchSize int
+	stop      chan int
 
 	Lg *zap.Logger
 	Ms *metrics.Prom
@@ -99,12 +99,12 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 		"upstream_host": hostCfg.Name,
 	}
 	h := Host{
-		Name: hostCfg.Name,
-		Port: targetPort,
-		Ch:   make(chan *rec.RecBytes, mainCfg.HostQueueSize),
-		stop: make(chan int),
-
-		conf: &mainCfg,
+		Name:      hostCfg.Name,
+		Port:      targetPort,
+		Ch:        make(chan *rec.RecBytes, mainCfg.HostQueueSize),
+		stop:      make(chan int),
+		batchSize: hostCfg.BatchSize,
+		conf:      &mainCfg,
 
 		jitterEnabled:        mainCfg.TargetConnectionJitter,
 		minJitterAmplitudeMs: mainCfg.TargetConnectionJitterMinAmplitudeMs,
@@ -133,7 +133,6 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 	} else {
 		h.setAvailability(true)
 	}
-
 	return &h
 }
 
@@ -168,8 +167,27 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 		close(h.stop)
 	}()
 
-	for r := range h.Ch {
-		h.tryToSend(r)
+	if h.batchSize <= 1 {
+		for r := range h.Ch {
+			h.tryToSend(r.Serialize(), true)
+		}
+	} else {
+		// create batch of records
+		for i := range h.Ch {
+			var batch []byte
+			batch = append(batch, i.Serialize()...)
+		LOOP:
+			// For control maximum size of batch
+			for len(batch) < h.batchSize {
+				select {
+				case r := <-h.Ch:
+					batch = append(batch, r.Serialize()...)
+				default:
+					break LOOP
+				}
+			}
+			h.tryToSend(batch, false)
+		}
 	}
 
 	// this line is only reached when the host channel was closed
@@ -178,7 +196,8 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 	h.tryToFlushIfNecessary()
 }
 
-func (h *Host) tryToSend(r *rec.RecBytes) {
+// trying to send binary batch to host (one or more records)
+func (h *Host) tryToSend(batch []byte, buffered bool) {
 	h.Conn.Lock()
 	defer h.Conn.Unlock()
 
@@ -193,11 +212,20 @@ func (h *Host) tryToSend(r *rec.RecBytes) {
 			h.Lg.Warn("error setting write deadline", zap.Error(err))
 		}
 
-		_, err = h.Conn.W.Write(r.Serialize())
+		if buffered {
+			_, err = h.Conn.W.Write(batch)
+		} else {
+			_, err = h.Conn.Write(batch)
+		}
 
 		if err == nil {
-			h.outRecs.Inc()
-			h.outRecsTotal.Inc()
+			if h.batchSize > 0 {
+				h.outRecs.Add(float64(h.batchSize))
+				h.outRecsTotal.Add(float64(h.batchSize))
+			} else {
+				h.outRecs.Inc()
+				h.outRecsTotal.Inc()
+			}
 			//h.processingDuration.Observe(time.Since(r.Received).Seconds())
 			h.Conn.LastConnUse = time.Now() // TODO: This is not the last time conn was used. It is used when buffer is flushed.
 			break

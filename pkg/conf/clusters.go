@@ -52,6 +52,8 @@ type Host struct {
 	Port uint16 `toml:"port"`
 	// Optional, TCP by default
 	GRPC bool `toml:"grpc"`
+	// Optional, batch to send records in. Default is 1, i.e no batching
+	BatchSize int `toml:"batch"`
 }
 
 // ReadClustersConfig reads clusters set from a reader.
