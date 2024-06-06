@@ -127,11 +127,9 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 	if mainCfg.TCPInitialConnCheck {
 		h.setAvailability(false)
 		go func() {
-			for c := range h.Conns {
-				h.Conns[c].Lock()
-				defer h.Conns[c].Unlock()
-				h.ensureConnection()
-			}
+			h.LockMTCP()
+			defer h.UnlockMTCP()
+			h.ensureConnection()
 		}()
 	} else {
 		h.setAvailability(true)
@@ -159,6 +157,20 @@ func (h *HostMTCP) IsAvailable() bool {
 // Stop brings streaming to a halt.
 func (h *HostMTCP) Stop() {
 	close(h.Ch)
+}
+
+// LockMTCP locks all TCP connections
+func (h *HostMTCP) LockMTCP() {
+	for c := range h.Conns {
+		h.Conns[c].Lock()
+	}
+}
+
+// UnlockMTCP unlocks all TCP connections
+func (h *HostMTCP) UnlockMTCP() {
+	for c := range h.Conns {
+		h.Conns[c].Unlock()
+	}
 }
 
 // Stream launches the sending to target host.
@@ -190,11 +202,9 @@ func (h *HostMTCP) Stream(wg *sync.WaitGroup) {
 	}
 
 	// this line is only reached when the host channel was closed
-	for c := range h.Conns {
-		h.Conns[c].Lock()
-		defer h.Conns[c].Unlock()
-		h.tryToFlushIfNecessary()
-	}
+	h.LockMTCP()
+	defer h.UnlockMTCP()
+	h.tryToFlushIfNecessary()
 }
 
 func (h *HostMTCP) tryToSend(r *rec.RecBytes, conn *MultiConnection) {
@@ -320,7 +330,7 @@ func (h *HostMTCP) ensureConnection() {
 	}
 }
 
-// Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
+// Connect multiple TCP connects to target host via TCP. If unsuccessful, sets conn to nil.
 // Requires h.Conn.Mutex lock.
 func (h *HostMTCP) connect(attemptCount int) {
 	for c := range h.Conns {
