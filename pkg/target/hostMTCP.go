@@ -148,7 +148,7 @@ func (h *HostMTCP) Push(r *rec.RecBytes) {
 	default:
 		h.throttled.Inc()
 		h.throttledTotal.Inc()
-		h.Lg.Warn("host queue is full", zap.Int("queue_size", len(h.Ch)))
+		//h.Lg.Warn("host queue is full", zap.Int("queue_size", len(h.Ch)))
 	}
 }
 
