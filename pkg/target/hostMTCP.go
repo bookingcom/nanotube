@@ -216,7 +216,7 @@ func (h *HostMTCP) tryToSend(r *rec.RecBytes, conn *MultiConnection) {
 		h.ensureConnection()
 		h.keepConnectionFresh()
 
-		err := conn.Conn.SetWriteDeadline(time.Now().Add(
+		err := conn.SetWriteDeadline(time.Now().Add(
 			time.Duration(h.conf.SendTimeoutSec) * time.Second))
 		if err != nil {
 			h.Lg.Warn("error setting write deadline", zap.Error(err))
