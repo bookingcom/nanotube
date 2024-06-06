@@ -251,11 +251,9 @@ func (h *HostMTCP) flush(d time.Duration) {
 		case <-h.stop:
 			return
 		case <-t.C:
-			for c := range h.MTCPs {
-				h.MTCPs[c].Lock()
-				h.tryToFlushIfNecessary()
-				h.MTCPs[c].Unlock()
-			}
+			h.LockMTCP()
+			h.tryToFlushIfNecessary()
+			h.UnlockMTCP()
 		}
 	}
 }
