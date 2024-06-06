@@ -52,7 +52,7 @@ type Host struct {
 	Port uint16 `toml:"port"`
 	// Optional, TCP by default
 	GRPC bool `toml:"grpc"`
-	// Optional,
+	// Optional, number of TCP connections to open to the host.
 	MTCP int `toml:"mtcp"`
 }
 

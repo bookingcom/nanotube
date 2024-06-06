@@ -18,14 +18,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// Host represents a single target hosts to send records to.
+// HostMTCP represents a single target hosts to send records in multimple TCP connections to.
 type HostMTCP struct {
 	Name      string
 	Port      uint16
 	Ch        chan *rec.RecBytes
 	Available atomic.Bool
-	MTCP      int
-	Conns     []MultiConnection
+	NumMTCP   int
+	MTCPs     []MultiConnection
 
 	stop chan int
 
@@ -49,7 +49,7 @@ type HostMTCP struct {
 	targetState               prometheus.Gauge
 }
 
-// Connection contains all the attributes of the target host connection.
+// MultiConnection contains all the attributes of the target host connection.
 type MultiConnection struct {
 	net.Conn
 	sync.Mutex
@@ -80,12 +80,12 @@ func (h *HostMTCP) String() string {
 	return net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port)))
 }
 
-// NewHost builds a target host of appropriate type doing the polymorphic construction.
+// NewHostMTCP builds a target host of appropriate type
 func NewHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) Target {
 	return ConstructHostMTCP(clusterName, mainCfg, hostCfg, lg, ms)
 }
 
-// ConstructHost builds new host object from config.
+// ConstructHostMTCP builds new host object from config.
 func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *HostMTCP {
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
@@ -117,8 +117,8 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 		oldConnectionRefreshTotal: ms.OldConnectionRefreshTotal,
 		targetState:               ms.TargetStates.With(promLabels),
 	}
-	h.MTCP = hostCfg.MTCP
-	h.Conns = make([]MultiConnection, h.MTCP)
+	h.NumMTCP = hostCfg.MTCP
+	h.MTCPs = make([]MultiConnection, h.NumMTCP)
 
 	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	h.Ms = ms
@@ -161,15 +161,15 @@ func (h *HostMTCP) Stop() {
 
 // LockMTCP locks all TCP connections
 func (h *HostMTCP) LockMTCP() {
-	for c := range h.Conns {
-		h.Conns[c].Lock()
+	for c := range h.MTCPs {
+		h.MTCPs[c].Lock()
 	}
 }
 
 // UnlockMTCP unlocks all TCP connections
 func (h *HostMTCP) UnlockMTCP() {
-	for c := range h.Conns {
-		h.Conns[c].Unlock()
+	for c := range h.MTCPs {
+		h.MTCPs[c].Unlock()
 	}
 }
 
@@ -186,14 +186,14 @@ func (h *HostMTCP) Stream(wg *sync.WaitGroup) {
 
 	for r := range h.Ch {
 		i := 0
-		h.tryToSend(r, &h.Conns[i])
+		h.tryToSend(r, &h.MTCPs[i])
 		i++
 	LOOP:
 		// For control maximum size of batch
-		for i < h.MTCP {
+		for i < h.NumMTCP {
 			select {
 			case r := <-h.Ch:
-				h.tryToSend(r, &h.Conns[i])
+				h.tryToSend(r, &h.MTCPs[i])
 				i++
 			default:
 				break LOOP
@@ -251,10 +251,10 @@ func (h *HostMTCP) flush(d time.Duration) {
 		case <-h.stop:
 			return
 		case <-t.C:
-			for c := range h.Conns {
-				h.Conns[c].Lock()
+			for c := range h.MTCPs {
+				h.MTCPs[c].Lock()
 				h.tryToFlushIfNecessary()
-				h.Conns[c].Unlock()
+				h.MTCPs[c].Unlock()
 			}
 		}
 	}
@@ -262,20 +262,20 @@ func (h *HostMTCP) flush(d time.Duration) {
 
 // Requires h.Conn.Mutex lock.
 func (h *HostMTCP) tryToFlushIfNecessary() {
-	for c := range h.Conns {
-		if h.Conns[c].W != nil && h.Conns[c].W.Buffered() != 0 {
-			if h.Conns[c].Conn == nil {
+	for c := range h.MTCPs {
+		if h.MTCPs[c].W != nil && h.MTCPs[c].W.Buffered() != 0 {
+			if h.MTCPs[c].Conn == nil {
 				h.ensureConnection()
 			} else {
 				h.keepConnectionFresh()
 			}
-			err := h.Conns[c].W.Flush()
+			err := h.MTCPs[c].W.Flush()
 			if err != nil {
 				h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("target_name", h.Name), zap.Uint16("target_port", h.Port))
-				h.Conns[c].Conn = nil
-				h.Conns[c].W = nil
+				h.MTCPs[c].Conn = nil
+				h.MTCPs[c].W = nil
 			}
-			h.Conns[c].LastConnUse = time.Now()
+			h.MTCPs[c].LastConnUse = time.Now()
 		}
 	}
 }
@@ -285,12 +285,12 @@ func (h *HostMTCP) tryToFlushIfNecessary() {
 func (h *HostMTCP) keepConnectionFresh() {
 	// 0 value = don't refresh connections
 	if h.conf.TCPOutConnectionRefreshPeriodSec != 0 {
-		for c := range h.Conns {
-			if h.Conns[c].Conn != nil && (time.Since(h.Conns[c].LastConnUse) > time.Second*time.Duration(h.conf.TCPOutConnectionRefreshPeriodSec)) {
+		for c := range h.MTCPs {
+			if h.MTCPs[c].Conn != nil && (time.Since(h.MTCPs[c].LastConnUse) > time.Second*time.Duration(h.conf.TCPOutConnectionRefreshPeriodSec)) {
 				h.oldConnectionRefresh.Inc()
 				h.oldConnectionRefreshTotal.Inc()
 
-				err := h.Conns[c].Close()
+				err := h.MTCPs[c].Close()
 				if err != nil {
 					h.Lg.Error("closing connection to target host failed", zap.String("host", h.Name))
 				}
@@ -304,8 +304,8 @@ func (h *HostMTCP) keepConnectionFresh() {
 // Requires h.Conn.Mutex lock.
 // This function may take a long time.
 func (h *HostMTCP) ensureConnection() {
-	for c := range h.Conns {
-		for waitMs, attemptCount := uint32(0), 1; h.Conns[c].Conn == nil; {
+	for c := range h.MTCPs {
+		for waitMs, attemptCount := uint32(0), 1; h.MTCPs[c].Conn == nil; {
 
 			if h.jitterEnabled {
 				jitterAmplitude := waitMs / 2
@@ -333,11 +333,11 @@ func (h *HostMTCP) ensureConnection() {
 // Connect multiple TCP connects to target host via TCP. If unsuccessful, sets conn to nil.
 // Requires h.Conn.Mutex lock.
 func (h *HostMTCP) connect(attemptCount int) {
-	for c := range h.Conns {
+	for c := range h.MTCPs {
 		conn, err := h.getConnectionToHost()
 		if err != nil {
 			h.Lg.Warn("connection to target host failed")
-			h.Conns[c].Conn = nil
+			h.MTCPs[c].Conn = nil
 			if attemptCount == 1 {
 				if h.Available.Load() {
 					h.setAvailability(false)
@@ -348,7 +348,7 @@ func (h *HostMTCP) connect(attemptCount int) {
 			return
 		}
 
-		h.Conns[c].New(conn, h.conf.TCPOutBufSize)
+		h.MTCPs[c].New(conn, h.conf.TCPOutBufSize)
 		h.setAvailability(true)
 	}
 }
