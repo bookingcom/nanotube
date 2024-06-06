@@ -69,6 +69,9 @@ func (c *MultiConnection) New(conn net.Conn, bufSize int) {
 // Overrides c.Conn.Close().
 // Use instead the default close.
 func (c *MultiConnection) Close() error {
+	if c.Conn == nil {
+		return nil
+	}
 	err := c.Conn.Close()
 	c.Conn = nil
 
