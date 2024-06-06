@@ -233,7 +233,7 @@ func (h *HostMTCP) tryToSend(r *rec.RecBytes, conn *MultiConnection) {
 		}
 
 		h.Lg.Warn("error sending value to host. Reconnect and retry..", zap.Error(err))
-		err = conn.Conn.Close()
+		err = conn.Close()
 		if err != nil {
 			// not retrying here, file descriptor may be lost
 			h.Lg.Error("error closing the connection", zap.Error(err))
