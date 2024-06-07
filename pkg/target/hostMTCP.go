@@ -190,20 +190,13 @@ func (h *HostMTCP) Stream(wg *sync.WaitGroup) {
 		close(h.stop)
 	}()
 
+	// send records from the channel to every connection in round robin fashion
+	i := 0
 	for r := range h.Ch {
-		i := 0
 		h.tryToSend(r, &h.MTCPs[i])
 		i++
-	LOOP:
-		// For control maximum size of batch
-		for i < h.NumMTCP {
-			select {
-			case r := <-h.Ch:
-				h.tryToSend(r, &h.MTCPs[i])
-				i++
-			default:
-				break LOOP
-			}
+		if i == h.NumMTCP {
+			i = 0
 		}
 	}
 
