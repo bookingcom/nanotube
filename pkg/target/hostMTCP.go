@@ -132,7 +132,10 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 		go func() {
 			h.LockMTCP()
 			defer h.UnlockMTCP()
-			h.ensureConnection()
+			for i := range h.MTCPs {
+				h.MTCPs[i].Conn = nil
+				h.ensureConnection(&h.MTCPs[i])
+			}
 		}()
 	} else {
 		h.setAvailability(true)
@@ -216,8 +219,8 @@ func (h *HostMTCP) tryToSend(r *rec.RecBytes, conn *MultiConnection) {
 
 	// retry until successful
 	for {
-		h.ensureConnection()
-		h.keepConnectionFresh()
+		h.ensureConnection(conn)
+		h.keepConnectionFresh(conn)
 
 		err := conn.SetWriteDeadline(time.Now().Add(
 			time.Duration(h.conf.SendTimeoutSec) * time.Second))
@@ -266,9 +269,9 @@ func (h *HostMTCP) tryToFlushIfNecessary() {
 	for c := range h.MTCPs {
 		if h.MTCPs[c].W != nil && h.MTCPs[c].W.Buffered() != 0 {
 			if h.MTCPs[c].Conn == nil {
-				h.ensureConnection()
+				h.ensureConnection(&h.MTCPs[c])
 			} else {
-				h.keepConnectionFresh()
+				h.keepConnectionFresh(&h.MTCPs[c])
 			}
 			err := h.MTCPs[c].W.Flush()
 			if err != nil {
@@ -283,20 +286,18 @@ func (h *HostMTCP) tryToFlushIfNecessary() {
 
 // Requires h.Conn.Mutex lock.
 // This function may take a long time.
-func (h *HostMTCP) keepConnectionFresh() {
+func (h *HostMTCP) keepConnectionFresh(conn *MultiConnection) {
 	// 0 value = don't refresh connections
 	if h.conf.TCPOutConnectionRefreshPeriodSec != 0 {
-		for c := range h.MTCPs {
-			if h.MTCPs[c].Conn != nil && (time.Since(h.MTCPs[c].LastConnUse) > time.Second*time.Duration(h.conf.TCPOutConnectionRefreshPeriodSec)) {
-				h.oldConnectionRefresh.Inc()
-				h.oldConnectionRefreshTotal.Inc()
+		if conn != nil && (time.Since(conn.LastConnUse) > time.Second*time.Duration(h.conf.TCPOutConnectionRefreshPeriodSec)) {
+			h.oldConnectionRefresh.Inc()
+			h.oldConnectionRefreshTotal.Inc()
 
-				err := h.MTCPs[c].Close()
-				if err != nil {
-					h.Lg.Error("closing connection to target host failed", zap.String("host", h.Name))
-				}
-				h.ensureConnection()
+			err := conn.Close()
+			if err != nil {
+				h.Lg.Error("closing connection to target host failed", zap.String("host", h.Name))
 			}
+			h.ensureConnection(conn)
 		}
 	}
 }
@@ -304,30 +305,27 @@ func (h *HostMTCP) keepConnectionFresh() {
 // Tries to connect as long as Host.Conn.Conn == nil.
 // Requires h.Conn.Mutex lock.
 // This function may take a long time.
-func (h *HostMTCP) ensureConnection() {
-	for c := range h.MTCPs {
-		for waitMs, attemptCount := uint32(0), 1; h.MTCPs[c].Conn == nil; {
-
-			if h.jitterEnabled {
-				jitterAmplitude := waitMs / 2
-				if h.minJitterAmplitudeMs > jitterAmplitude {
-					jitterAmplitude = h.minJitterAmplitudeMs
-				}
-				waitMs = waitMs/2 + uint32(h.rnd.Intn(int(jitterAmplitude*2)))
+func (h *HostMTCP) ensureConnection(conn *MultiConnection) {
+	for waitMs, attemptCount := uint32(0), 1; conn == nil; {
+		if h.jitterEnabled {
+			jitterAmplitude := waitMs / 2
+			if h.minJitterAmplitudeMs > jitterAmplitude {
+				jitterAmplitude = h.minJitterAmplitudeMs
 			}
-
-			time.Sleep(time.Duration(waitMs) * time.Millisecond)
-
-			if waitMs < h.conf.MaxHostReconnectPeriodMs {
-				waitMs = waitMs*2 + h.conf.HostReconnectPeriodDeltaMs
-			}
-			if waitMs >= h.conf.MaxHostReconnectPeriodMs {
-				waitMs = h.conf.MaxHostReconnectPeriodMs
-			}
-
-			h.connect(attemptCount)
-			attemptCount++
+			waitMs = waitMs/2 + uint32(h.rnd.Intn(int(jitterAmplitude*2)))
 		}
+
+		time.Sleep(time.Duration(waitMs) * time.Millisecond)
+
+		if waitMs < h.conf.MaxHostReconnectPeriodMs {
+			waitMs = waitMs*2 + h.conf.HostReconnectPeriodDeltaMs
+		}
+		if waitMs >= h.conf.MaxHostReconnectPeriodMs {
+			waitMs = h.conf.MaxHostReconnectPeriodMs
+		}
+
+		h.connect(attemptCount)
+		attemptCount++
 	}
 }
 
