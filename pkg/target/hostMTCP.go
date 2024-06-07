@@ -59,10 +59,10 @@ type MultiConnection struct {
 
 // New or updated target connection from existing net.Conn
 // Requires Connection.Mutex lock
-func (c *MultiConnection) New(conn net.Conn, bufSize int) {
-	c.Conn = conn
+func (c *MultiConnection) New(n net.Conn, bufSize int) {
+	c.Conn = n
 	c.LastConnUse = time.Now()
-	c.W = bufio.NewWriterSize(conn, bufSize)
+	c.W = bufio.NewWriterSize(n, bufSize)
 }
 
 // Close the connection while mainaining correct internal state.
@@ -299,7 +299,7 @@ func (h *HostMTCP) keepConnectionFresh(conn *MultiConnection) {
 // Requires h.Conn.Mutex lock.
 // This function may take a long time.
 func (h *HostMTCP) ensureConnection(conn *MultiConnection) {
-	for waitMs, attemptCount := uint32(0), 1; conn == nil; {
+	for waitMs, attemptCount := uint32(0), 1; conn.Conn == nil; {
 		if h.jitterEnabled {
 			jitterAmplitude := waitMs / 2
 			if h.minJitterAmplitudeMs > jitterAmplitude {
@@ -328,7 +328,7 @@ func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
 	conn, err := h.getConnectionToHost()
 	if err != nil {
 		h.Lg.Warn("connection to target host failed")
-		c = nil
+		c.Conn = nil
 		if attemptCount == 1 {
 			if h.Available.Load() {
 				h.setAvailability(false)
@@ -348,8 +348,8 @@ func (h *HostMTCP) getConnectionToHost() (net.Conn, error) {
 		Timeout:   time.Duration(h.conf.OutConnTimeoutSec) * time.Second,
 		KeepAlive: time.Duration(h.conf.KeepAliveSec) * time.Second,
 	}
-	conn, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
-	return conn, err
+	n, err := dialer.Dial("tcp", net.JoinHostPort(h.Name, fmt.Sprint(h.Port)))
+	return n, err
 }
 
 func (h *HostMTCP) setAvailability(val bool) {
