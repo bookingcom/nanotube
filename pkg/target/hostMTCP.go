@@ -317,32 +317,30 @@ func (h *HostMTCP) ensureConnection(conn *MultiConnection) {
 			waitMs = h.conf.MaxHostReconnectPeriodMs
 		}
 
-		h.connect(attemptCount)
+		h.connect(conn, attemptCount)
 		attemptCount++
 	}
 }
 
 // Connect multiple TCP connects to target host via TCP. If unsuccessful, sets conn to nil.
 // Requires h.Conn.Mutex lock.
-func (h *HostMTCP) connect(attemptCount int) {
-	for c := range h.MTCPs {
-		conn, err := h.getConnectionToHost()
-		if err != nil {
-			h.Lg.Warn("connection to target host failed")
-			h.MTCPs[c].Conn = nil
-			if attemptCount == 1 {
-				if h.Available.Load() {
-					h.setAvailability(false)
-					h.stateChanges.Inc()
-					h.stateChangesTotal.Inc()
-				}
+func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
+	conn, err := h.getConnectionToHost()
+	if err != nil {
+		h.Lg.Warn("connection to target host failed")
+		c = nil
+		if attemptCount == 1 {
+			if h.Available.Load() {
+				h.setAvailability(false)
+				h.stateChanges.Inc()
+				h.stateChangesTotal.Inc()
 			}
-			return
 		}
-
-		h.MTCPs[c].New(conn, h.conf.TCPOutBufSize)
-		h.setAvailability(true)
+		return
 	}
+
+	c.New(conn, h.conf.TCPOutBufSize)
+	h.setAvailability(true)
 }
 
 func (h *HostMTCP) getConnectionToHost() (net.Conn, error) {
