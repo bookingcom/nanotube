@@ -55,6 +55,7 @@ type MultiConnection struct {
 	sync.Mutex
 	LastConnUse time.Time
 	W           *bufio.Writer
+	Available   atomic.Bool
 }
 
 // New or updated target connection from existing net.Conn
@@ -128,7 +129,7 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
 
 	if mainCfg.TCPInitialConnCheck {
-		h.setAvailability(false)
+		h.setHostAvailability()
 		go func() {
 			h.LockMTCP()
 			defer h.UnlockMTCP()
@@ -138,7 +139,8 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 			}
 		}()
 	} else {
-		h.setAvailability(true)
+		h.Available.Store(true)
+		h.targetState.Set(1.0)
 	}
 
 	return &h
@@ -330,17 +332,15 @@ func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
 		h.Lg.Warn("connection to target host failed")
 		c.Conn = nil
 		if attemptCount == 1 {
-			if h.Available.Load() {
-				h.setAvailability(false)
-				h.stateChanges.Inc()
-				h.stateChangesTotal.Inc()
+			if c.Available.Load() {
+				c.Available.Store(false)
 			}
 		}
 		return
 	}
-
 	c.New(conn, h.conf.TCPOutBufSize)
-	h.setAvailability(true)
+	c.Available.Store(true)
+	h.setHostAvailability()
 }
 
 func (h *HostMTCP) getConnectionToHost() (net.Conn, error) {
@@ -352,11 +352,21 @@ func (h *HostMTCP) getConnectionToHost() (net.Conn, error) {
 	return n, err
 }
 
-func (h *HostMTCP) setAvailability(val bool) {
-	h.Available.Store(val)
-	boolVal := 0.0
-	if val {
-		boolVal = 1.0
+// set host availability based on the availability of its connections
+// if one connection is down - all host is down
+// if all connections are up - host is up
+func (h *HostMTCP) setHostAvailability() {
+	avail := 0
+	for c := range h.MTCPs {
+		if h.MTCPs[c].Available.Load() {
+			avail++
+		}
 	}
-	h.targetState.Set(boolVal)
+	if avail == h.NumMTCP {
+		h.Available.Store(true)
+		h.targetState.Set(1.0)
+	} else {
+		h.Available.Store(false)
+		h.targetState.Set(0.0)
+	}
 }
