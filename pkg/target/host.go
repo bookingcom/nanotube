@@ -250,6 +250,7 @@ func (h *Host) tryToFlushIfNecessary() {
 		}
 		h.Conn.LastConnUse = time.Now()
 	}
+	h.hostQueueSize.Set(float64(len(h.Ch)))
 }
 
 // Requires h.Conn.Mutex lock.
