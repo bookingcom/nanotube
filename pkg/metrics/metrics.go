@@ -36,6 +36,7 @@ type Prom struct {
 	TargetStates             *prometheus.GaugeVec
 	NumberOfAvailableTargets *prometheus.GaugeVec
 	NumberOfTargets          *prometheus.GaugeVec
+	HostQueueSize            *prometheus.GaugeVec
 
 	GlobalRateLimiterBlockedReaders    prometheus.Counter
 	ContainerRateLimiterBlockedReaders *prometheus.CounterVec
@@ -143,6 +144,11 @@ func New() *Prom {
 			Namespace: "nanotube",
 			Name:      "target_states",
 			Help:      "The current states of target hosts.",
+		}, []string{"upstream_host", "cluster"}),
+		HostQueueSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nanotube",
+			Name:      "host_queue_size",
+			Help:      "The current size of host queue.",
 		}, []string{"upstream_host", "cluster"}),
 		NumberOfAvailableTargets: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "nanotube",
@@ -307,6 +313,11 @@ func Register(m *Prom, cfg *conf.Main) {
 		}
 
 		err = prometheus.Register(m.TargetStates)
+		if err != nil {
+			log.Fatalf("error while registering target_states metric: %v", err)
+		}
+
+		err = prometheus.Register(m.HostQueueSize)
 		if err != nil {
 			log.Fatalf("error while registering target_states metric: %v", err)
 		}

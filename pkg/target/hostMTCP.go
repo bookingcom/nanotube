@@ -46,6 +46,7 @@ type HostMTCP struct {
 	stateChangesTotal         prometheus.Counter
 	oldConnectionRefresh      prometheus.Counter
 	oldConnectionRefreshTotal prometheus.Counter
+	hostQueueSize             prometheus.Gauge
 	targetState               prometheus.Gauge
 }
 
@@ -119,6 +120,7 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 		stateChangesTotal:         ms.StateChangeHostsTotal,
 		oldConnectionRefresh:      ms.OldConnectionRefresh.With(promLabels),
 		oldConnectionRefreshTotal: ms.OldConnectionRefreshTotal,
+		hostQueueSize:             ms.HostQueueSize.With(promLabels),
 		targetState:               ms.TargetStates.With(promLabels),
 	}
 	h.NumMTCP = hostCfg.MTCP
@@ -260,6 +262,7 @@ func (h *HostMTCP) flush(d time.Duration) {
 }
 
 // Requires h.Conn.Mutex lock.
+// also update h.Conn.LastConnUse and h.hostQueueSize metric
 func (h *HostMTCP) tryToFlushIfNecessary() {
 	for c := range h.MTCPs {
 		if h.MTCPs[c].W != nil && h.MTCPs[c].W.Buffered() != 0 {
@@ -277,6 +280,7 @@ func (h *HostMTCP) tryToFlushIfNecessary() {
 			h.MTCPs[c].LastConnUse = time.Now()
 		}
 	}
+	h.hostQueueSize.Set(float64(len(h.Ch)))
 }
 
 // Requires h.Conn.Mutex lock.

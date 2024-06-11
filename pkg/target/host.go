@@ -45,6 +45,7 @@ type Host struct {
 	stateChangesTotal         prometheus.Counter
 	oldConnectionRefresh      prometheus.Counter
 	oldConnectionRefreshTotal prometheus.Counter
+	hostQueueSize             prometheus.Gauge
 	targetState               prometheus.Gauge
 }
 
@@ -120,6 +121,7 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 		stateChangesTotal:         ms.StateChangeHostsTotal,
 		oldConnectionRefresh:      ms.OldConnectionRefresh.With(promLabels),
 		oldConnectionRefreshTotal: ms.OldConnectionRefreshTotal,
+		hostQueueSize:             ms.HostQueueSize.With(promLabels),
 		targetState:               ms.TargetStates.With(promLabels),
 	}
 	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
