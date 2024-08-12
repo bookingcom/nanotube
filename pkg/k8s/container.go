@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/docker/docker/api/types"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/docker/docker/api/types"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/in"
