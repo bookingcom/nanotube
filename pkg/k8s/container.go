@@ -16,7 +16,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
@@ -212,9 +212,7 @@ func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) 
 		}
 	}()
 
-	//TODO: remove deprecated call
-	//lint:ignore SA1019
-	listOpts := types.ContainerListOptions{}
+	listOpts := container.ListOptions{}
 	listOpts.Filters = filters.NewArgs(filters.Arg("label", "io.kubernetes.container.name=POD"), filters.Arg("label", fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)))
 	containers, err := client.ContainerList(context.Background(), listOpts)
 	if err != nil {
