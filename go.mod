@@ -2,8 +2,6 @@ module github.com/bookingcom/nanotube
 
 go 1.21
 
-toolchain go1.22.6
-
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 	github.com/burntsushi/toml v0.3.1
