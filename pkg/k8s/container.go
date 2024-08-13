@@ -212,6 +212,8 @@ func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) 
 		}
 	}()
 
+	//TODO: remove deprecated call
+	//lint:ignore SA1019
 	listOpts := types.ContainerListOptions{}
 	listOpts.Filters = filters.NewArgs(filters.Arg("label", "io.kubernetes.container.name=POD"), filters.Arg("label", fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)))
 	containers, err := client.ContainerList(context.Background(), listOpts)
