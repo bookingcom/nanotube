@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types"
-
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
@@ -18,6 +16,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
