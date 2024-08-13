@@ -33,7 +33,7 @@ Command line options:
 
 ### Go version
 
-The only supported Go version is `1.20`.
+Nanotube currently requires Go version `1.21` or newer. We're usually support current minus 2 actual go versions.
 
 ### Supported platforms
 
