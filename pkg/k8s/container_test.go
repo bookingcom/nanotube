@@ -7,7 +7,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"go.uber.org/zap"
 )
@@ -29,7 +29,7 @@ func ObserveDocker(lg *zap.Logger) {
 		tick := time.NewTicker(9 * time.Second)
 
 		for {
-			containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
+			containers, err := cli.ContainerList(ctx, container.ListOptions{})
 			if err != nil {
 				lg.Error("error listing containers", zap.Error(err))
 			}
