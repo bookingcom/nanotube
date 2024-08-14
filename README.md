@@ -33,7 +33,7 @@ Command line options:
 
 ### Go version
 
-The only supported Go version is `1.20`.
+The supported Go version is `1.21` or newer. We're usually support current go version and two previous releases.
 
 ### Supported platforms
 
