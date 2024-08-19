@@ -45,9 +45,9 @@ github.com/Microsoft/hcsshim/pkg/ociwclayer
 # github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 ## explicit; go 1.13
 github.com/RussellLuo/slidingwindow
-# github.com/andres-erbsen/clock v0.0.0-20160526145045-9e14626cd129
-## explicit
-github.com/andres-erbsen/clock
+# github.com/benbjohnson/clock v1.3.0
+## explicit; go 1.15
+github.com/benbjohnson/clock
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
@@ -424,8 +424,8 @@ go.uber.org/atomic
 # go.uber.org/multierr v1.11.0
 ## explicit; go 1.19
 go.uber.org/multierr
-# go.uber.org/ratelimit v0.2.0
-## explicit; go 1.14
+# go.uber.org/ratelimit v0.3.1
+## explicit; go 1.20
 go.uber.org/ratelimit
 # go.uber.org/zap v1.27.0
 ## explicit; go 1.19
