@@ -33,10 +33,10 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/continuity/fs"
+	"github.com/containerd/platforms"
+	"github.com/moby/sys/user"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/opencontainers/runc/libcontainer/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -138,7 +138,7 @@ func ensureAdditionalGids(s *Spec) {
 // Use as the first option to clear the spec, then apply options afterwards.
 func WithDefaultSpec() SpecOpts {
 	return func(ctx context.Context, _ Client, c *containers.Container, s *Spec) error {
-		return generateDefaultSpecWithPlatform(ctx, platforms.DefaultString(), c.ID, s)
+		return generateDefaultSpecWithPlatform(ctx, platforms.Format(platforms.DefaultSpec()), c.ID, s) // For 1.7 continue using the old format without os-version included.
 	}
 }
 
@@ -457,6 +457,7 @@ func WithImageConfigArgs(image Image, args []string) SpecOpts {
 				return errors.New("no arguments specified")
 			}
 
+			//nolint:staticcheck // ArgsEscaped is deprecated
 			if config.ArgsEscaped && (len(config.Entrypoint) > 0 || cmdFromImage) {
 				s.Process.Args = nil
 				s.Process.CommandLine = cmd[0]
@@ -893,9 +894,9 @@ func WithAppendAdditionalGroups(groups ...string) SpecOpts {
 			if err != nil {
 				return err
 			}
-			ugroups, err := user.ParseGroupFile(gpath)
-			if err != nil {
-				return err
+			ugroups, groupErr := user.ParseGroupFile(gpath)
+			if groupErr != nil && !os.IsNotExist(groupErr) {
+				return groupErr
 			}
 			groupMap := make(map[string]user.Group)
 			for _, group := range ugroups {
@@ -909,6 +910,9 @@ func WithAppendAdditionalGroups(groups ...string) SpecOpts {
 				} else {
 					g, ok := groupMap[group]
 					if !ok {
+						if groupErr != nil {
+							return fmt.Errorf("unable to find group %s: %w", group, groupErr)
+						}
 						return fmt.Errorf("unable to find group %s", group)
 					}
 					gids = append(gids, uint32(g.Gid))
@@ -951,6 +955,11 @@ func WithCapabilities(caps []string) SpecOpts {
 		s.Process.Capabilities.Bounding = caps
 		s.Process.Capabilities.Effective = caps
 		s.Process.Capabilities.Permitted = caps
+		if len(caps) == 0 {
+			s.Process.Capabilities.Inheritable = nil
+		} else if len(s.Process.Capabilities.Inheritable) > 0 {
+			filterCaps(&s.Process.Capabilities.Inheritable, caps)
+		}
 
 		return nil
 	}
@@ -972,6 +981,16 @@ func removeCap(caps *[]string, s string) {
 			continue
 		}
 		newcaps = append(newcaps, c)
+	}
+	*caps = newcaps
+}
+
+func filterCaps(caps *[]string, filters []string) {
+	var newcaps []string
+	for _, c := range *caps {
+		if capsContain(filters, c) {
+			newcaps = append(newcaps, c)
+		}
 	}
 	*caps = newcaps
 }
@@ -1004,6 +1023,7 @@ func WithDroppedCapabilities(caps []string) SpecOpts {
 				&s.Process.Capabilities.Bounding,
 				&s.Process.Capabilities.Effective,
 				&s.Process.Capabilities.Permitted,
+				&s.Process.Capabilities.Inheritable,
 			} {
 				removeCap(cl, c)
 			}

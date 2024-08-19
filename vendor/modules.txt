@@ -60,9 +60,70 @@ github.com/cespare/xxhash/v2
 # github.com/containerd/cgroups/v3 v3.0.3
 ## explicit; go 1.18
 github.com/containerd/cgroups/v3/cgroup1/stats
-# github.com/containerd/containerd v1.7.11
-## explicit; go 1.19
+# github.com/containerd/containerd v1.7.20
+## explicit; go 1.21
 github.com/containerd/containerd
+github.com/containerd/containerd/archive
+github.com/containerd/containerd/archive/compression
+github.com/containerd/containerd/archive/tarheader
+github.com/containerd/containerd/cio
+github.com/containerd/containerd/containers
+github.com/containerd/containerd/content
+github.com/containerd/containerd/content/local
+github.com/containerd/containerd/content/proxy
+github.com/containerd/containerd/contrib/seccomp/kernelversion
+github.com/containerd/containerd/defaults
+github.com/containerd/containerd/diff
+github.com/containerd/containerd/diff/proxy
+github.com/containerd/containerd/events
+github.com/containerd/containerd/events/exchange
+github.com/containerd/containerd/filters
+github.com/containerd/containerd/identifiers
+github.com/containerd/containerd/images
+github.com/containerd/containerd/images/archive
+github.com/containerd/containerd/labels
+github.com/containerd/containerd/leases
+github.com/containerd/containerd/leases/proxy
+github.com/containerd/containerd/mount
+github.com/containerd/containerd/namespaces
+github.com/containerd/containerd/oci
+github.com/containerd/containerd/pkg/cap
+github.com/containerd/containerd/pkg/cleanup
+github.com/containerd/containerd/pkg/deprecation
+github.com/containerd/containerd/pkg/dialer
+github.com/containerd/containerd/pkg/epoch
+github.com/containerd/containerd/pkg/kmutex
+github.com/containerd/containerd/pkg/randutil
+github.com/containerd/containerd/pkg/streaming
+github.com/containerd/containerd/pkg/transfer
+github.com/containerd/containerd/pkg/transfer/proxy
+github.com/containerd/containerd/pkg/transfer/streaming
+github.com/containerd/containerd/pkg/unpack
+github.com/containerd/containerd/pkg/userns
+github.com/containerd/containerd/plugin
+github.com/containerd/containerd/protobuf
+github.com/containerd/containerd/protobuf/proto
+github.com/containerd/containerd/protobuf/types
+github.com/containerd/containerd/reference
+github.com/containerd/containerd/remotes
+github.com/containerd/containerd/remotes/docker
+github.com/containerd/containerd/remotes/docker/auth
+github.com/containerd/containerd/remotes/docker/schema1
+github.com/containerd/containerd/remotes/errors
+github.com/containerd/containerd/rootfs
+github.com/containerd/containerd/runtime/linux/runctypes
+github.com/containerd/containerd/runtime/v2/runc/options
+github.com/containerd/containerd/sandbox
+github.com/containerd/containerd/sandbox/proxy
+github.com/containerd/containerd/services
+github.com/containerd/containerd/services/introspection
+github.com/containerd/containerd/services/warning
+github.com/containerd/containerd/snapshots
+github.com/containerd/containerd/snapshots/proxy
+github.com/containerd/containerd/tracing
+github.com/containerd/containerd/version
+# github.com/containerd/containerd/api v1.7.19
+## explicit; go 1.21
 github.com/containerd/containerd/api/runtime/sandbox/v1
 github.com/containerd/containerd/api/services/containers/v1
 github.com/containerd/containerd/api/services/content/v1
@@ -81,69 +142,6 @@ github.com/containerd/containerd/api/services/version/v1
 github.com/containerd/containerd/api/types
 github.com/containerd/containerd/api/types/task
 github.com/containerd/containerd/api/types/transfer
-github.com/containerd/containerd/archive
-github.com/containerd/containerd/archive/compression
-github.com/containerd/containerd/archive/tarheader
-github.com/containerd/containerd/cio
-github.com/containerd/containerd/containers
-github.com/containerd/containerd/content
-github.com/containerd/containerd/content/local
-github.com/containerd/containerd/content/proxy
-github.com/containerd/containerd/defaults
-github.com/containerd/containerd/diff
-github.com/containerd/containerd/diff/proxy
-github.com/containerd/containerd/errdefs
-github.com/containerd/containerd/events
-github.com/containerd/containerd/events/exchange
-github.com/containerd/containerd/filters
-github.com/containerd/containerd/identifiers
-github.com/containerd/containerd/images
-github.com/containerd/containerd/images/archive
-github.com/containerd/containerd/labels
-github.com/containerd/containerd/leases
-github.com/containerd/containerd/leases/proxy
-github.com/containerd/containerd/log
-github.com/containerd/containerd/mount
-github.com/containerd/containerd/namespaces
-github.com/containerd/containerd/oci
-github.com/containerd/containerd/pkg/cap
-github.com/containerd/containerd/pkg/cleanup
-github.com/containerd/containerd/pkg/deprecation
-github.com/containerd/containerd/pkg/dialer
-github.com/containerd/containerd/pkg/epoch
-github.com/containerd/containerd/pkg/kmutex
-github.com/containerd/containerd/pkg/randutil
-github.com/containerd/containerd/pkg/streaming
-github.com/containerd/containerd/pkg/transfer
-github.com/containerd/containerd/pkg/transfer/proxy
-github.com/containerd/containerd/pkg/transfer/streaming
-github.com/containerd/containerd/pkg/unpack
-github.com/containerd/containerd/pkg/userns
-github.com/containerd/containerd/platforms
-github.com/containerd/containerd/plugin
-github.com/containerd/containerd/protobuf
-github.com/containerd/containerd/protobuf/plugin
-github.com/containerd/containerd/protobuf/proto
-github.com/containerd/containerd/protobuf/types
-github.com/containerd/containerd/reference
-github.com/containerd/containerd/reference/docker
-github.com/containerd/containerd/remotes
-github.com/containerd/containerd/remotes/docker
-github.com/containerd/containerd/remotes/docker/auth
-github.com/containerd/containerd/remotes/docker/schema1
-github.com/containerd/containerd/remotes/errors
-github.com/containerd/containerd/rootfs
-github.com/containerd/containerd/runtime/linux/runctypes
-github.com/containerd/containerd/runtime/v2/runc/options
-github.com/containerd/containerd/sandbox
-github.com/containerd/containerd/sandbox/proxy
-github.com/containerd/containerd/services
-github.com/containerd/containerd/services/introspection
-github.com/containerd/containerd/services/warning
-github.com/containerd/containerd/snapshots
-github.com/containerd/containerd/snapshots/proxy
-github.com/containerd/containerd/tracing
-github.com/containerd/containerd/version
 # github.com/containerd/continuity v0.4.3
 ## explicit; go 1.19
 github.com/containerd/continuity/fs
@@ -157,6 +155,9 @@ github.com/containerd/fifo
 # github.com/containerd/log v0.1.0
 ## explicit; go 1.20
 github.com/containerd/log
+# github.com/containerd/platforms v0.2.1
+## explicit; go 1.20
+github.com/containerd/platforms
 # github.com/containerd/ttrpc v1.2.5
 ## explicit; go 1.19
 github.com/containerd/ttrpc
@@ -322,6 +323,9 @@ github.com/moby/sys/sequential
 # github.com/moby/sys/signal v0.7.1
 ## explicit; go 1.17
 github.com/moby/sys/signal
+# github.com/moby/sys/user v0.1.0
+## explicit; go 1.17
+github.com/moby/sys/user
 # github.com/moby/term v0.5.0
 ## explicit; go 1.18
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
@@ -343,9 +347,6 @@ github.com/opencontainers/go-digest
 github.com/opencontainers/image-spec/identity
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/opencontainers/runc v1.1.13
-## explicit; go 1.18
-github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.2.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
@@ -458,7 +459,6 @@ golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 # golang.org/x/sys v0.24.0
 ## explicit; go 1.18
-golang.org/x/sys/execabs
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
