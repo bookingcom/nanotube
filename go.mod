@@ -3,8 +3,8 @@ module github.com/bookingcom/nanotube
 go 1.21
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
-	github.com/burntsushi/toml v0.3.1
 	github.com/containerd/containerd v1.7.11
 	github.com/dgryski/go-jump v0.0.0-20211018200510-ba001c3ffce0
 	github.com/docker/docker v27.1.2+incompatible
