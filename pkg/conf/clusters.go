@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/burntsushi/toml"
+	"github.com/BurntSushi/toml"
 	"github.com/pkg/errors"
 )
 
@@ -59,7 +59,7 @@ type Host struct {
 // ReadClustersConfig reads clusters set from a reader.
 func ReadClustersConfig(r io.Reader) (Clusters, error) {
 	var cls Clusters
-	_, err := toml.DecodeReader(r, &cls)
+	_, err := toml.NewDecoder(r).Decode(&cls)
 	if err != nil {
 		return cls, errors.Wrap(err, "error while decoding")
 	}

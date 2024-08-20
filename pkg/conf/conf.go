@@ -6,7 +6,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/burntsushi/toml"
+	"github.com/BurntSushi/toml"
 	"github.com/pkg/errors"
 )
 
@@ -179,7 +179,7 @@ type Main struct {
 func ReadMain(r io.Reader) (Main, error) {
 	cfg := MakeDefault()
 
-	_, err := toml.DecodeReader(r, &cfg)
+	_, err := toml.NewDecoder(r).Decode(&cfg)
 	if err != nil {
 		return cfg, errors.Wrap(err, "parsing error")
 	}

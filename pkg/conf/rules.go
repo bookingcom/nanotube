@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/burntsushi/toml"
+	"github.com/BurntSushi/toml"
 	"github.com/pkg/errors"
 )
 
@@ -24,7 +24,7 @@ type Rule struct {
 // ReadRules reads rules from the reader. Errors when parsing fails.
 func ReadRules(r io.Reader) (Rules, error) {
 	var rs Rules
-	_, err := toml.DecodeReader(r, &rs)
+	_, err := toml.NewDecoder(r).Decode(&rs)
 	if err != nil {
 		return rs, errors.Wrap(err, "error parsing rules")
 	}

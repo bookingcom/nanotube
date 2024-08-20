@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/burntsushi/toml"
+	"github.com/BurntSushi/toml"
 	"github.com/pkg/errors"
 )
 
@@ -24,7 +24,7 @@ type Rewrite struct {
 func ReadRewrites(r io.Reader) (Rewrites, error) {
 	var rewrites Rewrites
 
-	_, err := toml.DecodeReader(r, &rewrites)
+	_, err := toml.NewDecoder(r).Decode(&rewrites)
 	if err != nil {
 		return rewrites, errors.Wrap(err, "error parsing rewrites")
 	}
