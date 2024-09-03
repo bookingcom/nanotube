@@ -49,9 +49,11 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 	// TODO: Mainain correct live status based on gRPC connection health.
 
 	// Dial does not timeout. This is intentional since gRPC will keep trying. (check that)
-	conn, err := grpc.Dial(net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port))),
+	// TODO: grpc.Dial deprecated, replace with grpc.NewClient
+	conn, err := grpc.Dial(net.JoinHostPort(h.Name, strconv.Itoa(int(h.Port))), // nolint:staticcheck
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
+		// TODO: grpc.WithBlock() deprecated
+		grpc.WithBlock(), // nolint:staticcheck
 		grpc.WithKeepaliveParams(kacp),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
