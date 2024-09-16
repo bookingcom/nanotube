@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 	github.com/burntsushi/toml v0.3.1
-	github.com/containerd/containerd v1.7.21
+	github.com/containerd/containerd v1.7.22
 	github.com/dgryski/go-jump v0.0.0-20211018200510-ba001c3ffce0
 	github.com/docker/docker v27.2.0+incompatible
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
