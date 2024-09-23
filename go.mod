@@ -13,7 +13,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.20.2
+	github.com/prometheus/client_golang v1.20.4
 	github.com/vishvananda/netns v0.0.4
 	go.uber.org/atomic v1.11.0
 	go.uber.org/ratelimit v0.3.1
