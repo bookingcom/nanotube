@@ -3,6 +3,9 @@ package target
 import (
 	"bufio"
 	"fmt"
+	"github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/s2"
+	"github.com/klauspost/compress/snappy"
 	"math/rand"
 	"net"
 	"strconv"
@@ -20,12 +23,13 @@ import (
 
 // HostMTCP represents a single target hosts to send records in multimple TCP connections to.
 type HostMTCP struct {
-	Name      string
-	Port      uint16
-	Ch        chan *rec.RecBytes
-	Available atomic.Bool
-	NumMTCP   int
-	MTCPs     []MultiConnection
+	Name        string
+	Port        uint16
+	Ch          chan *rec.RecBytes
+	Available   atomic.Bool
+	NumMTCP     int
+	MTCPs       []MultiConnection
+	Compression string
 
 	stop chan int
 
@@ -58,12 +62,25 @@ type MultiConnection struct {
 	Available   atomic.Bool
 }
 
+func newCompressedWriter(c net.Conn, bufSize int, typ string) *bufio.Writer {
+	switch typ {
+	case "s2":
+		return bufio.NewWriterSize(s2.NewWriter(c), bufSize)
+	case "snappy":
+		return bufio.NewWriterSize(snappy.NewBufferedWriter(c), bufSize)
+	case "gzip":
+		return bufio.NewWriterSize(gzip.NewWriter(c), bufSize)
+	default:
+		return bufio.NewWriterSize(c, bufSize)
+	}
+}
+
 // New or updated target connection from existing net.Conn
 // Requires Connection.Mutex lock
-func (c *MultiConnection) New(n net.Conn, bufSize int) {
+func (c *MultiConnection) New(n net.Conn, bufSize int, compressor string) {
 	c.Conn = n
 	c.LastConnUse = time.Now()
-	c.W = bufio.NewWriterSize(n, bufSize)
+	c.W = newCompressedWriter(n, bufSize, compressor)
 }
 
 // Close the connection while mainaining correct internal state.
@@ -123,6 +140,7 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 	}
 	h.NumMTCP = hostCfg.MTCP
 	h.MTCPs = make([]MultiConnection, h.NumMTCP)
+	h.Compression = hostCfg.Compression
 
 	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	h.Ms = ms
@@ -338,7 +356,7 @@ func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
 		}
 		return
 	}
-	c.New(conn, h.conf.TCPOutBufSize)
+	c.New(conn, h.conf.TCPOutBufSize, h.Compression)
 	c.Available.Store(true)
 	h.setHostAvailability()
 }

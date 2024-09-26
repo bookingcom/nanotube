@@ -54,6 +54,8 @@ type Host struct {
 	GRPC bool `toml:"grpc"`
 	// Optional, number of TCP connections to open to the host.
 	MTCP int `toml:"mtcp"`
+	// Optional, compressor to use, default - no compression
+	Compression string `toml:"compression"`
 }
 
 // ReadClustersConfig reads clusters set from a reader.
