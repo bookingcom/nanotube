@@ -96,7 +96,11 @@ func main() {
 	}
 
 	go func() {
-		l, err := reuseport.Listen("tcp", fmt.Sprintf(":%d", cfg.PromPort))
+		addrHostPrefix := ""
+		if cfg.PromLocal {
+			addrHostPrefix = "127.0.0.1"
+		}
+		l, err := reuseport.Listen("tcp", fmt.Sprintf("%s:%d", addrHostPrefix, cfg.PromPort))
 		if err != nil {
 			lg.Error("opening TCP port for Prometheus failed", zap.Error(err))
 		}
