@@ -132,6 +132,8 @@ type Main struct {
 	// -1 turns off pprof server
 	PprofPort int
 	PromPort  int
+	// Expose the Prometheus metrics locally.
+	PromLocal bool
 	// Switch to expose only small subset of essential metrics.
 	// (Useful to reduce Prometheus load when running as a sidecar on many nodes in a large setup.)
 	LessMetrics bool
