@@ -1,12 +1,18 @@
-FROM golang:1.23.2-alpine3.20 as builder
+FROM golang:1.23.4-alpine3.21 as builder
 
 RUN apk add git
 WORKDIR /nt
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./test/sender
 
-FROM alpine:3.20
+FROM alpine:3.21
 WORKDIR /nt
+
+RUN set -x \
+    && apk update \
+    && apk upgrade \
+    && apk add --no-cache ca-certificates \
+    && rm -rf /var/cache/* /var/log/* /tmp/*
 
 COPY --from=builder /nt/sender /nt
 COPY --from=builder /nt/k8s/in /nt/in
