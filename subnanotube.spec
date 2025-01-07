@@ -23,7 +23,7 @@ URL:            https://gitlab.booking.com/graphite/nanotube
 Source0:        %{_name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 BuildArch:      x86_64
-BuildRequires:  golang >= 1.14
+BuildRequires:  golang >= 1.23
 BuildRequires:  make
 BuildRequires:  git
 
