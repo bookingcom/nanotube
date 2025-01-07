@@ -1,6 +1,9 @@
 ---
 include:
   - template: 'Workflows/MergeRequest-Pipelines.gitlab-ci.yml'
+  - project: 'packaging/docker-rpmbuild'
+    ref: master
+    file: '/templates/rpmbuild.yml'
 
 stages:
   - validate
@@ -15,14 +18,14 @@ variables:
   RPMBUILD_TARGET_REPO: /yum/booking.com/$${CENTOS_VER}/graphite
   RPMBUILD_TAG_MATCH: "^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]\\.[0-9][0-9][0-9][0-9][0-9][0-9]$"
 
-lint:
-  stage: validate
-  before_script:
-  - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v1.56.2
-  script:
-  - make lint
-  tags:
-  - docker
+# lint:
+#   stage: validate
+#   before_script:
+#   - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v1.56.2
+#   script:
+#   - make lint
+#   tags:
+#   - docker
 
 # NOTE: This is a throw-away build; the artifact is not used anywhere.
 build:
@@ -31,11 +34,3 @@ build:
   stage: validate
   script:
   - make build
-
-# Enable docker-rpmbuild-pipeline
-# https://gitlab.booking.com/packaging/docker-rpmbuild
-#
-include:
-  - project: 'packaging/docker-rpmbuild'
-    ref: master
-    file: '/templates/rpmbuild.yml'
