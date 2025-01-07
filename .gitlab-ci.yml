@@ -8,7 +8,7 @@ stages:
   - rpmbuild-trigger-ci-jobs
 
 default:
-  image: docker.artifactory.booking.com/projects/golang/golang-ci:latest
+  image: docker.artifactory.booking.com/projects/golang/golang-ci:1.23.4
 
 variables:
   RPMBUILD_CENTOS_VERSIONS: "7 8 9"
