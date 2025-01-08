@@ -21,6 +21,7 @@ variables:
   # You can generate its value with the date +"%d%m%Y.%H%M%S" command.
   RPMBUILD_TAG_MATCH: "^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]\\.[0-9][0-9][0-9][0-9][0-9][0-9]$"
   RPMBUILD_ENABLE_REPOS: yum-repositories-booking-go
+  RPMBUILD_DISABLE_MODULES: go-toolset
 
 # lint:
 #   stage: validate
