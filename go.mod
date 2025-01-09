@@ -2,7 +2,7 @@ module github.com/bookingcom/nanotube
 
 go 1.23.0
 
-// toolchain go1.23.4
+toolchain go1.23.4
 
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
