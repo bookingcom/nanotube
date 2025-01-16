@@ -7,7 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 	github.com/burntsushi/toml v0.3.1
-	github.com/containerd/containerd v1.7.24
+	github.com/containerd/containerd v1.7.25
 	github.com/dgryski/go-jump v0.0.0-20211018200510-ba001c3ffce0
 	github.com/docker/docker v27.4.1+incompatible
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
@@ -36,8 +36,8 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/cgroups/v3 v3.0.3 // indirect
-	github.com/containerd/containerd/api v1.7.19 // indirect
-	github.com/containerd/continuity v0.4.3 // indirect
+	github.com/containerd/containerd/api v1.8.0 // indirect
+	github.com/containerd/continuity v0.4.4 // indirect
 	github.com/containerd/errdefs v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
