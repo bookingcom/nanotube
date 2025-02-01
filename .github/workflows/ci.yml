@@ -12,6 +12,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
       - name: Set up Go tip
         if: matrix.go-version == 'tip'
         run: |
@@ -30,3 +31,10 @@ jobs:
           version: v1.61.0
       - name: test
         run: make test
+      - name: govulncheck
+        if: matrix.go-version != 'tip'
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: ${{ matrix.go-version }}
+          check-latest: true
+          go-package: ./...
