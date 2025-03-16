@@ -54,8 +54,11 @@ loop:
 		lg.Debug("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
 		wg.Wait()
 		lg.Debug("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
+		connWG.Done()
+	} else {
+		wg.Wait()
+		connWG.Done()
 	}
-	connWG.Done()
 }
 
 func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
