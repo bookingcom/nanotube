@@ -50,10 +50,11 @@ loop:
 		}
 	}
 
-	lg.Debug("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
-	wg.Wait()
-	lg.Debug("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
-
+	if l != nil {
+		lg.Debug("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
+		wg.Wait()
+		lg.Debug("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
+	}
 	connWG.Done()
 }
 
