@@ -2,7 +2,7 @@ module github.com/bookingcom/nanotube
 
 go 1.23.0
 
-toolchain go1.23.4
+toolchain go1.24.1
 
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
@@ -20,7 +20,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/ratelimit v0.3.1
 	go.uber.org/zap v1.27.0
-	golang.org/x/sync v0.11.0
+	golang.org/x/sync v0.12.0
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.4
 	k8s.io/apimachinery v0.32.1
