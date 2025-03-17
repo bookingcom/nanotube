@@ -55,7 +55,7 @@ loop:
 	}
 	wg.Wait()
 	if l != nil {
-		lg.Debug("Finished previously accpted TCP connections.", zap.String("address", l.Addr().String()))
+		lg.Debug("Finished previously accepted TCP connections.", zap.String("address", l.Addr().String()))
 	}
 
 	connWG.Done()
