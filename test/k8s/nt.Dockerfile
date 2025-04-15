@@ -17,7 +17,7 @@ RUN set -x \
 WORKDIR /nt
 
 COPY --from=builder /nt/nanotube /nt
-COPY ./k8s/config /nt/config
+COPY ./test/k8s/config /nt/config
 
 RUN     adduser graphite --disabled-password
 USER    graphite
