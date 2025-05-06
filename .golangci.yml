@@ -9,6 +9,13 @@ linters:
     - gochecknoinits
     - misspell
     - unparam
+  settings:
+    staticcheck:
+      checks:
+        - all
+        # All below staticcheck exclusions have been added when migrating golangci-lint config from
+        # v1 to v2 and for the sake of not making source code changes when upgrading golangci-lint.
+        - "-QF1008" # exclude 'could remove embedded field "<field>" from selector' 
   exclusions:
     generated: lax
     presets:
