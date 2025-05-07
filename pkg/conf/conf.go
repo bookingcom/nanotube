@@ -295,7 +295,7 @@ func MakeDefault() Main {
 // Hash calculates hash of all the configs to track config versions.
 func Hash(cfg *Main, clusters *Clusters, rules *Rules, rewrites *Rewrites) (string, error) {
 	h := md5.New()
-	_, err := h.Write([]byte(fmt.Sprintf("%v%v%v%v", cfg, clusters, rules, rewrites)))
+	_, err := fmt.Fprintf(h, "%v%v%v%v", cfg, clusters, rules, rewrites)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate config hash: %w", err)
 	}
@@ -305,7 +305,7 @@ func Hash(cfg *Main, clusters *Clusters, rules *Rules, rewrites *Rewrites) (stri
 // ClustersHash calculates hash of the clusters config to track its versions.
 func ClustersHash(clusters *Clusters) (string, error) {
 	h := md5.New()
-	_, err := h.Write([]byte(fmt.Sprintf("%v", clusters)))
+	_, err := fmt.Fprintf(h, "%v", clusters)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate clusters config hash: %w", err)
 	}

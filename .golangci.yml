@@ -1,29 +1,43 @@
+version: "2"
 run:
-  timeout: 3m
+  timeout: 5m
   tests: false
-
 linters:
   enable:
     - asciicheck
     - bodyclose
+    - gochecknoglobals
     - gochecknoinits
-    - gofmt
-    - goimports
     - misspell
     - unparam
-    - gochecknoglobals
-
-# Enable in the future
-    # - gosec
-
+  settings:
+    staticcheck:
+      checks:
+        - all
+        # All below staticcheck exclusions have been added when migrating golangci-lint config from
+        # v1 to v2 and for the sake of not making source code changes when upgrading golangci-lint.
+        - "-QF1008" # exclude 'could remove embedded field "<field>" from selector' 
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  # Maximum issues count per one linter. Set to 0 to disable. Default is 50.
   max-issues-per-linter: 0
-  # Maximum count of issues with the same text. Set to 0 to disable. Default is 3.
   max-same-issues: 0
-  # Excluding configuration per-path, per-linter, per-text and per-source
-  # exclude-rules:
-    # Exclude some linters from running on tests files.
-    # - path:
-    #   linters:
-    #     - errcheck
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

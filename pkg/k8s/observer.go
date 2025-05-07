@@ -189,11 +189,12 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 					"error when splitting container id")
 			}
 
-			if parts[0] == "containerd" {
+			switch parts[0] {
+			case "containerd":
 				cs[parts[1]] = contInfo{parts[1], contStatus.Name, true}
-			} else if parts[0] == "docker" {
+			case "docker":
 				cs[parts[1]] = contInfo{parts[1], contStatus.Name, false}
-			} else {
+			default:
 				return nil, errors.Wrapf(
 					fmt.Errorf("container type in id: %s, should be either containerd or docker", parts[0]),
 					"error when parsing container id: %s", contStatus.ContainerID)
