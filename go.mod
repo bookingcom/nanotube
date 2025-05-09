@@ -7,7 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 	github.com/burntsushi/toml v0.3.1
-	github.com/containerd/containerd v1.7.25
+	github.com/containerd/containerd v1.7.27
 	github.com/dgryski/go-jump v0.0.0-20211018200510-ba001c3ffce0
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
@@ -20,7 +20,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/ratelimit v0.3.1
 	go.uber.org/zap v1.27.0
-	golang.org/x/sync v0.11.0
+	golang.org/x/sync v0.14.0
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.4
 	k8s.io/apimachinery v0.32.1
@@ -42,7 +42,7 @@ require (
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
-	github.com/containerd/ttrpc v1.2.5 // indirect
+	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -101,11 +101,11 @@ require (
 	go.opentelemetry.io/otel/metric v1.32.0 // indirect
 	go.opentelemetry.io/otel/trace v1.32.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.36.0 // indirect
-	golang.org/x/oauth2 v0.24.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/term v0.29.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/oauth2 v0.30.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/term v0.32.0 // indirect
+	golang.org/x/text v0.25.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	google.golang.org/genproto v0.0.0-20240812133136-8ffd90a71988 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241202173237-19429a94021a // indirect
