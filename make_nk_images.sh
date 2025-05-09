@@ -27,6 +27,7 @@ echo "Warning: Content of the /test/k8s/config will be overwritten!"
 read -p "Proceed? " -n 1 -r
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
+    export DOCKER_DEFAULT_PLATFORM="linux/amd64"
     cp -rf $nanokube_dir/config/prod/* ./test/k8s/config
     config_hash_prod=$(cd test/k8s && go run github.com/bookingcom/nanotube/cmd/nanotube -config "$PWD/config/config.toml" -confighash 1 | cut "-c-$abbrev_len")
 
