@@ -9,7 +9,7 @@ require (
 	github.com/burntsushi/toml v0.3.1
 	github.com/containerd/containerd v1.7.27
 	github.com/dgryski/go-jump v0.0.0-20211018200510-ba001c3ffce0
-	github.com/docker/docker v27.5.1+incompatible
+	github.com/docker/docker v28.2.2+incompatible
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
 	github.com/facebookgo/pidfile v0.0.0-20150612191647-f242e2999868
 	github.com/google/go-cmp v0.6.0
@@ -39,6 +39,7 @@ require (
 	github.com/containerd/containerd/api v1.8.0 // indirect
 	github.com/containerd/continuity v0.4.4 // indirect
 	github.com/containerd/errdefs v0.3.0 // indirect
+	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
@@ -76,6 +77,7 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
