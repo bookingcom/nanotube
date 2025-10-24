@@ -1,6 +1,6 @@
 module github.com/bookingcom/nanotube
 
-go 1.24.0
+go 1.25.3
 
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
