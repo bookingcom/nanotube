@@ -5,7 +5,7 @@ COPY . .
 # TODO: Add version embedding.
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/nanotube
 
-FROM alpine:3.22
+FROM alpine:3.22.2
 
 RUN set -x \
     && apk update \
