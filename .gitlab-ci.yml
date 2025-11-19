@@ -1,10 +1,10 @@
 ---
 # The RPM packaging is only launched if a tag is present. The tag spec is below.
 include:
-  - template: 'Workflows/MergeRequest-Pipelines.gitlab-ci.yml'
-  - project: 'packaging/docker-rpmbuild'
+  - template: "Workflows/MergeRequest-Pipelines.gitlab-ci.yml"
+  - project: ${GITLAB_BOOKING_BASE}packaging/docker-rpmbuild
     ref: master
-    file: '/templates/rpmbuild.yml'
+    file: "/templates/rpmbuild.yml"
 
 stages:
   - validate
@@ -12,7 +12,8 @@ stages:
   - rpmbuild-trigger-ci-jobs
 
 default:
-  image: docker.artifactory.booking.com/projects/golang/golang-ci:1.23.4
+  # For more info: https://gitlab.booking.com/go/ci-cd/tree/master/golang-ci
+  image: docker.jfrog.booking.com/projects/golang/golang-ci:1.25-ci-v2
 
 variables:
   RPMBUILD_CENTOS_VERSIONS: "7 8 9"
@@ -36,7 +37,7 @@ variables:
 # NOTE: This is a throw-away build; the artifact is not used anywhere.
 build:
   tags:
-  - docker
+    - docker
   stage: validate
   script:
-  - make build
+    - make build
