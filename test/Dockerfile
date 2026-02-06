@@ -1,4 +1,4 @@
-FROM golang:1.25
+FROM golang:1.25.6
 
 RUN mkdir /nanotube
 WORKDIR /nanotube
