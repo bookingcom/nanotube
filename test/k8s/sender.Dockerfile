@@ -1,4 +1,4 @@
-FROM golang:1.25.6-alpine3.23 as builder
+FROM golang:1.25.7-alpine3.23 as builder
 
 RUN apk add git
 WORKDIR /nt
