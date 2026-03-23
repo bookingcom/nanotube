@@ -11,6 +11,7 @@ RUN set -x \
     && apk update \
     && apk upgrade \
     && apk add --no-cache ca-certificates \
+    && apk upgrade zlib \
     && rm -rf /var/cache/* /var/log/* /tmp/*
 
 WORKDIR /nt
