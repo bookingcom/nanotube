@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -196,7 +197,39 @@ func DockerPIDFromID(id string) (pid uint32, retErr error) {
 	return
 }
 
+func getLocalContainersContainerd(cfg *conf.Main) (res map[string]contInfo, retErr error) {
+	res = make(map[string]contInfo)
+
+	client, err := containerd.New("/run/containerd/containerd.sock", containerd.WithDefaultNamespace("k8s.io"))
+	if err != nil {
+		retErr = errors.Wrap(err, "error creating containerd daemon client")
+		return
+	}
+
+	defer func() {
+		closeErr := client.Close()
+		if closeErr != nil {
+			retErr = errors.Wrapf(retErr, "error while closing the docker daemon client %v", closeErr)
+		}
+	}()
+
+	containers, err := client.Containers(context.Background(), `labels."io.kubernetes.container.name"==POD`, fmt.Sprintf(`labels."%s"==%s`, cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal))
+	if err != nil {
+		retErr = errors.Wrap(err, "error getting list of containers")
+		return
+	}
+
+	for _, c := range containers {
+		res[c.ID()] = contInfo{c.ID(), c.ID(), true}
+	}
+	return
+}
+
 func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) {
+	if _, err := os.Stat(client.DefaultDockerHost); errors.Is(err, os.ErrNotExist) {
+		return getLocalContainersContainerd(cfg)
+	}
+
 	res = make(map[string]contInfo)
 
 	client, err := client.NewClientWithOpts(client.WithAPIVersionNegotiation())
