@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -246,16 +245,16 @@ func getLocalContainersContainerd(cfg *conf.Main) (res map[string]contInfo, retE
 }
 
 func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) {
-	if _, err := os.Stat(client.DefaultDockerHost); errors.Is(err, os.ErrNotExist) {
-		return getLocalContainersContainerd(cfg)
-	}
-
 	res = make(map[string]contInfo)
 
 	client, err := client.NewClientWithOpts(client.WithAPIVersionNegotiation())
 	if err != nil {
 		retErr = errors.Wrap(err, "error creating docker daemon client")
 		return
+	}
+
+	if _, err := client.Ping(context.Background()); err != nil {
+		return getLocalContainersContainerd(cfg)
 	}
 
 	defer func() {
