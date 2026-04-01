@@ -208,8 +208,10 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 				cont = newCont
 			}
 		}
-		cont.Name = pod.Name
-		cs[cont.ID] = cont
+		if cont.ID != "" {
+			cont.Name = pod.Name
+			cs[cont.ID] = cont
+		}
 	}
 
 	return cs, nil

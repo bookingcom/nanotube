@@ -232,7 +232,7 @@ func getLocalContainersContainerd(cfg *conf.Main) (res map[string]contInfo, retE
 		}
 	}()
 
-	containers, err := client.Containers(ctx, `labels."io.kubernetes.container.name"==POD`, fmt.Sprintf(`labels."%s"==%s`, cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal))
+	containers, err := client.Containers(ctx, fmt.Sprintf(`labels."%s"==%s`, cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal))
 	if err != nil {
 		retErr = errors.Wrap(err, "error getting list of containers")
 		return
@@ -253,16 +253,16 @@ func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) 
 		return
 	}
 
-	if _, err := client.Ping(context.Background()); err != nil {
-		return getLocalContainersContainerd(cfg)
-	}
-
 	defer func() {
 		closeErr := client.Close()
 		if closeErr != nil {
 			retErr = errors.Wrapf(retErr, "error while closing the docker daemon client %v", closeErr)
 		}
 	}()
+
+	if _, err := client.Ping(context.Background()); err != nil {
+		return getLocalContainersContainerd(cfg)
+	}
 
 	listOpts := container.ListOptions{}
 	listOpts.Filters = filters.NewArgs(filters.Arg("label", "io.kubernetes.container.name=POD"), filters.Arg("label", fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)))
