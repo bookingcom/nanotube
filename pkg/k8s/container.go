@@ -77,31 +77,6 @@ func NewCont(id string, name string, isContainerd bool, q chan<- [][]byte, rateL
 func (c *Cont) StartForwarding() {
 	c.Lg.Info("Initializing forwarding...")
 
-	var listener net.Listener
-	if c.IsContainerd {
-		pid, err := CointainerdPidFromID(c.ID)
-		if err != nil {
-			c.Lg.Error("could not get pid for container by ID", zap.Error(err))
-		}
-		listener, err = OpenTCPTunnelByPID(pid, c.Port)
-		if err != nil {
-			c.Lg.Error("error opening TCP tunnel into container", zap.Error(err))
-		}
-	} else {
-		var err error
-		pid, err := DockerPIDFromID(c.ID)
-		if err != nil {
-			c.Lg.Error("could not get pid for container by ID", zap.Error(err))
-		}
-		listener, err = OpenTCPTunnelByPID(pid, c.Port)
-		if err != nil {
-			c.Lg.Error("error opening TCP tunnel into container", zap.Error(err))
-		}
-	}
-
-	c.Wg.Add(1)
-	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, c.RateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg)
-
 	go func() {
 		select {
 		case <-c.GlobalStop:
@@ -110,6 +85,50 @@ func (c *Cont) StartForwarding() {
 			// prevent goroutine leak
 		}
 	}()
+
+	c.Wg.Add(1)
+	var listener net.Listener
+	for {
+		select {
+		case <-c.OwnStop:
+			c.Lg.Debug("Stopped tunneling TCP connections", zap.String("containerID", c.ID))
+			c.Wg.Done()
+			return
+		default:
+		}
+		if c.IsContainerd {
+			pid, err := CointainerdPidFromID(c.ID)
+			if err != nil {
+				c.Lg.Error("could not get pid for container by ID", zap.Error(err))
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			listener, err = OpenTCPTunnelByPID(pid, c.Port)
+			if err != nil {
+				c.Lg.Error("error opening TCP tunnel into container", zap.Error(err))
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			break
+		} else {
+			var err error
+			pid, err := DockerPIDFromID(c.ID)
+			if err != nil {
+				c.Lg.Error("could not get pid for container by ID", zap.Error(err))
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			listener, err = OpenTCPTunnelByPID(pid, c.Port)
+			if err != nil {
+				c.Lg.Error("error opening TCP tunnel into container", zap.Error(err))
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			break
+		}
+	}
+
+	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, c.RateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg)
 }
 
 // StopForwarding stops the forwarding.
@@ -196,6 +215,42 @@ func DockerPIDFromID(id string) (pid uint32, retErr error) {
 	return
 }
 
+func getLocalContainersContainerd(cfg *conf.Main) (res map[string]contInfo, retErr error) {
+	res = make(map[string]contInfo)
+
+	ctx := namespaces.WithNamespace(context.Background(), "k8s.io")
+	client, err := containerd.New("/run/containerd/containerd.sock")
+	if err != nil {
+		retErr = errors.Wrap(err, "error creating containerd daemon client")
+		return
+	}
+
+	defer func() {
+		closeErr := client.Close()
+		if closeErr != nil {
+			retErr = errors.Wrapf(retErr, "error while closing the containerd client %v", closeErr)
+		}
+	}()
+
+	containers, err := client.Containers(ctx, fmt.Sprintf(`labels."%s"==%s`, cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal))
+	if err != nil {
+		retErr = errors.Wrap(err, "error getting list of containers")
+		return
+	}
+
+	for _, c := range containers {
+		name := c.ID()
+		spec, err := c.Spec(ctx)
+		if err == nil {
+			if sandboxName, ok := spec.Annotations["io.kubernetes.cri.sandbox-name"]; ok {
+				name = sandboxName
+			}
+		}
+		res[c.ID()] = contInfo{c.ID(), name, true}
+	}
+	return
+}
+
 func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) {
 	res = make(map[string]contInfo)
 
@@ -211,6 +266,10 @@ func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) 
 			retErr = errors.Wrapf(retErr, "error while closing the docker daemon client %v", closeErr)
 		}
 	}()
+
+	if _, err := client.Ping(context.Background()); err != nil {
+		return getLocalContainersContainerd(cfg)
+	}
 
 	listOpts := container.ListOptions{}
 	listOpts.Filters = filters.NewArgs(filters.Arg("label", "io.kubernetes.container.name=POD"), filters.Arg("label", fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)))

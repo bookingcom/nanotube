@@ -177,6 +177,7 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 
 	cs := map[string]contInfo{}
 	for _, pod := range pods.Items {
+		var cont contInfo
 		for _, contStatus := range pod.Status.ContainerStatuses {
 			// contStatus looks like docker://<id>
 			if contStatus.ContainerID == "" {
@@ -189,16 +190,27 @@ func getContainers(cfg *conf.Main) (map[string]contInfo, error) {
 					"error when splitting container id")
 			}
 
+			var newCont contInfo
 			switch parts[0] {
 			case "containerd":
-				cs[parts[1]] = contInfo{parts[1], contStatus.Name, true}
+				newCont = contInfo{parts[1], contStatus.Name, true}
 			case "docker":
-				cs[parts[1]] = contInfo{parts[1], contStatus.Name, false}
+				newCont = contInfo{parts[1], contStatus.Name, false}
 			default:
 				return nil, errors.Wrapf(
 					fmt.Errorf("container type in id: %s, should be either containerd or docker", parts[0]),
 					"error when parsing container id: %s", contStatus.ContainerID)
 			}
+
+			// we only need to forward into the pod once. so any one container works. We use this condition
+			// to have a consistent container to use for forwarding.
+			if cont.ID == "" || newCont.Name < cont.Name {
+				cont = newCont
+			}
+		}
+		if cont.ID != "" {
+			cont.Name = pod.Name
+			cs[cont.ID] = cont
 		}
 	}
 
