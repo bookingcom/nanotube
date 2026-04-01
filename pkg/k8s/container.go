@@ -239,7 +239,14 @@ func getLocalContainersContainerd(cfg *conf.Main) (res map[string]contInfo, retE
 	}
 
 	for _, c := range containers {
-		res[c.ID()] = contInfo{c.ID(), c.ID(), true}
+		name := c.ID()
+		spec, err := c.Spec(ctx)
+		if err == nil {
+			if sandboxName, ok := spec.Annotations["io.kubernetes.cri.sandbox-name"]; ok {
+				name = sandboxName
+			}
+		}
+		res[c.ID()] = contInfo{c.ID(), name, true}
 	}
 	return
 }
