@@ -468,7 +468,7 @@ go.uber.org/multierr
 # go.uber.org/ratelimit v0.3.1
 ## explicit; go 1.20
 go.uber.org/ratelimit
-# go.uber.org/zap v1.27.1
+# go.uber.org/zap v1.28.0
 ## explicit; go 1.19
 go.uber.org/zap
 go.uber.org/zap/buffer
