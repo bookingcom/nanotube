@@ -7,8 +7,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"go.uber.org/zap"
 )
 
@@ -17,7 +16,7 @@ import (
 func ObserveDocker(lg *zap.Logger) {
 	go func() {
 		ctx := context.Background()
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		if err != nil {
 			lg.Error("error creating docker client", zap.Error(err))
 		}
@@ -29,13 +28,13 @@ func ObserveDocker(lg *zap.Logger) {
 		tick := time.NewTicker(9 * time.Second)
 
 		for {
-			containers, err := cli.ContainerList(ctx, container.ListOptions{})
+			containers, err := cli.ContainerList(ctx, client.ContainerListOptions{})
 			if err != nil {
 				lg.Error("error listing containers", zap.Error(err))
 			}
 
 			ss := []string{}
-			for _, container := range containers {
+			for _, container := range containers.Items {
 				ss = append(ss, container.ID)
 			}
 			lg.Info("Local node containers", zap.Strings("IDs", ss))
