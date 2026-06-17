@@ -16,9 +16,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -192,26 +190,29 @@ func CointainerdPidFromID(id string) (pid uint32, retErr error) {
 func DockerPIDFromID(id string) (pid uint32, retErr error) {
 	pid = 0
 
-	client, err := client.NewClientWithOpts(client.WithAPIVersionNegotiation())
+	cl, err := client.New()
 	if err != nil {
 		retErr = errors.Wrap(err, "error creating docker daemon client")
 		return
 	}
 
 	defer func() {
-		closeErr := client.Close()
+		closeErr := cl.Close()
 		if closeErr != nil {
 			retErr = errors.Wrapf(retErr, "error while closing the docker daemon client %v", closeErr)
 		}
 	}()
 
-	container, err := client.ContainerInspect(context.Background(), id)
+	container, err := cl.ContainerInspect(context.Background(), id, client.ContainerInspectOptions{})
 	if err != nil {
 		retErr = errors.Wrap(err, "error inspecting docker container")
 		return
 	}
-
-	pid = uint32(container.ContainerJSONBase.State.Pid)
+	if container.Container.State == nil {
+		retErr = errors.New("error inspecting docker container: container state is nil")
+		return
+	}
+	pid = uint32(container.Container.State.Pid)
 	return
 }
 
@@ -254,32 +255,35 @@ func getLocalContainersContainerd(cfg *conf.Main) (res map[string]contInfo, retE
 func getLocalContainers(cfg *conf.Main) (res map[string]contInfo, retErr error) {
 	res = make(map[string]contInfo)
 
-	client, err := client.NewClientWithOpts(client.WithAPIVersionNegotiation())
+	cl, err := client.New()
 	if err != nil {
 		retErr = errors.Wrap(err, "error creating docker daemon client")
 		return
 	}
 
 	defer func() {
-		closeErr := client.Close()
+		closeErr := cl.Close()
 		if closeErr != nil {
 			retErr = errors.Wrapf(retErr, "error while closing the docker daemon client %v", closeErr)
 		}
 	}()
 
-	if _, err := client.Ping(context.Background()); err != nil {
+	if _, err := cl.Ping(context.Background(), client.PingOptions{}); err != nil {
 		return getLocalContainersContainerd(cfg)
 	}
 
-	listOpts := container.ListOptions{}
-	listOpts.Filters = filters.NewArgs(filters.Arg("label", "io.kubernetes.container.name=POD"), filters.Arg("label", fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal)))
-	containers, err := client.ContainerList(context.Background(), listOpts)
+	f := make(client.Filters).
+		Add("label", "io.kubernetes.container.name=POD").
+		Add("label", fmt.Sprintf("%s=%s", cfg.K8sSwitchLabelKey, cfg.K8sSwitchLabelVal))
+	containers, err := cl.ContainerList(context.Background(), client.ContainerListOptions{
+		Filters: f,
+	})
 	if err != nil {
 		retErr = errors.Wrap(err, "error getting list of containers")
 		return
 	}
 
-	for _, c := range containers {
+	for _, c := range containers.Items {
 		res[c.ID] = contInfo{c.ID, c.Names[0], false}
 	}
 

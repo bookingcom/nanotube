@@ -1,16 +1,17 @@
-FROM golang:1.25.3-alpine3.22 AS builder
+FROM golang:1.25.11-alpine AS builder
 
 WORKDIR /nt
 COPY . .
 # TODO: Add version embedding.
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/nanotube
 
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN set -x \
     && apk update \
     && apk upgrade \
     && apk add --no-cache ca-certificates \
+    && apk upgrade zlib \
     && rm -rf /var/cache/* /var/log/* /tmp/*
 
 WORKDIR /nt

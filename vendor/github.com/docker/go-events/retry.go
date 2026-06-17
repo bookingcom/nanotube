@@ -151,7 +151,7 @@ func (b *Breaker) Proceed(event Event) time.Duration {
 		return 0
 	}
 
-	return b.last.Add(b.backoff).Sub(time.Now())
+	return time.Until(b.last.Add(b.backoff))
 }
 
 // Success resets the breaker.
@@ -173,15 +173,13 @@ func (b *Breaker) Failure(event Event, err error) bool {
 	return false // never drop events.
 }
 
-var (
-	// DefaultExponentialBackoffConfig provides a default configuration for
-	// exponential backoff.
-	DefaultExponentialBackoffConfig = ExponentialBackoffConfig{
-		Base:   time.Second,
-		Factor: time.Second,
-		Max:    20 * time.Second,
-	}
-)
+// DefaultExponentialBackoffConfig provides a default configuration for
+// exponential backoff.
+var DefaultExponentialBackoffConfig = ExponentialBackoffConfig{
+	Base:   time.Second,
+	Factor: time.Second,
+	Max:    20 * time.Second,
+}
 
 // ExponentialBackoffConfig configures backoff parameters.
 //
