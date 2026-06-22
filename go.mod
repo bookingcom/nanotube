@@ -11,7 +11,7 @@ require (
 	github.com/facebookgo/pidfile v0.0.0-20150612191647-f242e2999868
 	github.com/google/go-cmp v0.7.0
 	github.com/libp2p/go-reuseport v0.4.0
-	github.com/moby/moby/client v0.4.1
+	github.com/moby/moby/client v0.5.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/vishvananda/netns v0.0.5
@@ -75,7 +75,7 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
-	github.com/moby/moby/api v1.54.2 // indirect
+	github.com/moby/moby/api v1.55.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
