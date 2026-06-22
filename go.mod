@@ -5,7 +5,7 @@ go 1.25.11
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 	github.com/burntsushi/toml v0.3.1
-	github.com/containerd/containerd v1.7.32
+	github.com/containerd/containerd v1.7.33
 	github.com/dgryski/go-jump v0.0.0-20211018200510-ba001c3ffce0
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
 	github.com/facebookgo/pidfile v0.0.0-20150612191647-f242e2999868
