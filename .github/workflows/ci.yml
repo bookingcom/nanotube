@@ -6,7 +6,7 @@ jobs:
     strategy:
       matrix:
         go-version:
-          - 1.26.4
+          - 1.26.5
 #          - tip
     steps:
       - name: Set up Go stable
@@ -26,12 +26,12 @@ jobs:
       - name: checkout code
         uses: actions/checkout@v7
       - name: golangci-lint
-        if: matrix.go-version == '1.24.x'
+        if: matrix.go-version == '1.26.5'
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.1.6
       - name: govulncheck
-        if: matrix.go-version == '1.24.x'
+        if: matrix.go-version == '1.26.5'
         uses: golang/govulncheck-action@v1
         with:
           check-latest: true
