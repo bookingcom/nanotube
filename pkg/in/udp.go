@@ -81,6 +81,7 @@ func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}
 	retryDuration := time.Duration(cfg.RateLimiterRetryDurationMs) * time.Millisecond
 
 	recCount := 0
+	var arena recArena
 loop:
 	for {
 		select {
@@ -101,13 +102,15 @@ loop:
 				lg.Error("error reading UDP datagram", zap.Error(err))
 				continue
 			}
-			lines := bytes.Split(buf[:nRead], []byte{'\n'})
-
 			packetRecCount := 0
-			for i := 0; i < len(lines)-1; i++ { // last line is empty
-				rec := make([]byte, len(lines[i]))
-				copy(rec, lines[i])
-				qb.Push(rec)
+			// only newline-terminated lines are records; a trailing partial line is dropped
+			for data := buf[:nRead]; ; {
+				i := bytes.IndexByte(data, '\n')
+				if i < 0 {
+					break
+				}
+				qb.Push(arena.copy(data[:i]))
+				data = data[i+1:]
 				packetRecCount++
 			}
 			if rateLimiters != nil {

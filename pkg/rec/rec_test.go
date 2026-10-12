@@ -2,12 +2,16 @@ package rec
 
 import (
 	"bytes"
+	"hash/fnv"
 	"math"
+	"math/rand"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/test"
 	"github.com/google/go-cmp/cmp"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -187,7 +191,7 @@ func TestRec(t *testing.T) {
 					if res == nil {
 						t.Error("unexpectected nil value of parsed rec")
 					} else {
-						if diff := cmp.Diff(*res, tst.res, opt); diff != "" {
+						if diff := cmp.Diff(exportedFields(*res), exportedFields(tst.res), opt); diff != "" {
 							t.Errorf("diff in rec vals:\n%s", diff)
 						}
 					}
@@ -195,6 +199,17 @@ func TestRec(t *testing.T) {
 			}
 		})
 	}
+}
+
+// recFieldsView holds the exported fields of RecBytes; cmp refuses structs
+// with unexported fields.
+type recFieldsView struct {
+	Path, Val, Time []byte
+	Received        time.Time
+}
+
+func exportedFields(r RecBytes) recFieldsView {
+	return recFieldsView{Path: r.Path, Val: r.Val, Time: r.Time, Received: r.Received}
 }
 
 func TestNormalization(t *testing.T) {
@@ -276,7 +291,7 @@ func TestNormalization(t *testing.T) {
 	}
 
 	for _, test := range tt {
-		s, err := normalizePath([]byte(test.in))
+		s, err := appendNormalizedPath(nil, []byte(test.in))
 		if err != nil && !test.err {
 			t.Fatalf("got unexpected error while normalizing: %v", err)
 		}
@@ -350,7 +365,7 @@ func FuzzParseRecBytes(f *testing.F) {
 			t.Error("got 0 length value")
 		}
 
-		norm2, err := normalizePath(rec.Path)
+		norm2, err := appendNormalizedPath(nil, rec.Path)
 		if err != nil {
 			t.Errorf("error on second normalization, %v", err)
 		}
@@ -358,4 +373,225 @@ func FuzzParseRecBytes(f *testing.F) {
 			t.Errorf("second normalization %s differs from the first %s", norm2, rec.Path)
 		}
 	})
+}
+
+// oldNormalizePath is the pre-optimisation normalizePath, kept verbatim as
+// the oracle for appendNormalizedPath.
+func oldNormalizePath(s []byte) ([]byte, error) {
+	if len(s) == 0 {
+		return []byte{}, nil
+	}
+
+	start := 0
+	for ; start < len(s) && s[start] == '.'; start++ {
+	}
+	if start == len(s) {
+		return []byte{}, errors.New("path contains only dots")
+	}
+
+	end := len(s) - 1
+	for ; end >= start && s[end] == '.'; end-- {
+	}
+
+	needsNormalization := false
+	for i := start; i <= end; i++ {
+		if s[i] == '.' {
+			if i == len(s)-1 {
+				needsNormalization = true
+				break
+			} else if s[i+1] == '.' {
+				needsNormalization = true
+				break
+			}
+		}
+
+		if !validChar(s[i]) {
+			needsNormalization = true
+			break
+		}
+	}
+
+	res := []byte{}
+	if needsNormalization {
+		for i := start; i <= end; i++ {
+			if s[i] == '.' {
+				if i == len(s)-1 {
+					continue
+				} else if s[i+1] == '.' {
+					continue
+				}
+			}
+
+			if validChar(s[i]) {
+				res = append(res, s[i])
+			} else {
+				res = append(res, byte('_'))
+			}
+		}
+	} else {
+		if start == 0 && end == len(s)-1 {
+			return s, nil
+		}
+		res = append(res, s[start:end+1]...)
+		return res, nil
+	}
+
+	return res, nil
+}
+
+// oldSerialize is the pre-optimisation ParseRec + Serialize pipeline.
+func oldParseSerialize(s []byte, normalize bool) ([]byte, error) {
+	pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd, err := recFields(s)
+	if err != nil {
+		return nil, err
+	}
+	var path []byte
+	if normalize {
+		path, err = oldNormalizePath(s[pathStart:pathEnd])
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		path = append(path, s[pathStart:pathEnd]...)
+	}
+	r := RecBytes{Path: path}
+	r.Val = append(r.Val, s[valStart:valEnd]...)
+	r.Time = append(r.Time, s[timeStart:timeEnd]...)
+	return r.Serialize(), nil
+}
+
+func randomRecord(rnd *rand.Rand) []byte {
+	const alphabet = "ab.c.._-:#zZ09 \t&^%+=\xff\xe2\n"
+	n := rnd.Intn(24)
+	b := make([]byte, 0, n)
+	for i := 0; i < n; i++ {
+		b = append(b, alphabet[rnd.Intn(len(alphabet))])
+	}
+	return b
+}
+
+func TestNormalizationDifferential(t *testing.T) {
+	rnd := rand.New(rand.NewSource(1))
+	for i := 0; i < 200000; i++ {
+		in := randomRecord(rnd)
+		want, wantErr := oldNormalizePath(in)
+		got, gotErr := appendNormalizedPath(nil, in)
+		if (wantErr != nil) != (gotErr != nil) || !bytes.Equal(got, want) {
+			t.Fatalf("appendNormalizedPath(%q) = %q, %v; want %q, %v", in, got, gotErr, want, wantErr)
+		}
+		// appending must not touch the prefix already in dst
+		pre := []byte("prefix")
+		got3, _ := appendNormalizedPath(pre, in)
+		if wantErr == nil && !bytes.Equal(got3, append([]byte("prefix"), want...)) {
+			t.Fatalf("appendNormalizedPath with prefix(%q) = %q", in, got3)
+		}
+	}
+}
+
+func checkParseDifferential(t *testing.T, in []byte) {
+	t.Helper()
+	for _, normalize := range []bool{true, false} {
+		want, wantErr := oldParseSerialize(in, normalize)
+		r, gotErr := ParseRec(in, normalize, false, time.Now, zap.NewNop())
+		if (wantErr != nil) != (gotErr != nil) {
+			t.Fatalf("ParseRec(%q, %v) err=%v, want err=%v", in, normalize, gotErr, wantErr)
+		}
+		if gotErr != nil {
+			continue
+		}
+		if !bytes.Equal(r.Bytes(), want) || !bytes.Equal(r.Serialize(), want) {
+			t.Fatalf("ParseRec(%q, %v): Bytes=%q Serialize=%q, want %q", in, normalize, r.Bytes(), r.Serialize(), want)
+		}
+		if !r.lineIsCurrent() {
+			t.Fatalf("ParseRec(%q): line not current", in)
+		}
+		h := fnv.New64a()
+		h.Write(r.Path)
+		if r.PathHash() != h.Sum64() {
+			t.Fatalf("PathHash(%q) mismatch", r.Path)
+		}
+	}
+}
+
+func TestParseRecDifferential(t *testing.T) {
+	rnd := rand.New(rand.NewSource(2))
+	for i := 0; i < 200000; i++ {
+		f1, f2, f3 := randomRecord(rnd), randomRecord(rnd), randomRecord(rnd)
+		checkParseDifferential(t, bytes.Join([][]byte{f1, f2, f3}, []byte(" ")))
+		checkParseDifferential(t, randomRecord(rnd))
+	}
+}
+
+// TestParseRecCapture runs the parse differential over a captured traffic
+// file, e.g. NANOTUBE_CAPTURE=/path/to/in.txt.
+func TestParseRecCapture(t *testing.T) {
+	path := os.Getenv("NANOTUBE_CAPTURE")
+	if path == "" {
+		t.Skip("NANOTUBE_CAPTURE not set")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		checkParseDifferential(t, line)
+		n++
+	}
+	t.Logf("checked %d records", n)
+}
+
+func TestBytesTracksReassignment(t *testing.T) {
+	r, err := ParseRec([]byte("a.b.c 1 2"), true, false, time.Now, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(r.Bytes()) != "a.b.c 1 2\n" {
+		t.Fatalf("got %q", r.Bytes())
+	}
+	h1 := r.PathHash()
+
+	r.Path = []byte("x.y")
+	if string(r.Bytes()) != "x.y 1 2\n" {
+		t.Fatalf("after Path reassignment got %q", r.Bytes())
+	}
+	h := fnv.New64a()
+	h.Write([]byte("x.y"))
+	if r.PathHash() != h.Sum64() || r.PathHash() == h1 {
+		t.Fatal("PathHash not recomputed after Path reassignment")
+	}
+
+	r.Val = append(r.Val, '5')
+	if string(r.Bytes()) != "x.y 15 2\n" {
+		t.Fatalf("after Val append got %q", r.Bytes())
+	}
+
+	r2, _ := ParseRec([]byte("a.b 1 2"), true, false, time.Now, zap.NewNop())
+	r2.Path = append(r2.Path, 'z')
+	if string(r2.Bytes()) != "a.bz 1 2\n" || string(r2.Val) != "1" {
+		t.Fatalf("append to Path clobbered the record: %q", r2.Bytes())
+	}
+	r2.Path = r2.Path[:1]
+	if string(r2.Bytes()) != "a 1 2\n" {
+		t.Fatalf("after reslicing Path got %q", r2.Bytes())
+	}
+
+	cpy, _ := r.Copy()
+	if string(cpy.Bytes()) != "x.y 15 2\n" {
+		t.Fatalf("copy got %q", cpy.Bytes())
+	}
+}
+
+func TestCharClasses(t *testing.T) {
+	for c := 0; c < 256; c++ {
+		if got, want := charClasses[c] != charInvalid, validChar(byte(c)); got != want {
+			t.Fatalf("byte %#x: valid=%v, validChar=%v", c, got, want)
+		}
+		if (charClasses[c] == charDot) != (c == '.') {
+			t.Fatalf("byte %#x: wrong dot class", c)
+		}
+	}
 }

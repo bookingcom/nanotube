@@ -54,6 +54,9 @@ func (qb *BatchChan) periodicFlush() {
 func (qb *BatchChan) Push(rec []byte) {
 	qb.m.Lock()
 
+	if qb.buf == nil {
+		qb.buf = make([][]byte, 0, qb.bufSize+1)
+	}
 	qb.buf = append(qb.buf, rec)
 
 	if len(qb.buf) > qb.bufSize {
@@ -69,9 +72,13 @@ func (qb *BatchChan) Flush() {
 	qb.m.Lock()
 	defer qb.m.Unlock()
 
+	if len(qb.buf) == 0 {
+		return
+	}
 	qb.sendToMainQBuf()
 
-	qb.buf = [][]byte{}
+	// The sent batch is owned by the receiver now; Push allocates a new one.
+	qb.buf = nil
 }
 
 // Close closes the batch channel. It does not close the target channel.

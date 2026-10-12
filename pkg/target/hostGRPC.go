@@ -79,45 +79,48 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 
 	counter := 0
 	var stream grpcstreamer.Streamer_StreamClient
-	for r := range h.Ch {
-		if stream == nil {
-			stream, err = client.Stream(ctx)
-			if err != nil {
-				h.Lg.Warn("could not start streaming to target", zap.Error(err))
+	for c := h.q.pop(); c != nil; c = h.q.pop() {
+		for _, r := range c.recs[:c.n] {
+			if stream == nil {
+				stream, err = client.Stream(ctx)
+				if err != nil {
+					h.Lg.Warn("could not start streaming to target", zap.Error(err))
+				}
 			}
-		}
 
-		if stream != nil {
-			time, err := strconv.ParseFloat(string(r.Time), 64)
-			if err != nil {
-				h.Lg.Warn("failed to parse record timestamp", zap.Error(err))
-				continue
-			}
-			val, err := strconv.ParseFloat(string(r.Val), 64)
-			if err != nil {
-				h.Lg.Warn("failed to parse record value", zap.Error(err))
-				continue
-			}
-			pbR := otmetrics.Metric{
-				Name: string(r.Path),
-				Data: &otmetrics.Metric_DoubleGauge{
-					DoubleGauge: &otmetrics.DoubleGauge{
-						DataPoints: [](*otmetrics.DoubleDataPoint){
-							&otmetrics.DoubleDataPoint{
-								TimeUnixNano: uint64(time) * 1000 * 1000 * 1000,
-								Value:        val,
+			if stream != nil {
+				time, err := strconv.ParseFloat(string(r.Time), 64)
+				if err != nil {
+					h.Lg.Warn("failed to parse record timestamp", zap.Error(err))
+					continue
+				}
+				val, err := strconv.ParseFloat(string(r.Val), 64)
+				if err != nil {
+					h.Lg.Warn("failed to parse record value", zap.Error(err))
+					continue
+				}
+				pbR := otmetrics.Metric{
+					Name: string(r.Path),
+					Data: &otmetrics.Metric_DoubleGauge{
+						DoubleGauge: &otmetrics.DoubleGauge{
+							DataPoints: [](*otmetrics.DoubleDataPoint){
+								&otmetrics.DoubleDataPoint{
+									TimeUnixNano: uint64(time) * 1000 * 1000 * 1000,
+									Value:        val,
+								},
 							},
 						},
 					},
-				},
+				}
+				err = stream.Send(&pbR)
+				if err != nil {
+					h.Lg.Warn("error while streaming", zap.Error(err))
+					stream = nil
+				}
+				counter++
 			}
-			err = stream.Send(&pbR)
-			if err != nil {
-				h.Lg.Warn("error while streaming", zap.Error(err))
-				stream = nil
-			}
-			counter++
 		}
+		h.q.recycle(c)
 	}
 
 	if stream != nil {
