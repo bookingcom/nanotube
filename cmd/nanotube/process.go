@@ -74,14 +74,14 @@ func worker(wg *sync.WaitGroup, queue <-chan []byte, rules rules.Rules, rewrites
 
 func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
 	metrics *metrics.Prom) { //nolint:golint,unparam
-	procBatch(s, rules, rewrites, shouldNormalize, shouldLog, lg, metrics, nil)
+	procBatch(s, rules, rewrites, shouldNormalize, shouldLog, time.Now, lg, metrics, nil)
 }
 
 // procBatch is proc staging the routed records in b; a nil b queues them on
 // the hosts directly.
-func procBatch(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
-	metrics *metrics.Prom, b *target.Batch) {
-	r, err := rec.ParseRec(s, shouldNormalize, shouldLog, time.Now, lg)
+func procBatch(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool,
+	nowF func() time.Time, lg *zap.Logger, metrics *metrics.Prom, b *target.Batch) {
+	r, err := rec.ParseRec(s, shouldNormalize, shouldLog, nowF, lg)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record_str", string(s)),
 			zap.Binary("record_base64", s), zap.Error(err))
@@ -116,8 +116,11 @@ func workerBuf(wg *sync.WaitGroup, queue <-chan [][]byte, rules rules.Rules, rew
 func procBuf(s [][]byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
 	metrics *metrics.Prom, b *target.Batch) { //nolint:golint,unparam
 
+	// Records of a batch are received together; one timestamp serves them all.
+	now := time.Now()
+	nowF := func() time.Time { return now }
 	for _, rec := range s {
-		procBatch(rec, rules, rewrites, shouldNormalize, shouldLog, lg, metrics, b)
+		procBatch(rec, rules, rewrites, shouldNormalize, shouldLog, nowF, lg, metrics, b)
 	}
 	b.Flush()
 }

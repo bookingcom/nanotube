@@ -122,9 +122,9 @@ func TestMatcherStrategies(t *testing.T) {
 		{expr: `^.+`, glob: true},
 		{expr: `abc.*`, glob: true},
 		{expr: `^carbon.probe.(availability|latency.cache).secondly.containers.`,
-			prefix: "carbon", required: []string{"carbon", "probe", "secondly", "containers"}},
+			prefix: "carbon", required: []string{"probe", "secondly", "containers"}},
 		{expr: `^aggregations\.secondly\.platform\.[^.]+\.per_env\.[^.]+\.per_cluster\.`,
-			prefix: "aggregations.secondly.platform.", required: []string{"aggregations.secondly.platform.", ".per_env.", ".per_cluster."}},
+			prefix: "aggregations.secondly.platform.", required: []string{".per_env.", ".per_cluster."}},
 		{expr: `(?i)abc`},
 	}
 
@@ -142,6 +142,24 @@ func TestMatcherStrategies(t *testing.T) {
 		}
 		if strings.Join(req, "|") != strings.Join(tt.required, "|") {
 			t.Errorf("%q: required=%q, want %q", tt.expr, req, tt.required)
+		}
+	}
+}
+
+func TestIndexLiteral(t *testing.T) {
+	rnd := rand.New(rand.NewSource(3))
+	const alphabet = "._ab"
+	gen := func(n int) []byte {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = alphabet[rnd.Intn(len(alphabet))]
+		}
+		return b
+	}
+	for i := 0; i < 200000; i++ {
+		s, lit := gen(rnd.Intn(20)), gen(rnd.Intn(6))
+		if got, want := indexLiteral(s, lit), bytes.Index(s, lit); got != want {
+			t.Fatalf("indexLiteral(%q, %q) = %d, want %d", s, lit, got, want)
 		}
 	}
 }

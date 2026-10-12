@@ -2,6 +2,7 @@
 package rec
 
 import (
+	"bytes"
 	"hash/fnv"
 	"time"
 
@@ -107,11 +108,20 @@ func getField(s []byte, st int) (int, int, error) {
 		return st, st, errors.New("string contains only whitespace")
 	}
 
-	end := start + 1
-	for ; end < len(s) && !isWhitespace(s[end]); end++ {
-	}
+	return start, fieldEnd(s, start+1), nil
+}
 
-	return start, end, nil
+// fieldEnd returns the index of the first whitespace at or after i, or len(s).
+func fieldEnd(s []byte, i int) int {
+	rest := s[i:]
+	n := bytes.IndexByte(rest, ' ')
+	if n < 0 {
+		n = len(rest)
+	}
+	if t := bytes.IndexByte(rest[:n], '\t'); t >= 0 {
+		n = t
+	}
+	return i + n
 }
 
 func isWhitespace(c byte) bool {

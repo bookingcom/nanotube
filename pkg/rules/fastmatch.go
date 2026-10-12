@@ -49,7 +49,12 @@ func newMatcher(re *regexp.Regexp) matcher {
 	m.glob = globTokens(ast)
 	if m.glob == nil {
 		m.prefix = anchoredPrefix(ast)
-		m.required = requiredLiterals(ast, nil)
+		for _, lit := range requiredLiterals(ast, nil) {
+			// the prefix check already proves these
+			if !bytes.Contains(m.prefix, lit) {
+				m.required = append(m.required, lit)
+			}
+		}
 	}
 
 	return m
@@ -68,12 +73,35 @@ func (m *matcher) Match(s []byte) bool {
 		return false
 	}
 	for _, lit := range m.required {
-		if !bytes.Contains(s, lit) {
+		if indexLiteral(s, lit) < 0 {
 			return false
 		}
 	}
 
 	return m.re.Match(s)
+}
+
+// indexLiteral is bytes.Index(s, lit). Metric paths are full of separators,
+// so for a literal starting with one it searches from the next byte, which
+// yields far fewer false candidates, and checks the separator before it.
+func indexLiteral(s, lit []byte) int {
+	if len(lit) < 2 || (lit[0] != '.' && lit[0] != '_') {
+		return bytes.Index(s, lit)
+	}
+	if len(s) < len(lit) {
+		return -1
+	}
+	for off := 0; ; {
+		i := bytes.Index(s[off+1:], lit[1:])
+		if i < 0 {
+			return -1
+		}
+		i += off // candidate start of lit
+		if s[i] == lit[0] {
+			return i
+		}
+		off = i + 1
+	}
 }
 
 // asciiLiteral returns the bytes of an OpLiteral node if it is
@@ -218,7 +246,7 @@ func globMatch(toks []globTok, s []byte) bool {
 			start := len(s) - len(t.lit)
 			return start >= from && bytes.Equal(s[start:], t.lit)
 		}
-		idx := bytes.Index(s[from:], t.lit)
+		idx := indexLiteral(s[from:], t.lit)
 		if idx < 0 {
 			return false
 		}
