@@ -83,10 +83,55 @@ func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- []
 	scanForRecordsTCPBuf(conn, queue, rateLimiters, cfg, ms, lg)
 }
 
-func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
-	sc := bufio.NewScanner(conn)
+// deadlineReader arms the idle deadline before every read from the
+// connection, so a sender that goes silent is dropped after the timeout.
+type deadlineReader struct {
+	conn    net.Conn
+	timeout time.Duration
+	lg      *zap.Logger
+}
 
-	buf := make([]byte, 2048)
+func (d *deadlineReader) Read(p []byte) (int, error) {
+	err := d.conn.SetReadDeadline(time.Now().Add(d.timeout))
+	if err != nil {
+		d.lg.Error("error setting read deadline",
+			zap.Error(err),
+			zap.String("sender", d.conn.RemoteAddr().String()))
+	}
+	return d.conn.Read(p)
+}
+
+// recArena hands out copies of records carved from larger chunks, so that
+// copying a record does not cost an allocation. Records are never written
+// after being handed out; a chunk is freed once no record references it.
+type recArena struct {
+	chunk []byte
+}
+
+const recArenaChunkSize = 64 * 1024
+
+func (a *recArena) copy(b []byte) []byte {
+	if len(b) > recArenaChunkSize/4 {
+		return append([]byte(nil), b...)
+	}
+	if len(b) > cap(a.chunk)-len(a.chunk) {
+		a.chunk = make([]byte, 0, recArenaChunkSize)
+	}
+	off := len(a.chunk)
+	a.chunk = append(a.chunk, b...)
+	return a.chunk[off:len(a.chunk):len(a.chunk)]
+}
+
+func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+	sc := bufio.NewScanner(&deadlineReader{
+		conn:    conn,
+		timeout: time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second,
+		lg:      lg,
+	})
+
+	// The initial size bounds how much is read per syscall; the max token
+	// size stays bufio.MaxScanTokenSize.
+	buf := make([]byte, bufio.MaxScanTokenSize)
 	sc.Buffer(buf, bufio.MaxScanTokenSize)
 	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
 	defer qb.Close()
@@ -101,18 +146,9 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []*
 	retryDuration := time.Duration(cfg.RateLimiterRetryDurationMs) * time.Millisecond
 	recCount := 0
 
+	var arena recArena
 	for sc.Scan() {
-		var rec []byte
-		rec = append(rec, sc.Bytes()...)
-
-		err := conn.SetReadDeadline(time.Now().Add(
-			time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second))
-		if err != nil {
-			lg.Error("error setting read deadline",
-				zap.Error(err),
-				zap.String("sender", conn.RemoteAddr().String()))
-		}
-		qb.Push(rec)
+		qb.Push(arena.copy(sc.Bytes()))
 
 		if rateLimiters != nil {
 			recCount++

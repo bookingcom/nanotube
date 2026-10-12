@@ -80,9 +80,15 @@ func (rw Rewrites) compile() error {
 // RewriteMetricBytes executes all rewrite rules on a record.
 // If copy is true and rule matches, we generate new record.
 func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes, ms *metrics.Prom) ([]*rec.RecBytes, error) {
+	return rw.AppendRewrittenMetricBytes(nil, record, ms)
+}
+
+// AppendRewrittenMetricBytes is like RewriteMetricBytes, but appends the
+// resulting records to dst.
+func (rw Rewrites) AppendRewrittenMetricBytes(dst []*rec.RecBytes, record *rec.RecBytes, ms *metrics.Prom) ([]*rec.RecBytes, error) {
 	var timer *prometheus.Timer
 
-	result := []*rec.RecBytes{record}
+	result := append(dst, record)
 
 	wasMatched := false
 

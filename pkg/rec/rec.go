@@ -2,6 +2,7 @@
 package rec
 
 import (
+	"hash/fnv"
 	"time"
 
 	"github.com/pkg/errors"
@@ -15,6 +16,13 @@ type RecBytes struct { // nolint:revive
 	Time []byte
 
 	Received time.Time
+
+	// line holds "Path Val Time\n" in a single allocation made by ParseRec.
+	// Path, Val and Time alias it for as long as they are not reassigned.
+	line []byte
+
+	pathHash    uint64
+	pathHashFor []byte
 }
 
 // ParseRec parses a single datapoint record from a string. Makes sure it's valid.
@@ -25,24 +33,37 @@ func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, l
 		return nil, errors.Wrap(err, "failed to break record into fields")
 	}
 
-	var path []byte
+	val := s[valStart:valEnd]
+	tm := s[timeStart:timeEnd]
+
+	// The whole serialized record is built in one allocation; Path, Val and
+	// Time are capped sub-slices of it so appends to them cannot clobber it.
+	line := make([]byte, 0, (pathEnd-pathStart)+len(val)+len(tm)+3)
 	if normalize {
-		path, err = normalizePath(s[pathStart:pathEnd])
+		line, err = appendNormalizedPath(line, s[pathStart:pathEnd])
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to normalize path")
 		}
 	} else {
-		path = append(path, s[pathStart:pathEnd]...)
+		line = append(line, s[pathStart:pathEnd]...)
 	}
+	pathLen := len(line)
+	line = append(line, ' ')
+	line = append(line, val...)
+	line = append(line, ' ')
+	line = append(line, tm...)
+	line = append(line, '\n')
 
-	res := RecBytes{
-		Path:     path,
+	valOff := pathLen + 1
+	timeOff := valOff + len(val) + 1
+
+	return &RecBytes{
+		Path:     line[:pathLen:pathLen],
+		Val:      line[valOff : valOff+len(val) : valOff+len(val)],
+		Time:     line[timeOff : timeOff+len(tm) : timeOff+len(tm)],
 		Received: nowF(),
-	}
-	res.Val = append(res.Val, s[valStart:valEnd]...)
-	res.Time = append(res.Time, s[timeStart:timeEnd]...)
-
-	return &res, nil
+		line:     line,
+	}, nil
 }
 
 func recFields(s []byte) (pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd int, retErr error) {
@@ -110,68 +131,118 @@ func (r *RecBytes) Serialize() []byte {
 	return res
 }
 
-// normalizePath does path normalization as described in the docs
-func normalizePath(s []byte) ([]byte, error) {
-	if len(s) == 0 {
-		return []byte{}, nil
+// Bytes returns the same bytes as Serialize. While the record still holds the
+// buffer built by ParseRec it is returned without copying; the result is
+// shared and must not be modified.
+func (r *RecBytes) Bytes() []byte {
+	if r.lineIsCurrent() {
+		return r.line
 	}
+	return r.Serialize()
+}
 
-	start := 0
+// lineIsCurrent reports whether Path, Val and Time still point exactly at
+// their places in line, i.e. line is their serialization.
+func (r *RecBytes) lineIsCurrent() bool {
+	pl, vl, tl := len(r.Path), len(r.Val), len(r.Time)
+	return pl > 0 && vl > 0 && tl > 0 && len(r.line) == pl+vl+tl+3 &&
+		&r.line[0] == &r.Path[0] &&
+		&r.line[pl+1] == &r.Val[0] &&
+		&r.line[pl+vl+2] == &r.Time[0]
+}
+
+// PathHash returns the 64-bit FNV-1a hash of Path. It is computed once and
+// cached until Path is reassigned.
+func (r *RecBytes) PathHash() uint64 {
+	if len(r.Path) == 0 || len(r.Path) != len(r.pathHashFor) || &r.Path[0] != &r.pathHashFor[0] {
+		h := fnv.New64a()
+		_, _ = h.Write(r.Path)
+		r.pathHash = h.Sum64()
+		r.pathHashFor = r.Path
+	}
+	return r.pathHash
+}
+
+// trimDots returns the bounds of s without leading and trailing dots.
+func trimDots(s []byte) (start int, end int, ok bool) {
 	for ; start < len(s) && s[start] == '.'; start++ {
 	}
 	if start == len(s) {
-		return []byte{}, errors.New("path contains only dots")
+		return 0, 0, false
 	}
 
-	end := len(s) - 1 // points to the last non-. char in path
+	end = len(s) - 1 // points to the last non-. char in path
 	for ; end >= start && s[end] == '.'; end-- {
 	}
-	// check for string consisting only of points was done above
 
-	needsNormalization := false
+	return start, end, true
+}
+
+func needsNormalization(s []byte, start, end int) bool {
+	for i := start; i <= end; i++ {
+		switch charClasses[s[i]] {
+		case charInvalid:
+			return true
+		case charDot:
+			if i == len(s)-1 || s[i+1] == '.' {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+const (
+	charInvalid = iota
+	charValid
+	charDot
+)
+
+// charClasses classifies every byte as validChar does, with '.' separated out.
+var charClasses = func() (t [256]uint8) { //nolint:gochecknoglobals // read-only lookup table
+	for c := range t {
+		if validChar(byte(c)) {
+			t[c] = charValid
+		}
+	}
+	t['.'] = charDot
+	return t
+}()
+
+// appendNormalizedPath appends the normalized form of s to dst. Path
+// normalization is described in the docs.
+func appendNormalizedPath(dst []byte, s []byte) ([]byte, error) {
+	if len(s) == 0 {
+		return dst, nil
+	}
+
+	start, end, ok := trimDots(s)
+	if !ok {
+		return dst, errors.New("path contains only dots")
+	}
+
+	if !needsNormalization(s, start, end) {
+		return append(dst, s[start:end+1]...), nil
+	}
+
 	for i := start; i <= end; i++ {
 		if s[i] == '.' {
 			if i == len(s)-1 {
-				needsNormalization = true
-				break
+				continue
 			} else if s[i+1] == '.' {
-				needsNormalization = true
-				break
+				continue
 			}
 		}
 
-		if !validChar(s[i]) {
-			needsNormalization = true
-			break
+		if charClasses[s[i]] != charInvalid {
+			dst = append(dst, s[i])
+		} else {
+			dst = append(dst, byte('_'))
 		}
 	}
 
-	res := []byte{}
-	if needsNormalization {
-		for i := start; i <= end; i++ {
-			if s[i] == '.' {
-				if i == len(s)-1 {
-					continue
-				} else if s[i+1] == '.' {
-					continue
-				}
-			}
-
-			if validChar(s[i]) {
-				res = append(res, s[i])
-			} else {
-				res = append(res, byte('_'))
-			}
-		}
-	} else {
-		if start == 0 && end == len(s)-1 {
-			return s, nil
-		}
-		res = append(res, s[start:end+1]...)
-		return res, nil
-	}
-
-	return res, nil
+	return dst, nil
 }
 
 // Copy returns a deep copy of the record

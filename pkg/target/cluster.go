@@ -42,8 +42,14 @@ func (cl *Cluster) availHostsList() []Target {
 
 // PushBytes sends single record to cluster. Routing happens based on cluster type.
 func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
-	if cl.Type == conf.BlackholeCluster {
+	switch cl.Type {
+	case conf.BlackholeCluster:
 		metrics.BlackholedRecs.Inc()
+		return nil
+	case conf.JumpCluster:
+		// Same host as resolveHosts picks; the path hash is computed once per
+		// record and shared by every jump cluster it is routed to.
+		cl.Hosts[jump.Hash(r.PathHash(), len(cl.Hosts))].Push(r)
 		return nil
 	}
 
@@ -54,6 +60,37 @@ func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
 
 	for _, h := range hs {
 		h.Push(r)
+	}
+
+	return nil
+}
+
+// BatchPusher is implemented by cluster targets that can stage records in a
+// Batch instead of queueing them on their hosts one at a time.
+type BatchPusher interface {
+	PushBytesBatch(*rec.RecBytes, *metrics.Prom, *Batch) error
+}
+
+// PushBytesBatch stages a single record for the cluster's hosts in b. Routing
+// is the same as in PushBytes; the record is queued on the hosts when b is
+// flushed.
+func (cl *Cluster) PushBytesBatch(r *rec.RecBytes, metrics *metrics.Prom, b *Batch) error {
+	switch cl.Type {
+	case conf.BlackholeCluster:
+		metrics.BlackholedRecs.Inc()
+		return nil
+	case conf.JumpCluster:
+		b.add(cl.Hosts[jump.Hash(r.PathHash(), len(cl.Hosts))], r)
+		return nil
+	}
+
+	hs, err := cl.resolveHosts(r.Path, metrics)
+	if err != nil {
+		return errors.Wrapf(err, "resolving host for record %v failed", *r)
+	}
+
+	for _, h := range hs {
+		b.add(h, r)
 	}
 
 	return nil

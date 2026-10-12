@@ -22,9 +22,11 @@ import (
 type Host struct {
 	Name      string
 	Port      uint16
-	Ch        chan *rec.RecBytes
 	Available atomic.Bool
 	Conn      Connection
+
+	q  *recQueue
+	id int
 
 	stop chan int
 
@@ -104,7 +106,8 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 	h := Host{
 		Name: hostCfg.Name,
 		Port: targetPort,
-		Ch:   make(chan *rec.RecBytes, mainCfg.HostQueueSize),
+		q:    newRecQueue(int(mainCfg.HostQueueSize)),
+		id:   nextQueueID(),
 		stop: make(chan int),
 
 		conf: &mainCfg,
@@ -142,12 +145,21 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 
 // Push adds a new record to send to the host queue.
 func (h *Host) Push(r *rec.RecBytes) {
-	select {
-	case h.Ch <- r:
-	default:
+	if !h.q.pushOne(r) {
 		h.throttled.Inc()
 		h.throttledTotal.Inc()
 	}
+}
+
+func (h *Host) pushBulk(rs []*rec.RecBytes) {
+	if dropped := h.q.push(rs); dropped > 0 {
+		h.throttled.Add(float64(dropped))
+		h.throttledTotal.Add(float64(dropped))
+	}
+}
+
+func (h *Host) queueID() int {
+	return h.id
 }
 
 // IsAvailable tells if the host is alive.
@@ -157,7 +169,7 @@ func (h *Host) IsAvailable() bool {
 
 // Stop brings streaming to a halt.
 func (h *Host) Stop() {
-	close(h.Ch)
+	h.q.close()
 }
 
 // Stream launches the sending to target host.
@@ -171,38 +183,54 @@ func (h *Host) Stream(wg *sync.WaitGroup) {
 		close(h.stop)
 	}()
 
-	for r := range h.Ch {
-		h.tryToSend(r)
+	for c := h.q.pop(); c != nil; c = h.q.pop() {
+		h.sendBatch(c.recs[:c.n])
+		h.q.recycle(c)
 	}
 
-	// this line is only reached when the host channel was closed
+	// this line is only reached when the host queue was closed
 	h.Conn.Lock()
 	defer h.Conn.Unlock()
 	h.tryToFlushIfNecessary()
 }
 
-func (h *Host) tryToSend(r *rec.RecBytes) {
+// sendBatch writes a batch of records under a single lock.
+func (h *Host) sendBatch(batch []*rec.RecBytes) {
 	h.Conn.Lock()
 	defer h.Conn.Unlock()
+
+	for i, r := range batch {
+		h.tryToSend(r, i == 0)
+	}
+	h.Conn.LastConnUse = time.Now() // TODO: This is not the last time conn was used. It is used when buffer is flushed.
+
+	h.outRecs.Add(float64(len(batch)))
+	h.outRecsTotal.Add(float64(len(batch)))
+}
+
+// Requires h.Conn.Mutex lock.
+// Connection freshness only needs checking before the first record of a
+// batch: after a successful write the connection counts as just used.
+func (h *Host) tryToSend(r *rec.RecBytes, checkFresh bool) {
+	b := r.Bytes()
 
 	// retry until successful
 	for {
 		h.ensureConnection()
-		h.keepConnectionFresh()
-
-		err := h.Conn.SetWriteDeadline(time.Now().Add(
-			time.Duration(h.conf.SendTimeoutSec) * time.Second))
-		if err != nil {
-			h.Lg.Warn("error setting write deadline", zap.Error(err))
+		if checkFresh {
+			h.keepConnectionFresh()
 		}
 
-		_, err = h.Conn.W.Write(r.Serialize())
+		// Only a write that does not fit into the buffer reaches the network,
+		// so that is when the deadline has to be set.
+		if len(b) > h.Conn.W.Available() {
+			h.setWriteDeadline()
+		}
+
+		_, err := h.Conn.W.Write(b)
 
 		if err == nil {
-			h.outRecs.Inc()
-			h.outRecsTotal.Inc()
 			//h.processingDuration.Observe(time.Since(r.Received).Seconds())
-			h.Conn.LastConnUse = time.Now() // TODO: This is not the last time conn was used. It is used when buffer is flushed.
 			break
 		}
 
@@ -212,6 +240,16 @@ func (h *Host) tryToSend(r *rec.RecBytes) {
 			// not retrying here, file descriptor may be lost
 			h.Lg.Error("error closing the connection", zap.Error(err))
 		}
+		checkFresh = true
+	}
+}
+
+// Requires h.Conn.Mutex lock and an established connection.
+func (h *Host) setWriteDeadline() {
+	err := h.Conn.SetWriteDeadline(time.Now().Add(
+		time.Duration(h.conf.SendTimeoutSec) * time.Second))
+	if err != nil {
+		h.Lg.Warn("error setting write deadline", zap.Error(err))
 	}
 }
 
@@ -240,6 +278,7 @@ func (h *Host) tryToFlushIfNecessary() {
 		} else {
 			h.keepConnectionFresh()
 		}
+		h.setWriteDeadline()
 		err := h.Conn.W.Flush()
 		if err != nil {
 			h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("target_name", h.Name), zap.Uint16("target_port", h.Port))

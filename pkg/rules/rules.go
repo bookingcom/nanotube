@@ -33,6 +33,7 @@ type Rule struct {
 
 	PrefixTrie *PrefixTrie
 
+	matchers      []matcher
 	regexDuration []prometheus.Observer
 }
 
@@ -74,12 +75,14 @@ func Build(crs *conf.Rules, clusters target.Clusters, measureRegex bool, ms *met
 func (rs Rules) compile() error {
 	for i := range rs.rules {
 		rs.rules[i].CompiledRE = make([]*regexp.Regexp, 0)
+		rs.rules[i].matchers = make([]matcher, 0, len(rs.rules[i].Regexs))
 		for _, re := range rs.rules[i].Regexs {
 			cre, err := regexp.Compile(re)
 			if err != nil {
 				return errors.Wrapf(err, "compiling regex %s failed", cre)
 			}
 			rs.rules[i].CompiledRE = append(rs.rules[i].CompiledRE, cre)
+			rs.rules[i].matchers = append(rs.rules[i].matchers, newMatcher(cre))
 			if rs.measureRegex {
 				labels := prometheus.Labels{
 					"rule_type": "routing",
@@ -134,23 +137,38 @@ func TestBuild(crs conf.Rules, clusters map[string]*target.TestTarget, measureRe
 
 // RouteRec a record by following the rules
 func (rs Rules) RouteRec(r *rec.RecBytes, lg *zap.Logger) {
-	pushedTo := make(map[target.ClusterTarget]struct{})
+	rs.RouteRecBatch(r, lg, nil)
+}
 
-	for _, rl := range rs.rules {
-		matchedRule := rl.Match(r, rs.measureRegex)
+// RouteRecBatch routes a record like RouteRec, but stages it in b for the
+// cluster targets that support batching. The caller must flush b.
+func (rs Rules) RouteRecBatch(r *rec.RecBytes, lg *zap.Logger, b *target.Batch) {
+	// Rules rarely name more than a handful of clusters; a small slice scanned
+	// linearly avoids allocating a set per record.
+	var pushedBuf [8]target.ClusterTarget
+	pushedTo := pushedBuf[:0]
+
+	for i := range rs.rules {
+		rl := &rs.rules[i]
+		matchedRule := rl.match(r, rs.measureRegex)
 		if matchedRule {
 			for _, cl := range rl.Targets {
-				if _, pushedBefore := pushedTo[cl]; pushedBefore {
+				if pushedBefore(pushedTo, cl) {
 					continue
 				}
-				err := cl.PushBytes(r, rs.metrics)
+				var err error
+				if bp, ok := cl.(target.BatchPusher); ok && b != nil {
+					err = bp.PushBytesBatch(r, rs.metrics, b)
+				} else {
+					err = cl.PushBytes(r, rs.metrics)
+				}
 				if err != nil {
 					lg.Error("push to cluster failed",
 						zap.Error(err),
 						zap.String("cluster", cl.GetName()),
 						zap.String("record", string(r.Serialize())))
 				}
-				pushedTo[cl] = struct{}{}
+				pushedTo = append(pushedTo, cl)
 			}
 		}
 
@@ -160,11 +178,27 @@ func (rs Rules) RouteRec(r *rec.RecBytes, lg *zap.Logger) {
 	}
 }
 
+func pushedBefore(pushedTo []target.ClusterTarget, cl target.ClusterTarget) bool {
+	for _, p := range pushedTo {
+		if p == cl {
+			return true
+		}
+	}
+	return false
+}
+
 // Match a record with any of the rule regexps
 func (rl Rule) Match(r *rec.RecBytes, measureRegex bool) bool {
+	return rl.match(r, measureRegex)
+}
+
+func (rl *Rule) match(r *rec.RecBytes, measureRegex bool) bool {
 	if rl.PrefixTrie.Check(r.Path) {
 		return true
 	}
+
+	// Rules not built through compile() have no matchers.
+	useMatchers := len(rl.matchers) == len(rl.CompiledRE)
 
 	var timer *prometheus.Timer
 
@@ -172,7 +206,12 @@ func (rl Rule) Match(r *rec.RecBytes, measureRegex bool) bool {
 		if measureRegex {
 			timer = prometheus.NewTimer(rl.regexDuration[idx])
 		}
-		matched := re.Match(r.Path)
+		var matched bool
+		if useMatchers {
+			matched = rl.matchers[idx].Match(r.Path)
+		} else {
+			matched = re.Match(r.Path)
+		}
 		if measureRegex {
 			timer.ObserveDuration()
 		}

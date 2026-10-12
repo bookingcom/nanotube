@@ -11,6 +11,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rec"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
+	"github.com/bookingcom/nanotube/pkg/target"
 )
 
 // ProcessBuf contains all the CPU-intensive processing operations.
@@ -73,6 +74,13 @@ func worker(wg *sync.WaitGroup, queue <-chan []byte, rules rules.Rules, rewrites
 
 func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
 	metrics *metrics.Prom) { //nolint:golint,unparam
+	procBatch(s, rules, rewrites, shouldNormalize, shouldLog, lg, metrics, nil)
+}
+
+// procBatch is proc staging the routed records in b; a nil b queues them on
+// the hosts directly.
+func procBatch(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
+	metrics *metrics.Prom, b *target.Batch) {
 	r, err := rec.ParseRec(s, shouldNormalize, shouldLog, time.Now, lg)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record_str", string(s)),
@@ -81,7 +89,8 @@ func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 		return
 	}
 
-	recs, err := rewrites.RewriteMetricBytes(r, metrics)
+	var recsBuf [4]*rec.RecBytes
+	recs, err := rewrites.AppendRewrittenMetricBytes(recsBuf[:0], r, metrics)
 	if err != nil {
 		lg.Info("Error parsing incoming record", zap.String("record_str", string(s)),
 			zap.Binary("record_base64", s), zap.Error(err))
@@ -89,23 +98,26 @@ func proc(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormali
 	}
 
 	for _, rec := range recs {
-		rules.RouteRec(rec, lg)
+		rules.RouteRecBatch(rec, lg, b)
 	}
 }
 
 func workerBuf(wg *sync.WaitGroup, queue <-chan [][]byte, rules rules.Rules, rewrites rewrites.Rewrites,
 	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom) {
 	defer wg.Done()
+	b := target.NewBatch()
 	for j := range queue {
-		procBuf(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics)
+		procBuf(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics, b)
 	}
 }
 
+// procBuf processes a batch of records. Routed records are staged in b and
+// handed to the host queues once the whole batch is processed.
 func procBuf(s [][]byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNormalize bool, shouldLog bool, lg *zap.Logger,
-	metrics *metrics.Prom) { //nolint:golint,unparam
+	metrics *metrics.Prom, b *target.Batch) { //nolint:golint,unparam
 
 	for _, rec := range s {
-		proc(rec, rules, rewrites, shouldNormalize, shouldLog, lg, metrics)
-
+		procBatch(rec, rules, rewrites, shouldNormalize, shouldLog, lg, metrics, b)
 	}
+	b.Flush()
 }
