@@ -10,6 +10,7 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
+	TCP            *TCPMetrics
 	InRecs         prometheus.Counter
 	InRecsBySource *prometheus.CounterVec
 	ThrottledRecs  prometheus.Counter
@@ -54,6 +55,7 @@ type Prom struct {
 // This does not include metrics registration.
 func New() *Prom {
 	return &Prom{
+		TCP: newTCPMetrics(),
 		InRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "in_records_total",
@@ -200,6 +202,9 @@ func New() *Prom {
 // Register registers the metrics. It fatally fails and exits if metrics fail to register.
 // Meant to be called from main and fail completely if something goes wrong.
 func Register(m *Prom, cfg *conf.Main) {
+	if err := m.TCP.register(prometheus.DefaultRegisterer, !cfg.LessMetrics); err != nil {
+		log.Fatalf("error registering TCP output metrics: %v", err)
+	}
 	err := prometheus.Register(m.InRecs)
 	if err != nil {
 		log.Fatalf("error registering the in_records_total metric: %v", err)

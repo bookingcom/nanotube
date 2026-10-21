@@ -1,7 +1,6 @@
 package target
 
 import (
-	"bufio"
 	"fmt"
 	"math/rand"
 	"net"
@@ -56,7 +55,7 @@ type MultiConnection struct {
 	net.Conn
 	sync.Mutex
 	LastConnUse time.Time
-	W           *bufio.Writer
+	W           *recordBuffer
 	Available   atomic.Bool
 }
 
@@ -65,7 +64,9 @@ type MultiConnection struct {
 func (c *MultiConnection) New(n net.Conn, bufSize int) {
 	c.Conn = n
 	c.LastConnUse = time.Now()
-	c.W = bufio.NewWriterSize(n, bufSize)
+	if c.W == nil {
+		c.W = newRecordBuffer(bufSize)
+	}
 }
 
 // Close the connection while mainaining correct internal state.
@@ -130,6 +131,7 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	h.Ms = ms
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
+	h.q.trackTCP(ms.TCP.For(promLabels), clusterName, h.String())
 
 	if mainCfg.TCPInitialConnCheck {
 		h.setHostAvailability()
@@ -196,15 +198,13 @@ func (h *HostMTCP) UnlockMTCP() {
 // Stream launches the sending to target host.
 // Exits when queue is closed and sending is finished.
 func (h *HostMTCP) Stream(wg *sync.WaitGroup) {
+	defer wg.Done()
+	flushDone := make(chan struct{})
 	if h.conf.TCPOutBufFlushPeriodSec != 0 {
-		go h.flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec))
+		go func() { defer close(flushDone); h.flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec)) }()
+	} else {
+		close(flushDone)
 	}
-	defer func() {
-		wg.Done()
-		close(h.stop)
-	}()
-
-	// send batches of records from the queue to every connection in round robin fashion
 	i := 0
 	for c := h.q.pop(); c != nil; c = h.q.pop() {
 		h.sendBatch(c.recs[:c.n], &h.MTCPs[i])
@@ -214,11 +214,16 @@ func (h *HostMTCP) Stream(wg *sync.WaitGroup) {
 			i = 0
 		}
 	}
-
-	// this line is only reached when the host queue was closed
+	close(h.stop)
+	<-flushDone
 	h.LockMTCP()
 	defer h.UnlockMTCP()
 	h.tryToFlushIfNecessary()
+	for i := range h.MTCPs {
+		if err := h.MTCPs[i].Close(); err != nil {
+			h.Lg.Warn("closing drained target connection failed", zap.Error(err))
+		}
+	}
 }
 
 // sendBatch writes a batch of records to one connection under a single lock.
@@ -239,35 +244,17 @@ func (h *HostMTCP) sendBatch(batch []*rec.RecBytes, conn *MultiConnection) {
 // Connection freshness only needs checking before the first record of a
 // batch: after a successful write the connection counts as just used.
 func (h *HostMTCP) tryToSend(r *rec.RecBytes, conn *MultiConnection, checkFresh bool) {
+	h.ensureConnection(conn)
+	if checkFresh {
+		h.keepConnectionFresh(conn)
+	}
 	b := r.Bytes()
-
-	// retry until successful
-	for {
-		h.ensureConnection(conn)
-		if checkFresh {
-			h.keepConnectionFresh(conn)
-		}
-
-		// Only a write that does not fit into the buffer reaches the network,
-		// so that is when the deadline has to be set.
-		if len(b) > conn.W.Available() {
-			h.setWriteDeadline(conn)
-		}
-
-		_, err := conn.W.Write(b)
-
-		if err == nil {
-			//h.processingDuration.Observe(time.Since(r.Received).Seconds())
-			break
-		}
-
-		h.Lg.Warn("error sending value to host. Reconnect and retry..", zap.Error(err))
-		err = conn.Close()
-		if err != nil {
-			// not retrying here, file descriptor may be lost
-			h.Lg.Error("error closing the connection", zap.Error(err))
-		}
-		checkFresh = true
+	if conn.W.Buffered() > 0 && !conn.W.fits(len(b)) {
+		h.flushOutput(conn)
+	}
+	conn.W.appendRecord(b)
+	if conn.W.Buffered() >= conn.W.size {
+		h.flushOutput(conn)
 	}
 }
 
@@ -299,22 +286,27 @@ func (h *HostMTCP) flush(d time.Duration) {
 
 // Requires h.Conn.Mutex lock.
 func (h *HostMTCP) tryToFlushIfNecessary() {
-	for c := range h.MTCPs {
-		if h.MTCPs[c].W != nil && h.MTCPs[c].W.Buffered() != 0 {
-			if h.MTCPs[c].Conn == nil {
-				h.ensureConnection(&h.MTCPs[c])
-			} else {
-				h.keepConnectionFresh(&h.MTCPs[c])
-			}
-			h.setWriteDeadline(&h.MTCPs[c])
-			err := h.MTCPs[c].W.Flush()
-			if err != nil {
-				h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("target_name", h.Name), zap.Uint16("target_port", h.Port))
-				h.MTCPs[c].Conn = nil
-				h.MTCPs[c].W = nil
-			}
-			h.MTCPs[c].LastConnUse = time.Now()
+	for i := range h.MTCPs {
+		h.flushOutput(&h.MTCPs[i])
+	}
+}
+
+func (h *HostMTCP) flushOutput(conn *MultiConnection) {
+	for conn.W != nil && conn.W.Buffered() > 0 {
+		h.ensureConnection(conn)
+		h.setWriteDeadline(conn)
+		result := conn.W.flush(conn.Conn)
+		h.q.accountTCPWrite(result)
+		if result.err == nil {
+			conn.LastConnUse = time.Now()
+			return
 		}
+		h.Lg.Warn("error flushing target records; reconnecting and replaying buffer", zap.Error(result.err), zap.Int("pending_records", conn.W.records), zap.Int("pending_bytes", conn.W.Buffered()), zap.Int("uncertain_bytes", result.written))
+		if err := conn.Close(); err != nil {
+			h.Lg.Warn("closing failed target connection", zap.Error(err))
+		}
+		conn.Available.Store(false)
+		h.setHostAvailability()
 	}
 }
 
@@ -327,6 +319,11 @@ func (h *HostMTCP) keepConnectionFresh(conn *MultiConnection) {
 			h.oldConnectionRefresh.Inc()
 			h.oldConnectionRefreshTotal.Inc()
 
+			old := conn.Conn
+			h.flushOutput(conn)
+			if conn.Conn != old {
+				return // Recovery already established a fresh connection.
+			}
 			err := conn.Close()
 			if err != nil {
 				h.Lg.Error("closing connection to target host failed", zap.String("host", h.Name))

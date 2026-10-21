@@ -165,8 +165,15 @@ func main() {
 
 	select {
 	case <-time.After(time.Second * time.Duration(cfg.TermTimeoutSec)):
+		ms.TCP.ShutdownTimeouts.Inc()
+		clusters.ReportTCPShutdown(lg, true)
+		_ = lg.Sync()
 		log.Fatalf("Termination: Force quit due to timeout. Queue not fully flushed.")
 	case <-done:
+		if !clusters.ReportTCPShutdown(lg, false) {
+			_ = lg.Sync()
+			log.Fatal("Termination: Output completed with pending TCP records.")
+		}
 		lg.Info("Terminated gracefully.")
 	}
 }

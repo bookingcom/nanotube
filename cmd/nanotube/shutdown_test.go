@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -192,6 +193,22 @@ func TestShutdownSignalsDrainPipeline(t *testing.T) {
 			t.Fatal("unavailable target exceeded the termination budget")
 		}
 		logs, _ := os.ReadFile(logPath)
+		if strings.Contains(string(logs), "Terminated gracefully.") {
+			t.Fatalf("pending output was reported as graceful: %s", logs)
+		}
+		var summary bool
+		for _, line := range strings.Split(string(logs), "\n") {
+			var entry map[string]any
+			if json.Unmarshal([]byte(line), &entry) == nil && entry["msg"] == "Shutdown: TCP output summary" {
+				summary = true
+				if entry["pending_records"] != float64(1) || entry["pending_bytes"] != float64(len("pending.metric 1 100\n")) || entry["abandoning"] != true {
+					t.Fatalf("incorrect forced-exit output snapshot: %s", line)
+				}
+			}
+		}
+		if !summary {
+			t.Fatalf("missing pending-output terminal summary: %s", logs)
+		}
 		for _, message := range []string{"All incoming connections closed. Draining the main queue.", "Queue not fully flushed."} {
 			if !strings.Contains(string(logs), message) {
 				t.Fatalf("missing %q: %s", message, logs)
