@@ -35,7 +35,8 @@ type recQueue struct {
 	waiting bool
 	free    []*recChunk
 
-	wake chan struct{}
+	wake   chan struct{}
+	output *tcpAccounting
 }
 
 func newRecQueue(limit int) *recQueue {
@@ -62,6 +63,7 @@ func (q *recQueue) push(rs []*rec.RecBytes) (dropped int) {
 		t.n++
 	}
 	q.n += accepted
+	q.accountAccepted(rs[:accepted])
 	wake := q.waiting && accepted > 0
 	if wake {
 		q.waiting = false

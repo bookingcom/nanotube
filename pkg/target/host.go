@@ -1,7 +1,6 @@
 package target
 
 import (
-	"bufio"
 	"fmt"
 	"math/rand"
 	"net"
@@ -55,7 +54,7 @@ type Connection struct {
 	net.Conn
 	sync.Mutex
 	LastConnUse time.Time
-	W           *bufio.Writer
+	W           *recordBuffer
 }
 
 // New or updated target connection from existing net.Conn
@@ -63,13 +62,18 @@ type Connection struct {
 func (c *Connection) New(conn net.Conn, bufSize int) {
 	c.Conn = conn
 	c.LastConnUse = time.Now()
-	c.W = bufio.NewWriterSize(conn, bufSize)
+	if c.W == nil {
+		c.W = newRecordBuffer(bufSize)
+	}
 }
 
 // Close the connection while mainaining correct internal state.
 // Overrides c.Conn.Close().
 // Use instead the default close.
 func (c *Connection) Close() error {
+	if c.Conn == nil {
+		return nil
+	}
 	err := c.Conn.Close()
 	c.Conn = nil
 
@@ -128,6 +132,9 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	h.Ms = ms
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
+	if !hostCfg.GRPC {
+		h.q.trackTCP(ms.TCP.For(promLabels), clusterName, h.String())
+	}
 
 	if mainCfg.TCPInitialConnCheck {
 		h.setAvailability(false)
@@ -175,23 +182,25 @@ func (h *Host) Stop() {
 // Stream launches the sending to target host.
 // Exits when queue is closed and sending is finished.
 func (h *Host) Stream(wg *sync.WaitGroup) {
+	defer wg.Done()
+	flushDone := make(chan struct{})
 	if h.conf.TCPOutBufFlushPeriodSec != 0 {
-		go h.flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec))
+		go func() { defer close(flushDone); h.flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec)) }()
+	} else {
+		close(flushDone)
 	}
-	defer func() {
-		wg.Done()
-		close(h.stop)
-	}()
-
 	for c := h.q.pop(); c != nil; c = h.q.pop() {
 		h.sendBatch(c.recs[:c.n])
 		h.q.recycle(c)
 	}
-
-	// this line is only reached when the host queue was closed
+	close(h.stop)
+	<-flushDone
 	h.Conn.Lock()
 	defer h.Conn.Unlock()
 	h.tryToFlushIfNecessary()
+	if err := h.Conn.Close(); err != nil {
+		h.Lg.Warn("closing drained target connection failed", zap.Error(err))
+	}
 }
 
 // sendBatch writes a batch of records under a single lock.
@@ -212,35 +221,17 @@ func (h *Host) sendBatch(batch []*rec.RecBytes) {
 // Connection freshness only needs checking before the first record of a
 // batch: after a successful write the connection counts as just used.
 func (h *Host) tryToSend(r *rec.RecBytes, checkFresh bool) {
+	h.ensureConnection()
+	if checkFresh {
+		h.keepConnectionFresh()
+	}
 	b := r.Bytes()
-
-	// retry until successful
-	for {
-		h.ensureConnection()
-		if checkFresh {
-			h.keepConnectionFresh()
-		}
-
-		// Only a write that does not fit into the buffer reaches the network,
-		// so that is when the deadline has to be set.
-		if len(b) > h.Conn.W.Available() {
-			h.setWriteDeadline()
-		}
-
-		_, err := h.Conn.W.Write(b)
-
-		if err == nil {
-			//h.processingDuration.Observe(time.Since(r.Received).Seconds())
-			break
-		}
-
-		h.Lg.Warn("error sending value to host. Reconnect and retry..", zap.Error(err))
-		err = h.Conn.Close()
-		if err != nil {
-			// not retrying here, file descriptor may be lost
-			h.Lg.Error("error closing the connection", zap.Error(err))
-		}
-		checkFresh = true
+	if h.Conn.W.Buffered() > 0 && !h.Conn.W.fits(len(b)) {
+		h.flushOutput()
+	}
+	h.Conn.W.appendRecord(b)
+	if h.Conn.W.Buffered() >= h.Conn.W.size {
+		h.flushOutput()
 	}
 }
 
@@ -271,21 +262,23 @@ func (h *Host) flush(d time.Duration) {
 }
 
 // Requires h.Conn.Mutex lock.
-func (h *Host) tryToFlushIfNecessary() {
-	if h.Conn.W != nil && h.Conn.W.Buffered() != 0 {
-		if h.Conn.Conn == nil {
-			h.ensureConnection()
-		} else {
-			h.keepConnectionFresh()
-		}
+func (h *Host) tryToFlushIfNecessary() { h.flushOutput() }
+
+func (h *Host) flushOutput() {
+	for h.Conn.W != nil && h.Conn.W.Buffered() > 0 {
+		h.ensureConnection()
 		h.setWriteDeadline()
-		err := h.Conn.W.Flush()
-		if err != nil {
-			h.Lg.Error("error while flushing the host buffer", zap.Error(err), zap.String("target_name", h.Name), zap.Uint16("target_port", h.Port))
-			h.Conn.Conn = nil
-			h.Conn.W = nil
+		result := h.Conn.W.flush(h.Conn.Conn)
+		h.q.accountTCPWrite(result)
+		if result.err == nil {
+			h.Conn.LastConnUse = time.Now()
+			return
 		}
-		h.Conn.LastConnUse = time.Now()
+		h.Lg.Warn("error flushing target records; reconnecting and replaying buffer", zap.Error(result.err), zap.Int("pending_records", h.Conn.W.records), zap.Int("pending_bytes", h.Conn.W.Buffered()), zap.Int("uncertain_bytes", result.written))
+		if err := h.Conn.Close(); err != nil {
+			h.Lg.Warn("closing failed target connection", zap.Error(err))
+		}
+		h.setAvailability(false)
 	}
 }
 
@@ -298,6 +291,11 @@ func (h *Host) keepConnectionFresh() {
 			h.oldConnectionRefresh.Inc()
 			h.oldConnectionRefreshTotal.Inc()
 
+			old := h.Conn.Conn
+			h.flushOutput()
+			if h.Conn.Conn != old {
+				return // Recovery already established a fresh connection.
+			}
 			err := h.Conn.Close()
 			if err != nil {
 				h.Lg.Error("closing connection to target host failed", zap.String("host", h.Name))
