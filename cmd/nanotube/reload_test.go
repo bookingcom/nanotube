@@ -27,8 +27,9 @@ func TestReloadChild(t *testing.T) {
 func TestReplacementReadiness(t *testing.T) {
 	for _, mode := range []string{"ready", "silent"} {
 		t.Run(mode, func(t *testing.T) {
-			t.Setenv("INVOCATION_ID", "")
-			t.Setenv("NOTIFY_SOCKET", "")
+			t.Setenv(systemdEnv, "")
+			t.Setenv("INVOCATION_ID", "inherited-from-another-service")
+			t.Setenv("NOTIFY_SOCKET", "/unrelated-service-notify")
 			t.Setenv("NANOTUBE_TEST_RELOAD_MODE", mode)
 			t.Setenv(reloadReadyEnv, "original")
 			var command *exec.Cmd
@@ -62,7 +63,7 @@ func TestReplacementReadiness(t *testing.T) {
 }
 
 func TestManagedReloadRequiresNotifications(t *testing.T) {
-	t.Setenv("INVOCATION_ID", "managed")
+	t.Setenv(systemdEnv, "1")
 	t.Setenv("NOTIFY_SOCKET", "")
 	_, err := startReplacement(context.Background(), func() (int, error) {
 		t.Fatal("unsafe managed replacement was started")
@@ -74,7 +75,8 @@ func TestManagedReloadRequiresNotifications(t *testing.T) {
 }
 
 func TestReplacementStartFailureRestoresEnvironment(t *testing.T) {
-	t.Setenv("INVOCATION_ID", "")
+	t.Setenv(systemdEnv, "")
+	t.Setenv("INVOCATION_ID", "inherited-from-another-service")
 	t.Setenv("NOTIFY_SOCKET", "")
 	t.Setenv(reloadReadyEnv, "original")
 	want := errors.New("start failed")

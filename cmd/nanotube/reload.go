@@ -11,13 +11,16 @@ import (
 	"time"
 )
 
-const reloadReadyEnv = "NANOTUBE_RELOAD_READY"
+const (
+	reloadReadyEnv = "NANOTUBE_RELOAD_READY"
+	systemdEnv     = "NANOTUBE_SYSTEMD"
+)
 
 // startReplacement waits for the inherited listener and routing/output pipeline
 // to be initialized before retiring the old process. The private socket also
 // distinguishes the new child from the old process's shared metrics listener.
 func startReplacement(ctx context.Context, start func() (int, error), timeout time.Duration) (int, error) {
-	if os.Getenv("INVOCATION_ID") != "" && os.Getenv("NOTIFY_SOCKET") == "" {
+	if os.Getenv(systemdEnv) == "1" && os.Getenv("NOTIFY_SOCKET") == "" {
 		return 0, fmt.Errorf("systemd reload requires NotifyAccess=main")
 	}
 	dir, err := os.MkdirTemp("", "nt-reload-")
@@ -75,8 +78,10 @@ func startReplacement(ctx context.Context, start func() (int, error), timeout ti
 	if err := readyCtx.Err(); err != nil {
 		return 0, err
 	}
-	if err := handoffService(ctx, pid, timeout); err != nil {
-		return 0, err
+	if os.Getenv(systemdEnv) == "1" {
+		if err := handoffService(ctx, pid, timeout); err != nil {
+			return 0, err
+		}
 	}
 	committed = true
 	return pid, nil

@@ -64,16 +64,17 @@ The original process keeps serving if the replacement does not become ready
 within `TermTimeoutSec`, terminates the failed child with a bounded drain, and
 restores the original pidfile.
 
-On Linux under systemd, configure `NotifyAccess=main` in the service unit. The
+On Linux under systemd, configure `NotifyAccess=main` and
+`Environment=NANOTUBE_SYSTEMD=1` in the service unit. The explicit mode prevents a command-line process from claiming
+ownership of an unrelated service whose environment it inherited. The
 tracked old main process sends `MAINPID=<ready replacement>` and waits for the
 notification barrier before draining. `Type=simple`, `Restart=always` and
 `KillMode=control-group` can remain enabled. On systemd versions that mark the
 replacement as a non-child main PID, the unit must use a synchronous `ExecStop`
 that sends SIGTERM and waits for process exit. Otherwise a subsequent stop can
 escalate to SIGKILL immediately, before the replacement drains. The service's
-stop timeout must exceed the application termination deadline. A managed unit
-without a notify
-socket rejects SIGUSR2 safely; it can still use an ordinary systemd restart.
+stop timeout must exceed the application termination deadline. An explicitly
+enabled unit without a notify socket rejects SIGUSR2 safely; it can still use an ordinary systemd restart.
 Install the unit change with a daemon reload and restart so the process receives
 `NOTIFY_SOCKET`. A daemon reload alone does not change an existing process's
 environment.
@@ -91,3 +92,8 @@ A typical systemd stop command is a synchronous shell command that checks
 service manager's hard-kill backstop after that command; do not disable cgroup
 cleanup. A 15-second service stop timeout leaves margin around a 10-second
 application termination deadline.
+
+Continue using ordinary service restarts until both the new binary and the
+explicit unit mode are installed. An unmarked unit uses the non-systemd reload
+path; it does not acquire ownership notification merely by inheriting
+`INVOCATION_ID` or `NOTIFY_SOCKET` from another service.
