@@ -55,6 +55,8 @@ The support of [Open Telemetry gRPC](https://github.com/open-telemetry/opentelem
 
 Nanotube supports zero-downtime reload that can be triggered with `USR2` signal. It will update the binary and try to load updated config. If the config is invalid, the old instance will keep running.
 
+The old process now waits for replacement pipeline readiness before draining. Systemd units need `NotifyAccess=main` and a synchronous stop command that waits for the process to exit; see [managed reload requirements](docs/tcp-output-recovery.md#managed-sigusr2-reload).
+
 ## Tags support
 
 Tags are not supported. See [here]](https://github.com/bookingcom/nanotube/issues/4) for details.

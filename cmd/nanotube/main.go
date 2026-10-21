@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -119,6 +120,12 @@ func main() {
 			int64(cfg.RateLimiterGlobalRecordLimit), ms.GlobalRateLimiterBlockedReaders)
 		rateLimiters = append(rateLimiters, globalRateLimiter)
 	}
+	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	sgn := make(chan os.Signal, 1)
+	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR2)
+	defer signal.Stop(sgn)
+
 	n := gracenet.Net{}
 	queue, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms)
 	if err != nil {
@@ -131,8 +138,14 @@ func main() {
 	// SIGTERM gracefully terminates with timeout
 	// SIGKILL terminates immediately
 	// SIGUSR2 triggers zero-downtime restart
-	sgn := make(chan os.Signal, 1)
-	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR2)
+	if err := announceReplacementReady(); err != nil {
+		lg.Error("Reload: Cannot announce replacement readiness; draining.", zap.Error(err))
+		// Do not abandon input accepted before the readiness exchange failed.
+		select {
+		case sgn <- syscall.SIGTERM:
+		default:
+		}
+	}
 
 	// TODO: Make seamless restart work for GRPC
 	for {
@@ -146,10 +159,17 @@ func main() {
 				continue
 			}
 			lg.Info("Reload: Config OK. Starting a new instance.")
-			pid, err := n.StartProcess()
+			pid, err := startReplacement(ctx, n.StartProcess, time.Second*time.Duration(cfg.TermTimeoutSec))
 			if err != nil {
-				lg.Error("Reload: Failed to start new process", zap.Error(err))
-				continue
+				lg.Error("Reload: Failed to start ready replacement", zap.Error(err))
+				if cfg.PidFilePath != "" {
+					if err := pidfile.Write(); err != nil {
+						lg.Error("Reload: Cannot restore original pidfile", zap.Error(err))
+					}
+				}
+				if ctx.Err() == nil {
+					continue
+				}
 			} else {
 				lg.Info("Reload: Started new process. Moved FDs.", zap.Int("pid", pid))
 			}
