@@ -38,9 +38,23 @@ func NewSlidingWindowRateLimiter(windowSize time.Duration, limit int64, blockCou
 
 // RateLimit checks the rate limiters given and blocks/retries until all rate limiters allow n records.
 func RateLimit(rateLimiters []*SlidingWindow, n int, retryDuration time.Duration) {
+	RateLimitWithStop(rateLimiters, n, retryDuration, nil)
+}
+
+// RateLimitWithStop waits for the limiters or returns false when stop closes.
+// This lets input readers finish their buffered records during shutdown even
+// when the next retry or rate-limit window exceeds the termination budget.
+func RateLimitWithStop(rateLimiters []*SlidingWindow, n int, retryDuration time.Duration, stop <-chan struct{}) bool {
 	for _, rl := range rateLimiters {
 		for !rl.Allow(int64(n)) {
-			time.Sleep(retryDuration)
+			timer := time.NewTimer(retryDuration)
+			select {
+			case <-stop:
+				timer.Stop()
+				return false
+			case <-timer.C:
+			}
 		}
 	}
+	return true
 }

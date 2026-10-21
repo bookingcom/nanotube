@@ -58,6 +58,7 @@ loop:
 // ListenUDPBuf is a buffered version of ListenUDP.
 func ListenUDPBuf(conn net.PacketConn, queue chan [][]byte, stop <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow,
 	connWG *sync.WaitGroup, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+	defer connWG.Done()
 	go func() {
 		<-stop
 		lg.Info("Termination: Closing the UDP connection.")
@@ -89,7 +90,9 @@ loop:
 			break loop
 		case <-rlTickerChan:
 			if rateLimiters != nil {
-				ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
+				if !ratelimiter.RateLimitWithStop(rateLimiters, recCount, retryDuration, stop) {
+					break loop
+				}
 				recCount = 0
 			}
 		default:
@@ -116,15 +119,14 @@ loop:
 			if rateLimiters != nil {
 				recCount += packetRecCount
 				if recCount > cfg.RateLimiterPerReaderRecordThreshold {
-					ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
+					if !ratelimiter.RateLimitWithStop(rateLimiters, recCount, retryDuration, stop) {
+						break loop
+					}
 					recCount = 0
 				}
 			}
 		}
 	}
 
-	qb.Flush()
-
 	lg.Info("Termination: Stopped accepting UDP data.")
-	connWG.Done()
 }

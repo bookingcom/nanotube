@@ -17,7 +17,8 @@ type BatchChan struct {
 	ms      *metrics.Prom
 	m       sync.Mutex
 	period  time.Duration
-	stop    chan bool
+	stop    chan struct{}
+	done    chan struct{}
 }
 
 // NewBatchChan makes a new batched chan buffer.
@@ -28,23 +29,28 @@ func NewBatchChan(q chan<- [][]byte, bufSize int, periodSec int, ms *metrics.Pro
 		bufSize: bufSize,
 		ms:      ms,
 		period:  time.Second * time.Duration(periodSec),
-		stop:    make(chan bool),
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 
 	if periodSec > 0 {
 		go qb.periodicFlush()
+	} else {
+		close(qb.done)
 	}
 
 	return qb
 }
 
 func (qb *BatchChan) periodicFlush() {
+	defer close(qb.done)
+	ticker := time.NewTicker(qb.period)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-qb.stop:
 			return
-		default:
-			time.Sleep(qb.period)
+		case <-ticker.C:
 			qb.Flush()
 		}
 	}
@@ -81,10 +87,13 @@ func (qb *BatchChan) Flush() {
 	qb.buf = nil
 }
 
-// Close closes the batch channel. It does not close the target channel.
+// Close stops the periodic flusher and sends the final partial batch. It does
+// not close the target channel. The owner must stop calling Push before Close.
 // Must be called exactly once for every new instance.
 func (qb *BatchChan) Close() {
 	close(qb.stop)
+	<-qb.done
+	qb.Flush()
 }
 
 func (qb *BatchChan) sendToMainQBuf() {

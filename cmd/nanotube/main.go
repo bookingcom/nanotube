@@ -149,6 +149,7 @@ func main() {
 			pid, err := n.StartProcess()
 			if err != nil {
 				lg.Error("Reload: Failed to start new process", zap.Error(err))
+				continue
 			} else {
 				lg.Info("Reload: Started new process. Moved FDs.", zap.Int("pid", pid))
 			}

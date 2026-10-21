@@ -2,6 +2,7 @@ package in
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"sync"
 	"time"
@@ -15,57 +16,79 @@ import (
 // AcceptAndListenTCPBuf is batched version of AcceptAndListenTCP.
 func AcceptAndListenTCPBuf(l net.Listener, queue chan<- [][]byte, term <-chan struct{},
 	rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+	defer connWG.Done()
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	connections := make(map[net.Conn]struct{})
+	acceptDone := make(chan struct{})
+	defer close(acceptDone)
+	go func() {
+		select {
+		case <-term:
+			if err := l.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				lg.Error("failed to close listening TCP connection", zap.Error(err))
+			}
+		case <-acceptDone:
+		}
+	}()
 
 loop:
 	for {
-		connCh := make(chan net.Conn)
-		errCh := make(chan error)
-		go func() {
-			conn, err := l.Accept()
-
-			if err != nil {
-				errCh <- err
-			} else {
-				ms.ActiveTCPConnections.Inc()
-				ms.InConnectionsTotalTCP.Inc()
-
-				connCh <- conn
+		conn, err := l.Accept()
+		if err != nil {
+			select {
+			case <-term:
+				break loop
+			default:
 			}
-		}()
-
+			if errors.Is(err, net.ErrClosed) {
+				break
+			}
+			lg.Error("accepting connection failed", zap.Error(err))
+			continue
+		}
 		select {
 		case <-term:
-			// stop accepting new connections on termination signal
-			err := l.Close()
-			if err != nil {
-				lg.Error("failed to close listening TCP connection", zap.Error(err))
-			}
+			_ = conn.Close()
 			break loop
-		case err := <-errCh:
-			lg.Error("accepting connection failed", zap.Error(err))
-		case conn := <-connCh:
-			wg.Add(1)
-			go readFromConnectionTCPBuf(&wg, conn, queue, rateLimiters, cfg, ms, lg)
+		default:
 		}
+		ms.ActiveTCPConnections.Inc()
+		ms.InConnectionsTotalTCP.Inc()
+		mu.Lock()
+		connections[conn] = struct{}{}
+		mu.Unlock()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				mu.Lock()
+				delete(connections, conn)
+				mu.Unlock()
+			}()
+			readFromConnectionTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg)
+		}()
 	}
 
-	if l != nil {
-		lg.Debug("Stopped accepting new TCP connections. Starting to close incoming connections...", zap.String("address", l.Addr().String()))
+	// An idle or continuously writing producer must not keep the old pipeline
+	// open until its idle timeout. Closing readers interrupts network reads;
+	// scanners still process records already read and flush their final batches.
+	mu.Lock()
+	open := make([]net.Conn, 0, len(connections))
+	for conn := range connections {
+		open = append(open, conn)
+	}
+	mu.Unlock()
+	for _, conn := range open {
+		_ = conn.Close()
 	}
 	wg.Wait()
-	if l != nil {
-		lg.Debug("Finished previously accepted TCP connections.", zap.String("address", l.Addr().String()))
-	}
-
-	connWG.Done()
 }
 
-func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
-	defer wg.Done() // executed after the connection is closed
+func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	defer func() {
 		err := conn.Close()
-		if err != nil {
+		if err != nil && !errors.Is(err, net.ErrClosed) {
 			lg.Error("closing the incoming connection", zap.Error(err))
 		}
 		ms.ActiveTCPConnections.Dec()
@@ -80,7 +103,7 @@ func readFromConnectionTCPBuf(wg *sync.WaitGroup, conn net.Conn, queue chan<- []
 			zap.String("sender", conn.RemoteAddr().String()))
 	}
 
-	scanForRecordsTCPBuf(conn, queue, rateLimiters, cfg, ms, lg)
+	scanForRecordsTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg)
 }
 
 // deadlineReader arms the idle deadline before every read from the
@@ -122,7 +145,7 @@ func (a *recArena) copy(b []byte) []byte {
 	return a.chunk[off:len(a.chunk):len(a.chunk)]
 }
 
-func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
 	sc := bufio.NewScanner(&deadlineReader{
 		conn:    conn,
 		timeout: time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second,
@@ -154,18 +177,20 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, rateLimiters []*
 			recCount++
 			select {
 			case <-rlTickerChan:
-				ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
+				if !ratelimiter.RateLimitWithStop(rateLimiters, recCount, retryDuration, term) {
+					return
+				}
 				recCount = 0
 			default:
 				if recCount > cfg.RateLimiterPerReaderRecordThreshold {
-					ratelimiter.RateLimit(rateLimiters, recCount, retryDuration)
+					if !ratelimiter.RateLimitWithStop(rateLimiters, recCount, retryDuration, term) {
+						return
+					}
 					recCount = 0
 				}
 			}
 		}
 	}
-
-	qb.Flush()
 
 }
 
