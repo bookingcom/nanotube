@@ -55,12 +55,14 @@ type Connection struct {
 	sync.Mutex
 	LastConnUse time.Time
 	W           *recordBuffer
+	attempted   bool
 }
 
 // New or updated target connection from existing net.Conn
 // Requires Connection.Mutex lock
 func (c *Connection) New(conn net.Conn, bufSize int) {
 	c.Conn = conn
+	c.attempted = true
 	c.LastConnUse = time.Now()
 	if c.W == nil {
 		c.W = newRecordBuffer(bufSize)
@@ -262,7 +264,12 @@ func (h *Host) flush(d time.Duration) {
 }
 
 // Requires h.Conn.Mutex lock.
-func (h *Host) tryToFlushIfNecessary() { h.flushOutput() }
+func (h *Host) tryToFlushIfNecessary() {
+	if h.Conn.W != nil && h.Conn.W.Buffered() > 0 {
+		h.flushOutput()
+		h.Conn.LastConnUse = time.Now()
+	}
+}
 
 func (h *Host) flushOutput() {
 	for h.Conn.W != nil && h.Conn.W.Buffered() > 0 {
@@ -271,7 +278,6 @@ func (h *Host) flushOutput() {
 		result := h.Conn.W.flush(h.Conn.Conn)
 		h.q.accountTCPWrite(result)
 		if result.err == nil {
-			h.Conn.LastConnUse = time.Now()
 			return
 		}
 		h.Lg.Warn("error flushing target records; reconnecting and replaying buffer", zap.Error(result.err), zap.Int("pending_records", h.Conn.W.records), zap.Int("pending_bytes", h.Conn.W.Buffered()), zap.Int("uncertain_bytes", result.written))
@@ -311,7 +317,7 @@ func (h *Host) keepConnectionFresh() {
 func (h *Host) ensureConnection() {
 	for waitMs, attemptCount := uint32(0), 1; h.Conn.Conn == nil; {
 
-		if h.jitterEnabled {
+		if h.jitterEnabled && h.Conn.attempted {
 			jitterAmplitude := waitMs / 2
 			if h.minJitterAmplitudeMs > jitterAmplitude {
 				jitterAmplitude = h.minJitterAmplitudeMs
@@ -336,6 +342,7 @@ func (h *Host) ensureConnection() {
 // Connect connects to target host via TCP. If unsuccessful, sets conn to nil.
 // Requires h.Conn.Mutex lock.
 func (h *Host) connect(attemptCount int) {
+	h.Conn.attempted = true
 	conn, err := h.getConnectionToHost()
 	if err != nil {
 		h.Lg.Warn("connection to target host failed")
