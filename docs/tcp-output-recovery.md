@@ -45,3 +45,12 @@ connection locks and can overlap an in-flight socket write. It excludes data
 still in the input/routing stages; it is not a complete process-loss bound.
 SIGKILL, host failure and lost logs cannot be accounted for reliably without
 durable state or receiver acknowledgement.
+
+Terminal TCP summaries bypass normal runtime log sampling so every pending/error
+target is represented, even when more targets share the same log message than
+the configured sampling allowance. Ordinary runtime messages remain sampled.
+
+Healthy cold TCP targets attempt their first connection immediately. Failed
+attempts and subsequent reconnects retain the configured backoff and jitter.
+This removes an avoidable startup queue stall; it does not guarantee that a
+bounded queue can absorb an arbitrary producer catch-up burst.

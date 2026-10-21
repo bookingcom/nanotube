@@ -56,6 +56,7 @@ type MultiConnection struct {
 	sync.Mutex
 	LastConnUse time.Time
 	W           *recordBuffer
+	attempted   bool
 	Available   atomic.Bool
 }
 
@@ -63,6 +64,7 @@ type MultiConnection struct {
 // Requires Connection.Mutex lock
 func (c *MultiConnection) New(n net.Conn, bufSize int) {
 	c.Conn = n
+	c.attempted = true
 	c.LastConnUse = time.Now()
 	if c.W == nil {
 		c.W = newRecordBuffer(bufSize)
@@ -287,7 +289,11 @@ func (h *HostMTCP) flush(d time.Duration) {
 // Requires h.Conn.Mutex lock.
 func (h *HostMTCP) tryToFlushIfNecessary() {
 	for i := range h.MTCPs {
-		h.flushOutput(&h.MTCPs[i])
+		conn := &h.MTCPs[i]
+		if conn.W != nil && conn.W.Buffered() > 0 {
+			h.flushOutput(conn)
+			conn.LastConnUse = time.Now()
+		}
 	}
 }
 
@@ -298,7 +304,6 @@ func (h *HostMTCP) flushOutput(conn *MultiConnection) {
 		result := conn.W.flush(conn.Conn)
 		h.q.accountTCPWrite(result)
 		if result.err == nil {
-			conn.LastConnUse = time.Now()
 			return
 		}
 		h.Lg.Warn("error flushing target records; reconnecting and replaying buffer", zap.Error(result.err), zap.Int("pending_records", conn.W.records), zap.Int("pending_bytes", conn.W.Buffered()), zap.Int("uncertain_bytes", result.written))
@@ -338,7 +343,7 @@ func (h *HostMTCP) keepConnectionFresh(conn *MultiConnection) {
 // This function may take a long time.
 func (h *HostMTCP) ensureConnection(conn *MultiConnection) {
 	for waitMs, attemptCount := uint32(0), 1; conn.Conn == nil; {
-		if h.jitterEnabled {
+		if h.jitterEnabled && conn.attempted {
 			jitterAmplitude := waitMs / 2
 			if h.minJitterAmplitudeMs > jitterAmplitude {
 				jitterAmplitude = h.minJitterAmplitudeMs
@@ -363,6 +368,7 @@ func (h *HostMTCP) ensureConnection(conn *MultiConnection) {
 // Connect multiple TCP connects to target host via TCP. If unsuccessful, sets conn to nil.
 // Requires h.Conn.Mutex lock.
 func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
+	c.attempted = true
 	conn, err := h.getConnectionToHost()
 	if err != nil {
 		h.Lg.Warn("connection to target host failed")

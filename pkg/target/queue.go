@@ -54,13 +54,14 @@ func (q *recQueue) push(rs []*rec.RecBytes) (dropped int) {
 	if !q.closed {
 		accepted = min(len(rs), max(q.limit-q.n, 0))
 	}
-	for _, r := range rs[:accepted] {
+	for start := 0; start < accepted; {
 		t := q.tail
 		if t == nil || t.n == queueChunkLen {
 			t = q.newChunk()
 		}
-		t.recs[t.n] = r
-		t.n++
+		n := copy(t.recs[t.n:], rs[start:accepted])
+		t.n += n
+		start += n
 	}
 	q.n += accepted
 	q.accountAccepted(rs[:accepted])
