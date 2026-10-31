@@ -42,6 +42,10 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 	cls := make(map[string]*Cluster)
 	var err error
 	for _, cc := range cfg.Cluster {
+		clusterCfg := *mainCfg
+		if cc.Compression != "" {
+			clusterCfg.TCPOutCompression = cc.Compression
+		}
 		cl := &Cluster{
 			Name: cc.Name,
 			Type: cc.Type,
@@ -50,10 +54,10 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 
 		switch cc.Type {
 		case conf.JumpCluster:
-			cl, err = getJumpCluster(cl, cc, *mainCfg, lg, ms)
+			cl, err = getJumpCluster(cl, cc, clusterCfg, lg, ms)
 		case conf.BlackholeCluster, conf.ToallCluster, conf.LB:
 			for _, h := range cc.Hosts {
-				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, *mainCfg, h, lg, ms))
+				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, clusterCfg, h, lg, ms))
 			}
 		default:
 			return cls, fmt.Errorf("incorrect cluster type %s for cluster %s",

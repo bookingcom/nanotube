@@ -11,15 +11,17 @@ import (
 // no acknowledgement, so replay can duplicate records but never starts with a
 // record fragment. Its size is bounded by the configured buffer or one record.
 type recordBuffer struct {
-	data    []byte
-	records int
-	size    int
+	data        []byte
+	records     int
+	size        int
+	compression *zstdOutput
 }
 
 type tcpWriteResult struct {
 	records          int
 	bytes            int
 	written          int
+	frames           int
 	uncertainRecords int
 	err              error
 }
@@ -46,6 +48,9 @@ func (b *recordBuffer) appendRecord(record []byte) {
 func (b *recordBuffer) flush(w io.Writer) tcpWriteResult {
 	if len(b.data) == 0 {
 		return tcpWriteResult{}
+	}
+	if b.compression != nil {
+		return b.flushCompressed(w)
 	}
 	n, err := w.Write(b.data)
 	if n < 0 || n > len(b.data) {

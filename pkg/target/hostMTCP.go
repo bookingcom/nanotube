@@ -96,6 +96,7 @@ func NewHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *z
 
 // ConstructHostMTCP builds new host object from config.
 func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *HostMTCP {
+	mainCfg = tcpCompressionConfig(mainCfg, hostCfg)
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
 		targetPort = hostCfg.Port
@@ -381,6 +382,7 @@ func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
 		return
 	}
 	c.New(conn, h.conf.TCPOutBufSize)
+	c.W.configureCompression(*h.conf)
 	c.Available.Store(true)
 	h.setHostAvailability()
 }

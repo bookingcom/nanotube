@@ -30,6 +30,13 @@ TermTimeoutSec = 10
 
 TCPOutBufSize = 4096
 
+# Applies to all TCP targets; cluster/host compression overrides may canary it.
+# Empty (default) or "none" sends plaintext; "zstd" sends independent frames.
+# Upgrade all receivers before enabling. gRPC targets ignore these settings.
+TCPOutCompression = ""
+TCPOutZstdLevel = "fastest" # "fastest" or "default"
+TCPOutZstdFrameSize = 1048576 # plaintext bytes per frame; maximum 16 MiB
+
 TCPOutBufFlushPeriodSec = 2
 
 TCPOutConnectionRefreshPeriodSec = 0

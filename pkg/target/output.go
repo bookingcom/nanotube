@@ -13,11 +13,17 @@ type tcpAccounting struct {
 	cluster, target                               string
 	pendingRecords, pendingBytes                  int64
 	flushedRecords, socketWrittenBytes            int64
+	flushedPlaintextBytes                         int64
 	writeErrors, uncertainRecords, uncertainBytes int64
 }
 
 func (q *recQueue) trackTCP(ms *metrics.TCPOutput, cluster, target string) {
 	q.output = &tcpAccounting{ms: ms, cluster: cluster, target: target}
+	ms.PlaintextBytes.Bind(func() float64 {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		return float64(q.output.flushedPlaintextBytes)
+	})
 }
 
 // Requires q.mu, before consumers can observe the accepted records.
@@ -45,6 +51,9 @@ func (q *recQueue) accountTCPWrite(r tcpWriteResult) {
 	s := q.output
 	s.socketWrittenBytes += int64(r.written)
 	s.ms.SocketWrittenBytes.Add(float64(r.written))
+	if r.frames > 0 {
+		s.ms.ZstdFrames.Add(float64(r.frames))
+	}
 	if r.err != nil {
 		s.writeErrors++
 		s.ms.WriteErrors.Inc()
@@ -60,6 +69,7 @@ func (q *recQueue) accountTCPWrite(r tcpWriteResult) {
 	s.ms.PendingRecords.Sub(float64(r.records))
 	s.ms.PendingBytes.Sub(float64(r.bytes))
 	s.ms.FlushedRecords.Add(float64(r.records))
+	s.flushedPlaintextBytes += int64(r.bytes)
 }
 
 func (q *recQueue) reportTCPShutdown(lg *zap.Logger, abandoning bool) (records, bytes int64) {

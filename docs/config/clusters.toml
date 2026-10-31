@@ -2,9 +2,11 @@
 [[cluster]]
 name = 'local0'
 type = 'jump' # cluster type defines routing inside a cluster
+# compression = 'zstd' # optional: overrides the main config for this pool
     [[cluster.hosts]]
     name = 'localhost' # FQDN or IP of the host
     port = 8001 # optional, overrides setting in main config
+    # compression = 'none' # optional: host overrides cluster, then global default
     index = 0 # index in the hash ring 
     [[cluster.hosts]]
     name = 'localhost'
