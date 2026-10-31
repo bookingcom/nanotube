@@ -23,3 +23,5 @@ Optionally, it is possible to apply the [rewrite rules](rewrite.toml). This is h
 - rule matches if `from` matches;
   - then metric path is rewritten to `to` in place;
   - if `copy` is `true` the original metric is copied and sent directly to be routed skipping the following re-writes. `copy` is `false` by default.
+
+See [TCP output compression](../tcp-output-compression.md) for global zstd defaults, cluster/host canaries, metrics, and rollout order.

@@ -34,9 +34,10 @@ const BlackholeCluster string = "blackhole"
 // Cluster is the config of a single cluster.
 // Cluster type can be either *toall* or *jump*.
 type Cluster struct {
-	Name  string `toml:"name"`
-	Type  string `toml:"type"`
-	Hosts []Host `toml:"hosts"`
+	Name        string `toml:"name"`
+	Type        string `toml:"type"`
+	Hosts       []Host `toml:"hosts"`
+	Compression string `toml:"compression"`
 }
 
 // Host is the config of a single machine to send metrics to.
@@ -53,7 +54,8 @@ type Host struct {
 	// Optional, TCP by default
 	GRPC bool `toml:"grpc"`
 	// Optional, number of TCP connections to open to the host.
-	MTCP int `toml:"mtcp"`
+	MTCP        int    `toml:"mtcp"`
+	Compression string `toml:"compression"`
 }
 
 // ReadClustersConfig reads clusters set from a reader.
@@ -68,6 +70,17 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 		return cls, errors.New("could not find any cluster in clusters configuration")
 	}
 	for idx, cluster := range cls.Cluster {
+		if err := ValidateCompression(cluster.Compression); err != nil {
+			return cls, err
+		}
+		for i := range cluster.Hosts {
+			if err := ValidateCompression(cluster.Hosts[i].Compression); err != nil {
+				return cls, err
+			}
+			if cluster.Hosts[i].Compression == "" {
+				cls.Cluster[idx].Hosts[i].Compression = cluster.Compression
+			}
+		}
 		if cluster.Name == "" {
 			return cls, fmt.Errorf("cluster with index %d does not have a name", idx)
 		}

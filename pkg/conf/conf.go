@@ -89,6 +89,12 @@ type Main struct {
 	// The size of the buffer for sending data to a target host via a TCP connections.
 	// 0 value turns off buffering
 	TCPOutBufSize int
+	// TCP output compression: empty or "none" disables it; "zstd" enables it.
+	TCPOutCompression string
+	// Zstd preset: "fastest" (default) or "default".
+	TCPOutZstdLevel string
+	// Maximum plaintext bytes in an independent frame; defaults to 1 MiB.
+	TCPOutZstdFrameSize int
 	// The period over which the out TCP buffer for the connections sending to target hosts is flushed.
 	// This helps if the traffic is low and records get stuck in the buffer.
 	// The value of zero means no flushing.
@@ -216,6 +222,9 @@ func ReadMain(r io.Reader) (Main, error) {
 		return cfg, errors.New("TargetConnectionJitterMinAmplitudeMs is 0")
 	}
 
+	if err := cfg.ValidateTCPCompression(); err != nil {
+		return cfg, err
+	}
 	return cfg, nil
 }
 
@@ -254,6 +263,8 @@ func MakeDefault() Main {
 		TermTimeoutSec:             10,
 
 		TCPOutBufSize:                    0,
+		TCPOutZstdLevel:                  "fastest",
+		TCPOutZstdFrameSize:              1 << 20,
 		TCPOutBufFlushPeriodSec:          2,
 		TCPOutConnectionRefreshPeriodSec: 0,
 

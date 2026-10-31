@@ -100,6 +100,7 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 
 // ConstructHost builds new host object from config.
 func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *Host {
+	mainCfg = tcpCompressionConfig(mainCfg, hostCfg)
 	targetPort := mainCfg.TargetPort
 	if hostCfg.Port != 0 {
 		targetPort = hostCfg.Port
@@ -359,6 +360,7 @@ func (h *Host) connect(attemptCount int) {
 	}
 
 	h.Conn.New(conn, h.conf.TCPOutBufSize)
+	h.Conn.W.configureCompression(*h.conf)
 	h.setAvailability(true)
 }
 

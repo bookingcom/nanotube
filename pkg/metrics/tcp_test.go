@@ -32,7 +32,7 @@ func TestTCPMetricsRegistration(t *testing.T) {
 			}
 			expected := 1
 			if details {
-				expected = 10
+				expected = 12
 			}
 			if len(families) != expected {
 				t.Fatalf("registered %d metric families, want %d", len(families), expected)
