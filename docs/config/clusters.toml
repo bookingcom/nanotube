@@ -34,13 +34,13 @@ type = 'jump'
     index = 3
     grpc = true # sets the target host to use GRPC protocol
 
-# Binary stream output requires a go-carbon receiver with stream enabled.
+# Binary stream output requires a stream-aware go-carbon TCP receiver.
 [[cluster]]
 name = 'stream-example'
 type = 'toall'
     [[cluster.hosts]]
     name = 'localhost'
-    port = 2004
+    port = 2003
     stream = true # TCP binary stream; mutually exclusive with grpc
     mtcp = 2 # optional; each connection has an independent dictionary
     [cluster.hosts.stream_options]

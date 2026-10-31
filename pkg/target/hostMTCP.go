@@ -33,7 +33,8 @@ type HostMTCP struct {
 	Lg *zap.Logger
 	Ms *metrics.Prom
 
-	conf *conf.Main
+	conf          *conf.Main
+	streamOptions *conf.StreamOptions
 
 	jitterEnabled        bool
 	rnd                  *rand.Rand
@@ -56,6 +57,7 @@ type MultiConnection struct {
 	sync.Mutex
 	LastConnUse time.Time
 	W           *recordBuffer
+	streamCodec streamCodec
 	attempted   bool
 	Available   atomic.Bool
 }
@@ -75,6 +77,11 @@ func (c *MultiConnection) New(n net.Conn, bufSize int) {
 // Overrides c.Conn.Close().
 // Use instead the default close.
 func (c *MultiConnection) Close() error {
+	if c.streamCodec != nil {
+		c.streamCodec.close()
+		c.streamCodec = nil
+	}
+
 	if c.Conn == nil {
 		return nil
 	}
@@ -134,6 +141,10 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	h.Ms = ms
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
+	if hostCfg.Stream {
+		options := hostCfg.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec)
+		h.streamOptions = &options
+	}
 	h.q.trackTCP(ms.TCP.For(promLabels), clusterName, h.String())
 
 	if mainCfg.TCPInitialConnCheck {
@@ -202,6 +213,10 @@ func (h *HostMTCP) UnlockMTCP() {
 // Exits when queue is closed and sending is finished.
 func (h *HostMTCP) Stream(wg *sync.WaitGroup) {
 	defer wg.Done()
+	if h.streamOptions != nil {
+		h.streamRecords(*h.streamOptions)
+		return
+	}
 	flushDone := make(chan struct{})
 	if h.conf.TCPOutBufFlushPeriodSec != 0 {
 		go func() { defer close(flushDone); h.flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec)) }()
@@ -383,6 +398,16 @@ func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
 	}
 	c.New(conn, h.conf.TCPOutBufSize)
 	c.W.configureCompression(*h.conf)
+	if h.streamOptions != nil {
+		c.streamCodec, err = startStreamSocket(conn, *h.streamOptions, h.conf, h.q, h.Lg)
+		if err != nil {
+			h.Lg.Warn("stream preamble failed", zap.Error(err))
+			_ = c.Close()
+			c.Available.Store(false)
+			h.setHostAvailability()
+			return
+		}
+	}
 	c.Available.Store(true)
 	h.setHostAvailability()
 }

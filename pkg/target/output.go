@@ -72,6 +72,21 @@ func (q *recQueue) accountTCPWrite(r tcpWriteResult) {
 	s.flushedPlaintextBytes += int64(r.bytes)
 }
 
+// Rejected points were accepted by the relay queue. Remove them from pending
+// without reporting a successful socket write.
+func (q *recQueue) accountStreamDrop(bytes int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.output == nil {
+		return
+	}
+	s := q.output
+	s.pendingRecords--
+	s.pendingBytes -= int64(bytes)
+	s.ms.PendingRecords.Dec()
+	s.ms.PendingBytes.Sub(float64(bytes))
+}
+
 func (q *recQueue) reportTCPShutdown(lg *zap.Logger, abandoning bool) (records, bytes int64) {
 	q.mu.Lock()
 	if q.output == nil {

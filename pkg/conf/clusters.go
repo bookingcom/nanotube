@@ -97,8 +97,8 @@ func (h Host) validateStream() error {
 	if h.Stream && h.GRPC {
 		return errors.New("stream and grpc are mutually exclusive")
 	}
-	if s.MaxRows < 0 || s.MaxRows > 1<<20 {
-		return errors.New("stream max_rows must be between 0 and 1048576")
+	if s.MaxRows < 0 || s.MaxRows > 64<<10 {
+		return errors.New("stream max_rows must be between 0 and 65536")
 	}
 	if s.MaxBytes < 0 || s.MaxBytes > 4<<20 {
 		return errors.New("stream max_bytes must be between 0 and 4194304")

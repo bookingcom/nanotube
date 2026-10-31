@@ -23,7 +23,7 @@ func newStreamMetrics() *StreamMetrics {
 		Names:   counter("stream_names_defined_total", "Name definitions encoded, including retry attempts."),
 		Resets:  counter("stream_dictionary_resets_total", "Dictionary resets encoded after reaching the per-connection name cap."),
 		Records: counter("stream_records_encoded_total", "Points encoded, including retry attempts."),
-		Dropped: counter("stream_records_dropped_total", "Points rejected by go-carbon plaintext numeric parsing, including NaN values and timestamps."),
+		Dropped: counter("stream_records_dropped_total", "Points rejected by numeric parsing (including NaN) or codec size limits."),
 	}
 }
 
