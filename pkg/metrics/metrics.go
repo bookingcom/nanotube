@@ -26,8 +26,10 @@ type Prom struct {
 
 	RewrittenRecsTotal prometheus.Counter
 
-	BlackholedRecs prometheus.Counter
-	ErrorRecs      prometheus.Counter
+	BlackholedRecs                                        prometheus.Counter
+	ErrorRecs                                             prometheus.Counter
+	RouteCacheHits, RouteCacheMisses, RouteCacheEvictions prometheus.Counter
+	RouteCacheBytes                                       prometheus.Gauge
 
 	ActiveTCPConnections  prometheus.Gauge
 	InConnectionsTotalTCP prometheus.Counter
@@ -55,7 +57,11 @@ type Prom struct {
 // This does not include metrics registration.
 func New() *Prom {
 	return &Prom{
-		TCP: newTCPMetrics(),
+		RouteCacheHits:      prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_hits_total", Help: "Raw path route cache hits."}),
+		RouteCacheMisses:    prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_misses_total", Help: "Raw path route cache misses."}),
+		RouteCacheEvictions: prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_evictions_total", Help: "Entries removed from the route cache."}),
+		RouteCacheBytes:     prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "route_cache_bytes", Help: "Conservatively accounted retained route cache bytes, including index storage; excludes transient worker references and GC garbage."}),
+		TCP:                 newTCPMetrics(),
 		InRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "in_records_total",
@@ -202,6 +208,11 @@ func New() *Prom {
 // Register registers the metrics. It fatally fails and exits if metrics fail to register.
 // Meant to be called from main and fail completely if something goes wrong.
 func Register(m *Prom, cfg *conf.Main) {
+	for _, c := range []prometheus.Collector{m.RouteCacheHits, m.RouteCacheMisses, m.RouteCacheEvictions, m.RouteCacheBytes} {
+		if err := prometheus.Register(c); err != nil {
+			log.Fatalf("error registering route cache metric: %v", err)
+		}
+	}
 	if err := m.TCP.register(prometheus.DefaultRegisterer, !cfg.LessMetrics); err != nil {
 		log.Fatalf("error registering TCP output metrics: %v", err)
 	}

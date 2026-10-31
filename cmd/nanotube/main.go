@@ -132,7 +132,7 @@ func main() {
 		log.Fatalf("error launching listener, %v", err)
 	}
 
-	procDone := ProcessBuf(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms)
+	procDone := processBuf(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms, newRouteCache(cfg.RouteCacheBytes, ms))
 	done := clusters.Send(procDone)
 
 	// SIGTERM gracefully terminates with timeout
