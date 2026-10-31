@@ -25,3 +25,36 @@ Optionally, it is possible to apply the [rewrite rules](rewrite.toml). This is h
   - if `copy` is `true` the original metric is copied and sent directly to be routed skipping the following re-writes. `copy` is `false` by default.
 
 See [TCP output compression](../tcp-output-compression.md) for global zstd defaults, cluster/host canaries, metrics, and rollout order.
+## Binary stream destinations
+
+Set `stream = true` on an individual host to send go-carbon's binary stream
+protocol over TCP. Plaintext remains the default. The destination must enable
+its stream listener; stream output cannot share a host entry with `grpc = true`.
+`mtcp` works with either TCP format. Each connection starts with a preamble and
+an empty dictionary, including after reconnects.
+
+The optional `[cluster.hosts.stream_options]` table sets `max_rows` (default
+4096), `max_bytes` (default 1048576), `flush_period_ms` (default 1000), `zstd`
+(default false), and `max_names` (default 4194304). Frames flush at their row or
+byte bound, periodically, and on shutdown. The delay cannot exceed one second
+or the positive main-config `TCPOutBufFlushPeriodSec`. A zero plaintext flush
+period does not disable stream flushing. The name dictionary resets when a new
+name would exceed its cap. Each MTCP connection has its own cap and memory cost.
+There is no cluster-level transport default, matching the existing `grpc` and
+`mtcp` configuration style.
+
+Numeric fields use go-carbon's plaintext parsing: both are parsed as float64,
+timestamps are truncated to int64, and invalid numbers or NaN values/timestamps
+are dropped and counted in `nanotube_stream_records_dropped_total`.
+
+Stream counters `nanotube_stream_frames_total`,
+`nanotube_stream_names_defined_total`, `nanotube_stream_dictionary_resets_total`,
+and `nanotube_stream_records_encoded_total` have `cluster` and `upstream_host`
+labels. They count encoding attempts, including retries. The existing
+`nanotube_tcp_socket_written_bytes_total` counts actual wire bytes, including
+preambles, compressed frames, failed prefixes, and retries. Pending-byte gauges
+continue to use equivalent plaintext bytes for consistent queue accounting.
+
+Queue limits, reconnect backoff, idle refresh, and full-buffer replay retain the
+TCP sender's behavior. Stream has no receiver acknowledgements: an uncertain
+write may be replayed and produce duplicates, as with plaintext TCP.
