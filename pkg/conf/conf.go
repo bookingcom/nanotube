@@ -67,6 +67,10 @@ type Main struct {
 	// Default: 0.
 	WorkerPoolSize int
 
+	// Total retained route cache budget in bytes, shared by processing workers.
+	// Zero disables caching. Nonzero values must be at least 65536.
+	RouteCacheBytes uint64
+
 	// Timeout for dropping an incoming connection if no data is sent in.
 	IncomingConnIdleTimeoutSec uint32
 
@@ -187,6 +191,9 @@ func ReadMain(r io.Reader) (Main, error) {
 	}
 	if cfg.ClustersConfig == "" {
 		return cfg, errors.New("missing mandatory ClustersConfig setting")
+	}
+	if cfg.RouteCacheBytes != 0 && (cfg.RouteCacheBytes < 65536 || cfg.RouteCacheBytes > uint64(^uint(0)>>1)) {
+		return cfg, errors.New("RouteCacheBytes must be zero or between 65536 and the addressable memory limit")
 	}
 	if cfg.RulesConfig == "" {
 		return cfg, errors.New("missing mandatory RulesConfig setting")

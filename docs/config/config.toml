@@ -63,3 +63,7 @@ HostQueueLengthBuckets = 10
 
 ProcessingDurationBucketFactor = 2.0
 ProcessingDurationBuckets = 10
+# Optional cache shared by processing workers. Zero disables it; 2 GiB is a
+# starting budget for a few million names. See ../route-cache.md for accounting,
+# reload behavior and hit/miss/eviction metrics.
+RouteCacheBytes = 0

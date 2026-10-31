@@ -2,10 +2,13 @@ package rec
 
 import (
 	"bytes"
+	"compress/gzip"
 	"hash/fnv"
+	"io"
 	"math"
 	"math/rand"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -529,7 +532,21 @@ func TestParseRecCapture(t *testing.T) {
 	if path == "" {
 		t.Skip("NANOTUBE_CAPTURE not set")
 	}
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var reader io.Reader = f
+	if strings.HasSuffix(path, ".gz") {
+		z, err := gzip.NewReader(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer z.Close()
+		reader = z
+	}
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		t.Fatal(err)
 	}

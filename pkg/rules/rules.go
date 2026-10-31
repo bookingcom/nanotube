@@ -74,6 +74,15 @@ func Build(crs *conf.Rules, clusters target.Clusters, measureRegex bool, ms *met
 // compile precompiles regexps for perf and performs validation.
 func (rs Rules) compile() error {
 	for i := range rs.rules {
+		// A rule's destinations are immutable and can also serve as a cached
+		// route when it is the only matching rule.
+		unique := rs.rules[i].Targets[:0]
+		for _, cl := range rs.rules[i].Targets {
+			if !pushedBefore(unique, cl) {
+				unique = append(unique, cl)
+			}
+		}
+		rs.rules[i].Targets = unique
 		rs.rules[i].CompiledRE = make([]*regexp.Regexp, 0)
 		rs.rules[i].matchers = make([]matcher, 0, len(rs.rules[i].Regexs))
 		for _, re := range rs.rules[i].Regexs {
@@ -156,18 +165,7 @@ func (rs Rules) RouteRecBatch(r *rec.RecBytes, lg *zap.Logger, b *target.Batch) 
 				if pushedBefore(pushedTo, cl) {
 					continue
 				}
-				var err error
-				if bp, ok := cl.(target.BatchPusher); ok && b != nil {
-					err = bp.PushBytesBatch(r, rs.metrics, b)
-				} else {
-					err = cl.PushBytes(r, rs.metrics)
-				}
-				if err != nil {
-					lg.Error("push to cluster failed",
-						zap.Error(err),
-						zap.String("cluster", cl.GetName()),
-						zap.String("record", string(r.Serialize())))
-				}
+				rs.push(cl, r, lg, b)
 				pushedTo = append(pushedTo, cl)
 			}
 		}
@@ -185,6 +183,59 @@ func pushedBefore(pushedTo []target.ClusterTarget, cl target.ClusterTarget) bool
 		}
 	}
 	return false
+}
+
+// Route is an ordered, deduplicated set of cluster destinations. Host selection
+// and availability checks still happen on every PushBytesBatch call.
+type Route []target.ClusterTarget
+
+// Resolve evaluates the rules without pushing the record. Rules and their
+// cluster identities must remain immutable for the lifetime of a saved Route.
+func (rs Rules) Resolve(r *rec.RecBytes) Route {
+	var route Route
+	owned := false
+	for i := range rs.rules {
+		rl := &rs.rules[i]
+		if !rl.match(r, rs.measureRegex) {
+			continue
+		}
+		for _, cl := range rl.Targets {
+			if !pushedBefore(route, cl) {
+				if !owned {
+					if len(route) == 0 {
+						route = rl.Targets
+						break
+					}
+					route = append(Route(nil), route...)
+					owned = true
+				}
+				route = append(route, cl)
+			}
+		}
+		if !rl.Continue {
+			break
+		}
+	}
+	return route
+}
+
+// PushRoute sends a record to a saved Route using the regular target methods.
+func (rs Rules) PushRoute(route Route, r *rec.RecBytes, lg *zap.Logger, b *target.Batch) {
+	for _, cl := range route {
+		rs.push(cl, r, lg, b)
+	}
+}
+
+func (rs Rules) push(cl target.ClusterTarget, r *rec.RecBytes, lg *zap.Logger, b *target.Batch) {
+	var err error
+	if bp, ok := cl.(target.BatchPusher); ok && b != nil {
+		err = bp.PushBytesBatch(r, rs.metrics, b)
+	} else {
+		err = cl.PushBytes(r, rs.metrics)
+	}
+	if err != nil {
+		lg.Error("push to cluster failed", zap.Error(err), zap.String("cluster", cl.GetName()), zap.String("record", string(r.Serialize())))
+	}
 }
 
 // Match a record with any of the rule regexps

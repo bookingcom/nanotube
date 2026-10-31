@@ -3,6 +3,7 @@ package rec
 
 import (
 	"bytes"
+	"encoding/binary"
 	"hash/fnv"
 	"time"
 
@@ -23,12 +24,20 @@ type RecBytes struct { // nolint:revive
 	line []byte
 
 	pathHash    uint64
-	pathHashFor []byte
+	pathHashFor *byte
+	pathHashLen int
 }
 
 // ParseRec parses a single datapoint record from a string. Makes sure it's valid.
 // Performs normalizations.
 func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, lg *zap.Logger) (*RecBytes, error) {
+	return ParseRecWithPath(s, normalize, nowF, nil)
+}
+
+// ParseRecWithPath validates all fields as ParseRec does. resolve may supply a
+// previously normalized path and its FNV-1a hash. The supplied bytes are copied;
+// neither the input nor cache storage is retained by the returned record.
+func ParseRecWithPath(s []byte, normalize bool, nowF func() time.Time, resolve func([]byte) ([]byte, uint64, bool)) (*RecBytes, error) {
 	pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd, err := recFields(s)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to break record into fields")
@@ -40,7 +49,15 @@ func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, l
 	// The whole serialized record is built in one allocation; Path, Val and
 	// Time are capped sub-slices of it so appends to them cannot clobber it.
 	line := make([]byte, 0, (pathEnd-pathStart)+len(val)+len(tm)+3)
-	if normalize {
+	var path []byte
+	var hash uint64
+	var cached bool
+	if resolve != nil {
+		path, hash, cached = resolve(s[pathStart:pathEnd])
+	}
+	if cached {
+		line = append(line, path...)
+	} else if normalize {
 		line, err = appendNormalizedPath(line, s[pathStart:pathEnd])
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to normalize path")
@@ -58,13 +75,27 @@ func ParseRec(s []byte, normalize bool, shouldLog bool, nowF func() time.Time, l
 	valOff := pathLen + 1
 	timeOff := valOff + len(val) + 1
 
-	return &RecBytes{
+	r := &RecBytes{
 		Path:     line[:pathLen:pathLen],
 		Val:      line[valOff : valOff+len(val) : valOff+len(val)],
 		Time:     line[timeOff : timeOff+len(tm) : timeOff+len(tm)],
 		Received: nowF(),
 		line:     line,
-	}, nil
+	}
+	if cached {
+		r.SetPathHash(hash)
+	}
+	return r, nil
+}
+
+// SetPathHash seeds PathHash for the current Path. The caller must supply its
+// exact 64-bit FNV-1a hash. Reassigning Path still invalidates this value.
+func (r *RecBytes) SetPathHash(hash uint64) {
+	r.pathHash, r.pathHashLen = hash, len(r.Path)
+	r.pathHashFor = nil
+	if len(r.Path) > 0 {
+		r.pathHashFor = &r.Path[0]
+	}
 }
 
 func recFields(s []byte) (pathStart, pathEnd, valStart, valEnd, timeStart, timeEnd int, retErr error) {
@@ -164,11 +195,10 @@ func (r *RecBytes) lineIsCurrent() bool {
 // PathHash returns the 64-bit FNV-1a hash of Path. It is computed once and
 // cached until Path is reassigned.
 func (r *RecBytes) PathHash() uint64 {
-	if len(r.Path) == 0 || len(r.Path) != len(r.pathHashFor) || &r.Path[0] != &r.pathHashFor[0] {
+	if len(r.Path) == 0 || len(r.Path) != r.pathHashLen || &r.Path[0] != r.pathHashFor {
 		h := fnv.New64a()
 		_, _ = h.Write(r.Path)
-		r.pathHash = h.Sum64()
-		r.pathHashFor = r.Path
+		r.SetPathHash(h.Sum64())
 	}
 	return r.pathHash
 }
@@ -189,19 +219,38 @@ func trimDots(s []byte) (start int, end int, ok bool) {
 }
 
 func needsNormalization(s []byte, start, end int) bool {
-	for i := start; i <= end; i++ {
-		switch charClasses[s[i]] {
-		case charInvalid:
+	path := s[start : end+1]
+	// Classify two bytes per lookup, and find adjacent dots a word at a time.
+	// Overlap words by a byte so pairs spanning words are checked too.
+	for len(path) >= 8 {
+		w := binary.LittleEndian.Uint64(path)
+		bad := invalidPairs[uint16(w)] | invalidPairs[uint16(w>>16)] |
+			invalidPairs[uint16(w>>32)] | invalidPairs[uint16(w>>48)]
+		x := w ^ 0x2e2e2e2e2e2e2e2e
+		dots := (x - 0x0101010101010101) &^ x & 0x8080808080808080
+		// The zero-byte trick can also mark '/' following '.', but '/' is
+		// invalid, so that case must take the slow path anyway.
+		if bad != 0 || dots&(dots>>8) != 0 {
 			return true
-		case charDot:
-			if i == len(s)-1 || s[i+1] == '.' {
-				return true
-			}
+		}
+		path = path[7:]
+	}
+	for i, c := range path {
+		if charClasses[c] == charInvalid || c == '.' && i+1 < len(path) && path[i+1] == '.' {
+			return true
 		}
 	}
-
 	return false
 }
+
+var invalidPairs = func() (t [65536]uint8) { //nolint:gochecknoglobals // read-only byte-pair classification
+	for i := range t {
+		if !validChar(byte(i)) || !validChar(byte(i>>8)) {
+			t[i] = 1
+		}
+	}
+	return t
+}()
 
 const (
 	charInvalid = iota
