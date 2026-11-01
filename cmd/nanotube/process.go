@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
@@ -21,7 +22,7 @@ func ProcessBuf(queue <-chan [][]byte, rules rules.Rules, rewrites rewrites.Rewr
 }
 
 func processBuf(queue <-chan [][]byte, rules rules.Rules, rewrites rewrites.Rewrites, workerPoolSize int,
-	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom, cache *routeCache) chan struct{} {
+	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom, cache *routeCache, budgets ...*in.BatchBudget) chan struct{} {
 	done := make(chan struct{})
 
 	if workerPoolSize < 1 {
@@ -34,7 +35,7 @@ func processBuf(queue <-chan [][]byte, rules rules.Rules, rewrites rewrites.Rewr
 	var wg sync.WaitGroup
 	for w := 0; w < int(workerPoolSize); w++ {
 		wg.Add(1)
-		go workerBuf(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics, cache)
+		go workerBuf(&wg, queue, rules, rewrites, shouldValidate, shouldLog, lg, metrics, cache, budgets...)
 	}
 	go func() {
 		wg.Wait()
@@ -145,11 +146,14 @@ func procBatch(s []byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNo
 }
 
 func workerBuf(wg *sync.WaitGroup, queue <-chan [][]byte, rules rules.Rules, rewrites rewrites.Rewrites,
-	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom, cache *routeCache) {
+	shouldValidate bool, shouldLog bool, lg *zap.Logger, metrics *metrics.Prom, cache *routeCache, budgets ...*in.BatchBudget) {
 	defer wg.Done()
 	b := target.NewBatch()
 	for j := range queue {
 		procBuf(j, rules, rewrites, shouldValidate, shouldLog, lg, metrics, b, cache)
+		if len(budgets) > 0 {
+			budgets[0].Release(j)
+		}
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 
 // AcceptAndListenTCPBuf is batched version of AcceptAndListenTCP.
 func AcceptAndListenTCPBuf(l net.Listener, queue chan<- [][]byte, term <-chan struct{},
-	rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger, stream ...StreamFactory) {
+	rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
 	defer connWG.Done()
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -67,7 +67,7 @@ loop:
 				delete(connections, conn)
 				mu.Unlock()
 			}()
-			readFromConnectionTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, stream...)
+			readFromConnectionTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, budget, stream...)
 		}()
 	}
 
@@ -86,7 +86,7 @@ loop:
 	wg.Wait()
 }
 
-func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, stream ...StreamFactory) {
+func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
 	defer func() {
 		err := conn.Close()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
@@ -104,7 +104,7 @@ func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan 
 			zap.String("sender", conn.RemoteAddr().String()))
 	}
 
-	scanForRecordsTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, stream...)
+	scanForRecordsTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, budget, stream...)
 }
 
 // deadlineReader arms the idle deadline before every read from the
@@ -146,7 +146,7 @@ func (a *recArena) copy(b []byte) []byte {
 	return a.chunk[off:len(a.chunk):len(a.chunk)]
 }
 
-func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, stream ...StreamFactory) {
+func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
 	reader := bufio.NewReaderSize(&deadlineReader{
 		conn:    conn,
 		timeout: time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second,
@@ -180,7 +180,11 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan stru
 	// size stays bufio.MaxScanTokenSize.
 	buf := make([]byte, bufio.MaxScanTokenSize)
 	sc.Buffer(buf, bufio.MaxScanTokenSize)
-	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms)
+	var budgets []*BatchBudget
+	if budget != nil {
+		budgets = append(budgets, budget)
+	}
+	qb := NewBatchChan(queue, int(cfg.MainQueueBatchSize), int(cfg.BatchFlushPerdiodSec), ms, budgets...)
 	defer qb.Close()
 
 	var rlTickerChan <-chan time.Time

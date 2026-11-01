@@ -65,6 +65,9 @@ type Main struct {
 
 	// The size on main queue between listen and routing. Refer to docs for details.
 	MainQueueSize uint64
+	// Charged TCP input batch bytes awaiting routing. Zero preserves drop-when-full.
+	// Nonzero enables TCP backpressure; one oversized batch can run in isolation.
+	TCPMainQueueBytes uint64
 	// Each host has it's own queue that contains records to be sent to it. This is the size of it.
 	// Refer to docs for more insight.
 	HostQueueSize uint64
@@ -266,6 +269,7 @@ func MakeDefault() Main {
 		ListenTCP: ":2003",
 
 		MainQueueSize:        1000,
+		TCPMainQueueBytes:    256 << 20,
 		HostQueueSize:        1000,
 		MainQueueBatchSize:   1000,
 		BatchFlushPerdiodSec: 5,

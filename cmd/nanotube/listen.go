@@ -14,14 +14,20 @@ import (
 	"github.com/facebookgo/grace/gracenet"
 	"github.com/libp2p/go-reuseport"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 )
 
 // Listen listens for incoming metric data
-func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom, stream ...in.StreamFactory) (chan [][]byte, error) {
+func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom, stream ...in.StreamFactory) (chan [][]byte, *in.BatchBudget, error) {
 	queue := make(chan []byte, cfg.MainQueueSize)
 	queueBuf := make(chan [][]byte, cfg.MainQueueSize)
+	budget := in.NewBatchBudget(cfg.TCPMainQueueBytes)
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Namespace: "nanotube", Name: "main_queue_batches", Help: "Input batches awaiting routing."}, func() float64 { return float64(len(queueBuf)) }))
 
+	if budget != nil {
+		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Namespace: "nanotube", Name: "tcp_main_queue_bytes", Help: "Conservatively charged TCP batch bytes awaiting routing, including active workers."}, budget.Bytes))
+	}
 	var connWG sync.WaitGroup
 
 	if cfg.K8sMode {
@@ -36,21 +42,21 @@ func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *con
 		if cfg.ListenTCP != "" {
 			ip, port, err := parseListenOption(cfg.ListenTCP)
 			if err != nil {
-				return nil, errors.Wrap(err, "error parsing ListenTCP option")
+				return nil, nil, errors.Wrap(err, "error parsing ListenTCP option")
 			}
 			l, err := n.ListenTCP("tcp", &net.TCPAddr{
 				IP:   ip,
 				Port: port,
 			})
 			if err != nil {
-				return nil, errors.Wrap(err,
+				return nil, nil, errors.Wrap(err,
 					"error while opening TCP port for listening")
 			}
 			lg.Info("Launch: Opened TCP connection for listening.", zap.String("ListenTCP", cfg.ListenTCP))
 
 			connWG.Add(1)
 
-			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, rateLimiters, cfg, &connWG, ms, lg, stream...)
+			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, rateLimiters, cfg, &connWG, ms, lg, budget, stream...)
 		}
 
 		if cfg.ListenUDP != "" {
@@ -58,7 +64,7 @@ func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *con
 
 			if err != nil {
 				lg.Error("error while opening UDP port for listening", zap.Error(err))
-				return nil, errors.Wrap(err, "error while opening UDP connection")
+				return nil, nil, errors.Wrap(err, "error while opening UDP connection")
 			}
 			lg.Info("Launch: Opened UDP connection for listening.", zap.String("ListenUDP", cfg.ListenUDP))
 
@@ -69,14 +75,14 @@ func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *con
 		if cfg.ListenGRPC != "" {
 			ip, port, err := parseListenOption(cfg.ListenGRPC)
 			if err != nil {
-				return nil, errors.Wrap(err, "error parsing ListenGRPC option")
+				return nil, nil, errors.Wrap(err, "error parsing ListenGRPC option")
 			}
 			l, err := n.ListenTCP("tcp", &net.TCPAddr{
 				IP:   ip,
 				Port: port,
 			})
 			if err != nil {
-				return nil, errors.Wrap(err,
+				return nil, nil, errors.Wrap(err,
 					"error while opening TCP port for GRPC listening")
 			}
 			lg.Info("Launch: Started GRPC server.", zap.String("ListenGRPC", cfg.ListenGRPC))
@@ -94,7 +100,7 @@ func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *con
 		close(queue)
 	}()
 
-	return queueBuf, nil
+	return queueBuf, budget, nil
 }
 
 // parse "ip:port" string that is used for ListenTCP and ListenUDP config options

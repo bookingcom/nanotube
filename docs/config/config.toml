@@ -20,7 +20,11 @@ ListenUDP = ""
 
 UDPOSBufferSize = 0
 
+# MainQueueSize counts batches, each with up to MainQueueBatchSize + 1 records.
 MainQueueSize = 100000
+# Bound queued TCP batch memory and apply TCP backpressure while routing lags.
+# Default 256 MiB; zero restores the legacy drop-when-full input policy.
+TCPMainQueueBytes = 268435456
 HostQueueSize = 50000
 
 IncomingConnIdleTimeoutSec = 90
