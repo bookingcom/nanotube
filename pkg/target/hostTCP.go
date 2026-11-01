@@ -9,10 +9,12 @@ import (
 // HostTCP will represent TCP host.
 // It's a stub for now, its role is currently carried out by the Host struct.
 type HostTCP struct {
-	Host
+	*Host
 }
 
 // NewHostTCP constructs a new TCP target host.
 func NewHostTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.Logger, ms *metrics.Prom) *HostTCP {
-	return &HostTCP{*ConstructHost(clusterName, mainCfg, hostCfg, lg, ms)}
+	// Initial connection checks mutate the constructed Host asynchronously.
+	// Keep its identity, availability flag and connection mutex together.
+	return &HostTCP{ConstructHost(clusterName, mainCfg, hostCfg, lg, ms)}
 }

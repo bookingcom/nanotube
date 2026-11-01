@@ -23,10 +23,11 @@ type ClusterTarget interface {
 
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
 type Cluster struct {
-	Name  string
-	Hosts []Target // ordered by index
-	Hm    sync.RWMutex
-	Type  string
+	Name   string
+	Hosts  []Target // ordered by index
+	Hm     sync.RWMutex
+	Type   string
+	sticky *stickyCluster
 }
 
 func (cl *Cluster) availHostsList() []Target {
@@ -50,6 +51,9 @@ func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
 		// Same host as resolveHosts picks; the path hash is computed once per
 		// record and shared by every jump cluster it is routed to.
 		cl.Hosts[jump.Hash(r.PathHash(), len(cl.Hosts))].Push(r)
+		return nil
+	case conf.StickyCluster:
+		cl.sticky.route(r).Push(r)
 		return nil
 	}
 
@@ -81,6 +85,9 @@ func (cl *Cluster) PushBytesBatch(r *rec.RecBytes, metrics *metrics.Prom, b *Bat
 		return nil
 	case conf.JumpCluster:
 		b.add(cl.Hosts[jump.Hash(r.PathHash(), len(cl.Hosts))], r)
+		return nil
+	case conf.StickyCluster:
+		b.add(cl.sticky.route(r), r)
 		return nil
 	}
 
@@ -136,6 +143,9 @@ func (cl *Cluster) resolveHosts(path []byte, ms *metrics.Prom) ([]Target, error)
 // The sending is stopped on demand. Wait-group should be marked as done after
 // finished.
 func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
+	if cl.sticky != nil {
+		go cl.sticky.monitor(finish)
+	}
 	// launch streaming on all hosts and wait until it's finished
 	go func() {
 		defer cwg.Done()

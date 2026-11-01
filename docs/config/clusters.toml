@@ -49,3 +49,16 @@ type = 'toall'
     flush_period_ms = 1000
     zstd = false
     max_names = 4194304
+
+# Interchangeable relays: stable name affinity with health-aware failover.
+# All clients must use the same endpoint strings and ports; index is unused.
+# See ../sticky-clusters.md for recovery, queue and delivery semantics.
+[[cluster]]
+name = 'sticky-relays'
+type = 'sticky'
+    [[cluster.hosts]]
+    name = 'relay-a.example.net'
+    port = 2003
+    [[cluster.hosts]]
+    name = 'relay-b.example.net'
+    port = 2003

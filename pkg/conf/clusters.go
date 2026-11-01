@@ -24,6 +24,9 @@ const JumpCluster string = "jump"
 // only to these
 const LB string = "lb"
 
+// StickyCluster uses endpoint-keyed rendezvous hashing with health-aware failover.
+const StickyCluster string = "sticky"
+
 // ToallCluster broadcasts records to all hosts in the cluster.
 const ToallCluster string = "toall"
 
@@ -32,7 +35,7 @@ const ToallCluster string = "toall"
 const BlackholeCluster string = "blackhole"
 
 // Cluster is the config of a single cluster.
-// Cluster type can be either *toall* or *jump*.
+// Cluster type can be toall, jump, lb, or sticky.
 type Cluster struct {
 	Name        string `toml:"name"`
 	Type        string `toml:"type"`
@@ -148,6 +151,9 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 			return cls, fmt.Errorf("cluster with index %d does not have any hosts", idx)
 		}
 		for _, host := range cluster.Hosts {
+			if cluster.Type == StickyCluster && (host.Name == "" || host.GRPC) {
+				return cls, fmt.Errorf("sticky cluster %s requires named TCP hosts", cluster.Name)
+			}
 			if err := host.validateStream(); err != nil {
 				return cls, errors.Wrapf(err, "host %s in cluster %s", host.Name, cluster.Name)
 			}

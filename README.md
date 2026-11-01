@@ -51,6 +51,12 @@ See [here](docs/record_parsing.md) for more details.
 
 The support of [Open Telemetry gRPC](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto) is experimental.
 
+## Relay pool affinity
+
+Use [`type = 'sticky'`](docs/sticky-clusters.md) for interchangeable TCP relays
+to keep each normalized metric name on one relay, with deterministic failover
+and a recovery delay.
+
 ## Zero-downtime reload
 
 Nanotube supports zero-downtime reload that can be triggered with `USR2` signal. It will update the binary and try to load updated config. If the config is invalid, the old instance will keep running.
