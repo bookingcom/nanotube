@@ -42,3 +42,32 @@ The report compares one connection and ten pinned connections, with zstd on/off,
 and includes initial name definitions and preambles. Only an incomplete final
 line is excluded and its byte count is reported. Keep samples and generated
 reports outside the repository.
+
+The complete relay executable, two separate go-carbon executables and real
+Whisper persistence can also be exercised through restarts:
+
+```sh
+python3 test/stream/restart_e2e.py --go-carbon /path/to/go-carbon --scratch /path/to/scratch
+```
+
+Compressed Whisper enables out-of-order storage so independent routing workers
+can deliver every timestamp even when their queue arrival order differs.
+
+The default run sends the same three million synthetic points to both stores,
+first with stream/plaintext and then with stream/zstd-plaintext. It restarts both
+stores with accepted-socket handoff after the first third and reloads nanotube
+with USR2 after the second third. The producer pauses at these boundaries; its
+store connections remain open across go-carbon's restart, and it reconnects to
+the replacement relay after graceful draining. Byte-level receiver tests cover
+interruptions inside preambles and frames.
+
+The oracle checks every name/value/timestamp through the stores' render API and
+compares SHA-256 checksums with the source. Independent receiver acceptance counts
+must equal the source count, including across the handoff: combined with every
+source point being present, this detects duplicates hidden by Whisper's last
+write semantics. Transparent localhost proxies count actual application wire
+bytes, including preambles and reload connection setup. Queues hold at least the
+complete bounded input, and generation is paced to avoid testing queue overflow.
+Generated configurations, data files and binaries are removed on exit; only the
+printed aggregate results need to be retained. This proves healthy restart/reload
+delivery; failed writes can still duplicate points without acknowledgements.
