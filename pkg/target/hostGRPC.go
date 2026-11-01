@@ -89,23 +89,28 @@ func (h *HostGRPC) Stream(wg *sync.WaitGroup) {
 			}
 
 			if stream != nil {
-				time, err := strconv.ParseFloat(string(r.Time), 64)
-				if err != nil {
-					h.Lg.Warn("failed to parse record timestamp", zap.Error(err))
-					continue
+				val, timestamp, typed := r.TypedValues()
+				seconds := float64(timestamp)
+				if !typed {
+					seconds, err = strconv.ParseFloat(string(r.Time), 64)
+					if err != nil {
+						h.Lg.Warn("failed to parse record timestamp", zap.Error(err))
+						continue
+					}
+					val, err = strconv.ParseFloat(string(r.Val), 64)
+					if err != nil {
+						h.Lg.Warn("failed to parse record value", zap.Error(err))
+						continue
+					}
 				}
-				val, err := strconv.ParseFloat(string(r.Val), 64)
-				if err != nil {
-					h.Lg.Warn("failed to parse record value", zap.Error(err))
-					continue
-				}
+
 				pbR := otmetrics.Metric{
 					Name: string(r.Path),
 					Data: &otmetrics.Metric_DoubleGauge{
 						DoubleGauge: &otmetrics.DoubleGauge{
 							DataPoints: [](*otmetrics.DoubleDataPoint){
 								&otmetrics.DoubleDataPoint{
-									TimeUnixNano: uint64(time) * 1000 * 1000 * 1000,
+									TimeUnixNano: uint64(seconds) * 1000 * 1000 * 1000,
 									Value:        val,
 								},
 							},

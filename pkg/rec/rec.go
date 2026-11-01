@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash/fnv"
+	"math"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -14,10 +16,14 @@ import (
 
 // RecBytes represents a single piece of data (a datapoint) that can be sent.
 type RecBytes struct { // nolint:revive
-	streamToken uint64 // first for atomic alignment on 32-bit platforms
-	Path        []byte
-	Val         []byte
-	Time        []byte
+	streamToken  uint64 // first for atomic alignment on 32-bit platforms
+	Path         []byte
+	Val          []byte
+	Time         []byte
+	typed        bool
+	value        float64
+	timestamp    int64
+	numericBytes int
 
 	Received time.Time
 
@@ -162,8 +168,70 @@ func isWhitespace(c byte) bool {
 	return c == byte(' ') || c == byte('\t')
 }
 
-// Serialize makes record into a string ready to be sent via TCP w/ line protocol.
+// NewTyped borrows an immutable, owned routing-plan path. That path must remain
+// alive while records are queued; a Go slice retains it across dictionary resets.
+func NewTyped(path []byte, value float64, timestamp int64) *RecBytes {
+	var scratch [64]byte
+	b := strconv.AppendFloat(scratch[:0], value, 'g', -1, 64)
+	b = strconv.AppendInt(b, timestamp, 10)
+	return &RecBytes{Path: path, typed: true, value: value, timestamp: timestamp, numericBytes: len(b)}
+}
+
+// TypedValues exposes numeric input without altering legacy textual consumers.
+func (r *RecBytes) TypedValues() (float64, int64, bool) { return r.value, r.timestamp, r.typed }
+
+// Values avoids decimal parsing for typed input and matches the stream output's
+// legacy numeric validation for textual records.
+func (r *RecBytes) Values() (float64, int64, bool) {
+	if r.typed {
+		return r.value, r.timestamp, !math.IsNaN(r.value)
+	}
+	v, err := strconv.ParseFloat(string(r.Val), 64)
+	if err != nil || math.IsNaN(v) {
+		return 0, 0, false
+	}
+	ts, err := strconv.ParseFloat(string(r.Time), 64)
+	if err != nil || math.IsNaN(ts) {
+		return 0, 0, false
+	}
+	return v, int64(ts), true
+}
+
+// PlainSize is the equivalent canonical plaintext size, including newline.
+func (r *RecBytes) PlainSize() int {
+	if r.typed {
+		return len(r.Path) + r.numericBytes + 3
+	}
+	return len(r.Path) + len(r.Val) + len(r.Time) + 3
+}
+
+// NormalizedPath borrows immutable input when no bytes need changing. The caller
+// must own that input independently of any decoder arena reused on reset.
+func NormalizedPath(path []byte, normalize bool) ([]byte, error) {
+	if !normalize {
+		return path, nil
+	}
+	start, end, ok := trimDots(path)
+	if !ok {
+		return nil, errors.New("path contains only dots")
+	}
+	if !needsNormalization(path, start, end) {
+		return path[start : end+1 : end+1], nil
+	}
+	return appendNormalizedPath(nil, path)
+}
+
+// Serialize makes a record ready for plaintext TCP, including typed records.
 func (r *RecBytes) Serialize() []byte {
+	if r.typed {
+		b := make([]byte, 0, r.PlainSize())
+		b = append(b, r.Path...)
+		b = append(b, ' ')
+		b = strconv.AppendFloat(b, r.value, 'g', -1, 64)
+		b = append(b, ' ')
+		b = strconv.AppendInt(b, r.timestamp, 10)
+		return append(b, '\n')
+	}
 	res := make([]byte, 0, len(r.Path)+len(r.Time)+len(r.Val)+3)
 	res = append(res, r.Path...)
 	res = append(res, ' ')
@@ -310,6 +378,7 @@ func appendNormalizedPath(dst []byte, s []byte) ([]byte, error) {
 // Copy returns a deep copy of the record
 func (r RecBytes) Copy() (*RecBytes, error) {
 	cpy := &RecBytes{
+		typed: r.typed, value: r.value, timestamp: r.timestamp, numericBytes: r.numericBytes,
 		Received: r.Received,
 		Path:     make([]byte, len(r.Path)),
 		Val:      make([]byte, len(r.Val)),

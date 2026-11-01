@@ -15,6 +15,7 @@ import socket
 import struct
 import subprocess
 import tempfile
+import tarfile
 import threading
 import time
 from e2e import port
@@ -122,8 +123,14 @@ def check_store(http_port, names, total, base, timeout=90):
         count = 0
         for metric_id, name in enumerate(names):
             params = urllib.parse.urlencode(dict(target=name, **{'from': base-1, 'until': base+(total+len(names)-1)//len(names), 'format': 'json'}))
-            with urllib.request.urlopen(f'http://127.0.0.1:{http_port}/render/?'+params, timeout=15) as response:
-                answer = json.loads(response.read())
+            try:
+                with urllib.request.urlopen(f'http://127.0.0.1:{http_port}/render/?'+params, timeout=15) as response:
+                    answer = json.loads(response.read())
+            except urllib.error.HTTPError as error:
+                if error.code != 404: raise
+                # Recovered indexes and lazy checkpoint persistence can lag
+                # acceptance. Retry missing series within the existing deadline.
+                continue
             for series in answer.get('metrics', []):
                 start = series.get('startTime', series.get('start_time', series.get('StartTime')))
                 step = series.get('stepTime', series.get('step_time', series.get('StepTime')))
@@ -158,25 +165,30 @@ def expected_checksum(names, total, base):
     return digest.hexdigest()
 
 
-def run_case(root, carbon_binary, relay_binary, mode, total, base):
-    root.mkdir()
-    processes, groups, logs, proxies = [], [], [], []
-    carbon_ports, http_ports, prom_ports, configs = [], [], [], []
-    old_counts = [0, 0]
-    names = ['example.'+'application.component.worker.region.zone.'*5+f'metric_{i:04d}' for i in range(256)]
-    try:
-        for index in range(2):
-            d = root/str(index)
-            d.mkdir()
-            (d/'data').mkdir()
-            (d/'dump').mkdir()
-            carbon_ports.append(port())
-            http_ports.append(port())
-            prom_ports.append(port())
-            (d/'schemas.conf').write_text('[all]\npattern = .*\nretentions = 1s:6h\n')
-            config = d/'carbon.conf'
-            # A relative dump path keeps Unix socket names short on all platforms.
-            config.write_text(f'''[common]
+class RustProducer:
+    """A persistent native producer, paused only at verified drain boundaries."""
+    def __init__(self, binary, incoming, names_file, base, processes):
+        self.process = subprocess.Popen([str(binary), f'127.0.0.1:{incoming}', str(names_file), str(base)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        processes.append(self.process)
+        self.wire_bytes = 10
+    def send_points(self, start, count):
+        self.process.stdin.write(f'send {start} {count}\n')
+        self.process.stdin.flush()
+        answer = self.process.stdout.readline().split()
+        if len(answer) != 4 or answer[:2] != ['sent', str(count)]:
+            raise AssertionError(f'native producer failed: {answer}')
+        self.wire_bytes += int(answer[3])
+    def close(self):
+        self.process.stdin.write('quit\n'); self.process.stdin.flush()
+        self.process.stdin.close()
+        if self.process.wait(timeout=10) != 0:
+            raise AssertionError('native producer failed during close')
+
+
+def carbon_config(d, incoming, http, prom):
+    """Shared real receiver configuration for local restart oracles."""
+    return f'''[common]
 user = ""
 metric-endpoint = ""
 metric-interval = "100ms"
@@ -204,14 +216,14 @@ enabled = false
 enabled = false
 [tcp]
 enabled = true
-listen = "127.0.0.1:{carbon_ports[index]}"
+listen = "127.0.0.1:{incoming}"
 [pickle]
 enabled = false
 [grpc]
 enabled = false
 [carbonserver]
 enabled = true
-listen = "127.0.0.1:{http_ports[index]}"
+listen = "127.0.0.1:{http}"
 scan-frequency = "1s"
 trie-index = true
 concurrent-index = true
@@ -226,13 +238,34 @@ enabled = false
 enabled = true
 [pprof]
 enabled = false
-listen = "127.0.0.1:{prom_ports[index]}"
+listen = "127.0.0.1:{prom}"
 [dump]
 enabled = true
 path = "dump"
 restore-per-second = 0
 handoff-supervisor = true
-''')
+'''
+
+
+def run_case(root, carbon_binary, relay_binary, mode, total, base, rust_producer=None):
+    root.mkdir()
+    processes, groups, logs, proxies = [], [], [], []
+    carbon_ports, http_ports, prom_ports, configs = [], [], [], []
+    old_counts = [0, 0]
+    names = ['example.'+'application.component.worker.region.zone.'*5+f'metric_{i:04d}' for i in range(256)]
+    try:
+        for index in range(2):
+            d = root/str(index)
+            d.mkdir()
+            (d/'data').mkdir()
+            (d/'dump').mkdir()
+            carbon_ports.append(port())
+            http_ports.append(port())
+            prom_ports.append(port())
+            (d/'schemas.conf').write_text('[all]\npattern = .*\nretentions = 1s:6h\n')
+            config = d/'carbon.conf'
+            # A relative dump path keeps Unix socket names short on all platforms.
+            config.write_text(carbon_config(d, carbon_ports[index], http_ports[index], prom_ports[index]))
             configs.append(config)
 
         def start_carbon(index):
@@ -294,7 +327,14 @@ SendTimeoutSec = 30
         groups.append(relay.pid)
         print(f"LOCAL_PROCESS_GROUP {relay.pid}", flush=True)
         wait_port(prom)
-        producer = socket.create_connection(('127.0.0.1', incoming), timeout=30)
+        names_file = root/'producer-names.txt'
+        names_file.write_text('\n'.join(names)+'\n')
+        def new_producer():
+            if rust_producer:
+                return RustProducer(rust_producer, incoming, names_file, base, processes)
+            return socket.create_connection(('127.0.0.1', incoming), timeout=30)
+        producer = new_producer()
+        input_wire_bytes = 0
         restart_errors = []
         restart = None
 
@@ -311,7 +351,10 @@ SendTimeoutSec = 30
         reloaded = False
         for start in range(0, total, 4096):
             data = ''.join(f'{names[i % len(names)]} {float(i % 8192)/8:.17g} {base+i//len(names)}\n' for i in range(start, min(start+4096,total))).encode()
-            producer.sendall(data)
+            if rust_producer:
+                producer.send_points(start, min(4096, total-start))
+            else:
+                producer.sendall(data)
             time.sleep(.005)  # Bound generator bursts independently of relay throughput.
             plain_bytes += len(data)
             if start >= total//3 and restart is None:
@@ -328,8 +371,13 @@ SendTimeoutSec = 30
                 restart.join(65)
                 if restart.is_alive() or restart_errors:
                     raise RuntimeError(f'carbon restart failed: {restart_errors}')
+                # Reload closes input connections rather than transferring decoder
+                # dictionaries. First prove all submitted rows reached both stores.
+                for index, p in enumerate(prom_ports):
+                    wait_counter(p, min(start+4096,total)-old_counts[index])
                 relay.send_signal(signal.SIGUSR2)
                 producer.close()
+                if rust_producer: input_wire_bytes += producer.wire_bytes
                 relay.wait(timeout=60)
                 # USR2 starts a replacement which owns the inherited listener.
                 entries = [json.loads(line) for line in relay_log_path.read_text().splitlines() if line.startswith('{')]
@@ -337,9 +385,10 @@ SendTimeoutSec = 30
                 if not child:
                     raise AssertionError('reload did not start a replacement')
                 wait_port(prom)
-                producer = socket.create_connection(('127.0.0.1', incoming), timeout=30)
+                producer = new_producer()
                 reloaded = True
         producer.close()
+        if rust_producer: input_wire_bytes += producer.wire_bytes
         if restart:
             restart.join(65)
         if restart_errors:
@@ -359,7 +408,7 @@ SendTimeoutSec = 30
                 raise AssertionError(f'store {index} did not inherit accepted input sockets')
         if mode == 'plaintext' and proxies[1].bytes != plain_bytes:
             raise AssertionError('plaintext wire bytes differ from the exact source input')
-        result = dict(mode=mode, points_per_store=total, accepted=accepted, checksum=expected, stores=results,
+        result = dict(input_mode='rust-stream-zstd' if rust_producer else 'plaintext', input_wire_bytes=input_wire_bytes if rust_producer else plain_bytes, mode=mode, points_per_store=total, accepted=accepted, checksum=expected, stores=results,
                       wire_bytes=dict(stream=proxies[0].bytes, other=proxies[1].bytes),
                       wire_bytes_per_point=dict(stream=proxies[0].bytes/total, other=proxies[1].bytes/total),
                       plaintext_input_bytes=plain_bytes, carbon_handoff=True, nanotube_usr2=True)
@@ -385,7 +434,8 @@ SendTimeoutSec = 30
             try:
                 p.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                pass
+                p.kill()
+                p.wait(timeout=10)
         for proxy in proxies:
             proxy.close()
         for log in logs:
@@ -397,18 +447,27 @@ def main():
     parser.add_argument('--go-carbon', type=Path, required=True)
     parser.add_argument('--scratch', type=Path, required=True)
     parser.add_argument('--points', type=int, default=3000000)
+    parser.add_argument('--go-carbon-revision', help='export this immutable git revision to scratch before building')
+    parser.add_argument('--rust-producer', type=Path, help='prebuilt native command-driven producer executable')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     source = args.go_carbon.resolve()
     with tempfile.TemporaryDirectory(prefix='e2e-', dir=args.scratch) as temporary:
         root = Path(temporary)
         env = dict(os.environ, TMPDIR=str(root), GOTOOLCHAIN='go1.27.0')
+        if args.go_carbon_revision:
+            archive = root/'reference.tar'
+            with archive.open('wb') as output:
+                subprocess.run(['git','-C',str(source),'archive',args.go_carbon_revision],stdout=output,check=True)
+            source=root/'reference-source';source.mkdir()
+            with tarfile.open(archive) as tar:tar.extractall(source, **({'filter':'data'} if hasattr(tarfile,'data_filter') else {}))
+            archive.unlink()
         carbon, relay = root/'go-carbon', root/'nanotube'
         subprocess.run(['go','build','-o',str(carbon),'.'],cwd=source,env=dict(env,GOFLAGS='-mod=vendor'),check=True)
         subprocess.run(['go','build','-o',str(relay),'./cmd/nanotube'],cwd=repo,env=env,check=True)
         base = int(time.time())-(args.points+255)//256-60
         for mode in ['plaintext', 'zstd']:
-            run_case(root/mode, carbon, relay, mode, args.points, base)
+            run_case(root/mode, carbon, relay, mode, args.points, base, args.rust_producer.resolve() if args.rust_producer else None)
 
 
 if __name__ == '__main__':

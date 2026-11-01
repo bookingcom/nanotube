@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
+	"github.com/bookingcom/nanotube/pkg/in"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
@@ -127,7 +128,11 @@ func main() {
 	defer signal.Stop(sgn)
 
 	n := gracenet.Net{}
-	queue, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms)
+	queue, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms, func() in.StreamSink {
+		s := newStreamRouter(rules, rewrites, cfg.NormalizeRecords, lg, ms)
+		s.maxBytes = cfg.StreamInputRouteLimit()
+		return s
+	})
 	if err != nil {
 		log.Fatalf("error launching listener, %v", err)
 	}

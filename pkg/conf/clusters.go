@@ -37,10 +37,12 @@ const BlackholeCluster string = "blackhole"
 // Cluster is the config of a single cluster.
 // Cluster type can be toall, jump, lb, or sticky.
 type Cluster struct {
-	Name        string `toml:"name"`
-	Type        string `toml:"type"`
-	Hosts       []Host `toml:"hosts"`
-	Compression string `toml:"compression"`
+	Name          string        `toml:"name"`
+	Type          string        `toml:"type"`
+	Hosts         []Host        `toml:"hosts"`
+	Compression   string        `toml:"compression"`
+	Stream        bool          `toml:"stream"`
+	StreamOptions StreamOptions `toml:"stream_options"`
 }
 
 // Host is the config of a single machine to send metrics to.
@@ -151,6 +153,8 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 			if err := ValidateCompression(cluster.Hosts[i].Compression); err != nil {
 				return cls, err
 			}
+			cls.Cluster[idx].Hosts[i].Stream = cluster.Stream || cluster.Hosts[i].Stream
+			cls.Cluster[idx].Hosts[i].StreamOptions = cluster.Hosts[i].StreamOptions.Inherit(cluster.StreamOptions)
 			if cluster.Hosts[i].Compression == "" {
 				cls.Cluster[idx].Hosts[i].Compression = cluster.Compression
 			}
@@ -164,7 +168,7 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster {
 			return cls, fmt.Errorf("cluster with index %d does not have any hosts", idx)
 		}
-		for _, host := range cluster.Hosts {
+		for _, host := range cls.Cluster[idx].Hosts {
 			if cluster.Type == StickyCluster && (host.Name == "" || host.GRPC) {
 				return cls, fmt.Errorf("sticky cluster %s requires named TCP hosts", cluster.Name)
 			}
@@ -190,4 +194,29 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 		}
 	}
 	return cls, nil
+}
+
+// Inherit fills omitted connection settings from the cluster. Zero numeric
+// fields inherit; enabling zstd at either scope enables frame compression.
+func (s StreamOptions) Inherit(parent StreamOptions) StreamOptions {
+	if s.MaxRows == 0 {
+		s.MaxRows = parent.MaxRows
+	}
+	if s.MaxBytes == 0 {
+		s.MaxBytes = parent.MaxBytes
+	}
+	if s.FlushPeriodMS == 0 {
+		s.FlushPeriodMS = parent.FlushPeriodMS
+	}
+	if s.MaxNames == 0 {
+		s.MaxNames = parent.MaxNames
+	}
+	if s.DictionaryBytes == 0 {
+		s.DictionaryBytes = parent.DictionaryBytes
+	}
+	if s.PeerDictionaryBytes == 0 {
+		s.PeerDictionaryBytes = parent.PeerDictionaryBytes
+	}
+	s.Zstd = s.Zstd || parent.Zstd
+	return s
 }

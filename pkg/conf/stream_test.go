@@ -56,3 +56,21 @@ func TestStreamDefaults(t *testing.T) {
 		t.Fatalf("explicit options changed: %+v", got)
 	}
 }
+
+func TestClusterStreamInheritance(t *testing.T) {
+	for _, kind := range []string{LB, StickyCluster} {
+		c, err := ReadClustersConfig(strings.NewReader("[[cluster]]\nname='relays'\ntype='" + kind + "'\nstream=true\n[cluster.stream_options]\nzstd=true\ndictionary_bytes=8192\npeer_dictionary_bytes=1048576\n[[cluster.hosts]]\nname='127.0.0.1'\n[[cluster.hosts]]\nname='127.0.0.2'\n[cluster.hosts.stream_options]\ndictionary_bytes=16384\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, h := range c.Cluster[0].Hosts {
+			if !h.Stream || !h.StreamOptions.Zstd || h.StreamOptions.PeerDictionaryBytes != 1<<20 || h.StreamOptions.DictionaryBytes != 8192*(i+1) {
+				t.Fatalf("host %d: %+v", i, h)
+			}
+		}
+	}
+	_, err := ReadClustersConfig(strings.NewReader("[[cluster]]\nname='relays'\ntype='lb'\nstream=true\n[[cluster.hosts]]\nname='127.0.0.1'\ngrpc=true\n"))
+	if err == nil {
+		t.Fatal("inherited stream must reject grpc")
+	}
+}

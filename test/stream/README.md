@@ -84,3 +84,54 @@ complete bounded input, and generation is paced to avoid testing queue overflow.
 Generated configurations, data files and binaries are removed on exit; only the
 printed aggregate results need to be retained. This proves healthy restart/reload
 delivery; failed writes can still duplicate points without acknowledgements.
+
+To use a native producer for the input side, pass its prebuilt executable with
+`--rust-producer /path/to/producer`. The producer must implement the command
+interface documented in `RustProducer`. Pin a concurrently changing reference
+checkout with `--go-carbon-revision REV`; the harness exports that immutable
+revision under scratch and never changes the reference worktree. Missing series
+from an asynchronously recovered index are retried within the oracle deadline.
+All values, acceptance counts and final checksums must still match exactly.
+
+The process-CPU input benchmark compares plaintext, cached plaintext, and stream
+input into an actual compressed-stream output (the TCP receiver discards bytes):
+
+```sh
+python3 test/stream/input_bench.py --scratch /path/to/scratch \
+  --rust-producer /path/to/producer --points 2000000 --rounds 3
+```
+
+It uses 16,384 synthetic names, verifies every input/output row drains, and reports
+CPU from the relay process only via `wait4`. Startup, cold ID setup and shutdown
+are included; >99% of points use warm ID plans. Timing and compression depend on
+this stable-value fixture; these are local measurements, not fleet forecasts.
+
+`client_pool_e2e.py` adds a real client, three sticky relays and two real stores.
+Supply local binaries and a scratch directory. It checks exact identities and
+values, counts duplicate acceptance independently of last-write-wins storage,
+and reports losses under active relay USR2/kill and client restart. The store
+handoff case uses a drained source boundary and leaves relay sockets open.
+
+```sh
+python3 test/stream/client_pool_e2e.py --scratch /path/to/scratch \
+  --nanotube /path/to/nanotube --go-carbon /path/to/go-carbon --points 300000
+```
+
+`TestStreamClientPool` is an opt-in 40-relay sticky soak using the existing
+`rollupMinute` sparse 1–60 minute/churn model. It reports output CPU, actual wire
+bytes, post-GC sampled RSS, shared/connection dictionary bytes and exact drained
+records. `STREAM_CLIENT_NAMES` selects the name pool (default 1080000).
+`STREAM_CLIENT_FIXTURE` optionally exports priming names for `input_bench.py --names-file`; the input benchmark repeats that set rather than its sparse timing.
+Use `--nanotube` to reuse a prebuilt candidate. Retain the distinction between
+process CPU/high-water RSS in the input benchmark and sampled RSS in the soak.
+
+`NATIVE_STREAM_FIXTURES` enables input acceptance of independent native conformance
+fixtures, including raw/zstd, ordinary/bound/mixed IDs, resets and exact float bits.
+Both shared Go codec copies must still pass golden and bidirectional peer tests.
+
+Add `--via-client --modes plaintext stream` to the input benchmark to put a real
+sticky subnanotube before the measured relay. It retains the 4096-byte plaintext
+pending window for both transports, reports client CPU separately, and counts
+actual client-to-relay socket bytes. This distinguishes small-frame client costs
+from native producers using large frames; do not generalize one CPU result to
+the other transport cadence.

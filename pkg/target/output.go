@@ -36,7 +36,7 @@ func (q *recQueue) accountAccepted(rs []*rec.RecBytes) {
 	s.ms.PendingRecords.Add(float64(len(rs)))
 	var bytes int
 	for _, r := range rs {
-		bytes += len(r.Path) + len(r.Val) + len(r.Time) + 3
+		bytes += r.PlainSize()
 	}
 	s.pendingBytes += int64(bytes)
 	s.ms.PendingBytes.Add(float64(bytes))

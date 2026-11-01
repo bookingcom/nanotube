@@ -72,6 +72,16 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 		for i := range cc.Hosts {
 			h := &cc.Hosts[i]
 			if h.Stream {
+				// Relay clients retain no larger logical replay batch than the
+				// existing plaintext writer unless an operator opts in. Store
+				// clusters keep their established frame-size defaults.
+				if h.StreamOptions.MaxBytes == 0 && (cc.Type == conf.LB || cc.Type == conf.StickyCluster) {
+					bytes := mainCfg.TCPOutBufSize
+					if bytes <= 0 {
+						bytes = 4096
+					}
+					h.StreamOptions.MaxBytes = min(bytes, 4<<20)
+				}
 				h.StreamOptions = h.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec)
 				h.StreamOptions.DictionaryBytes = min(h.StreamOptions.DictionaryBytes, limit)
 			}

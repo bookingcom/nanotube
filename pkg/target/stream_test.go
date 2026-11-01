@@ -205,7 +205,7 @@ func TestStreamNumericDropsDrainAndPeriodicFlush(t *testing.T) {
 			old := &faultTCPConn{prefix: 1 << 24}
 			target, sender, ms := newStreamTestTarget(multi, 0, conf.StreamOptions{FlushPeriodMS: 10}, old)
 			rs := streamRecordsForTest(1, 1)
-			rs = append(rs, &rec.RecBytes{Path: []byte("example.invalid"), Val: []byte("NaN"), Time: []byte("1")}, &rec.RecBytes{Path: []byte("example.invalid"), Val: []byte("1"), Time: []byte("NaN")}, &rec.RecBytes{Path: []byte("example.invalid"), Val: []byte("bad"), Time: []byte("1")})
+			rs = append(rs, rec.NewTyped([]byte("example.invalid"), math.NaN(), 1700000000), &rec.RecBytes{Path: []byte("example.invalid"), Val: []byte("NaN"), Time: []byte("1")}, &rec.RecBytes{Path: []byte("example.invalid"), Val: []byte("1"), Time: []byte("NaN")}, &rec.RecBytes{Path: []byte("example.invalid"), Val: []byte("bad"), Time: []byte("1")})
 			for _, r := range rs {
 				target.Push(r)
 			}
@@ -227,7 +227,7 @@ func TestStreamNumericDropsDrainAndPeriodicFlush(t *testing.T) {
 			if len(points) != 1 {
 				t.Fatal("numeric rejects reached peer")
 			}
-			if testutil.ToFloat64(ms.Stream.For(map[string]string{"cluster": "example", "upstream_host": "127.0.0.1"}).Dropped) != 3 {
+			if testutil.ToFloat64(ms.Stream.For(map[string]string{"cluster": "example", "upstream_host": "127.0.0.1"}).Dropped) != 4 {
 				t.Fatal("numeric rejects not counted")
 			}
 			checkStreamAccounting(t, ms, 1, old.wire.Len())
