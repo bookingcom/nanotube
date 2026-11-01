@@ -29,6 +29,19 @@ connections. Stream benchmarks warm the name dictionaries first. `wire-B/record`
 includes headers; `ns/record` measures the sender loop; allocations are reported
 per queue chunk (up to 256 records).
 
+The larger Unix CPU benchmark compares zstd plaintext and zstd stream through
+the same per-host output harness: 250,000 distinct 80-140 byte names with shared
+prefixes, ten connections, four changing integer/short-decimal samples per name,
+one timestamp epoch, and shuffled input. Routing hashes are prepared before
+measurement. Both paths include queueing, accounting, compression and writes to
+a memory sink, excluding network/receiver CPU. Dictionary and buffer warmup is
+excluded. `cpu-ns/record` measures process user+system CPU; `ns/record` measures
+elapsed time. Run serially on an otherwise quiet machine:
+
+```sh
+go test ./pkg/target -run '^$' -bench '^BenchmarkStreamOutputCPU$' -cpu=1 -benchtime=3s -count=5
+```
+
 A private gzip sample can be measured in one cold pass without retaining the
 whole input in memory or printing any metric names:
 
