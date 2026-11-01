@@ -50,12 +50,10 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 			Name: cc.Name,
 			Type: cc.Type,
 		}
-		ms.NumberOfTargets.With(prometheus.Labels{"cluster": cl.Name}).Set(float64(len(cl.Hosts)))
-
 		switch cc.Type {
 		case conf.JumpCluster:
 			cl, err = getJumpCluster(cl, cc, clusterCfg, lg, ms)
-		case conf.BlackholeCluster, conf.ToallCluster, conf.LB:
+		case conf.BlackholeCluster, conf.ToallCluster, conf.LB, conf.StickyCluster:
 			for _, h := range cc.Hosts {
 				cl.Hosts = append(cl.Hosts, NewHost(cc.Name, clusterCfg, h, lg, ms))
 			}
@@ -63,6 +61,16 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 			return cls, fmt.Errorf("incorrect cluster type %s for cluster %s",
 				cl.Type, cl.Name)
 		}
+		if err != nil {
+			return cls, err
+		}
+		if cc.Type == conf.StickyCluster {
+			cl.sticky, err = newStickyCluster(cl, ms)
+			if err != nil {
+				return cls, err
+			}
+		}
+		ms.NumberOfTargets.With(prometheus.Labels{"cluster": cl.Name}).Set(float64(len(cl.Hosts)))
 
 		cls[cl.Name] = cl
 	}

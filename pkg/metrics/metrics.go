@@ -10,11 +10,14 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
-	TCP            *TCPMetrics
-	Stream         *StreamMetrics
-	InRecs         prometheus.Counter
-	InRecsBySource *prometheus.CounterVec
-	ThrottledRecs  prometheus.Counter
+	TCP             *TCPMetrics
+	Stream          *StreamMetrics
+	StickyRecords   *prometheus.CounterVec
+	StickyFailovers *prometheus.CounterVec
+	StickyUnhealthy *prometheus.GaugeVec
+	InRecs          prometheus.Counter
+	InRecsBySource  *prometheus.CounterVec
+	ThrottledRecs   prometheus.Counter
 
 	StateChangeHosts          *prometheus.CounterVec
 	StateChangeHostsTotal     prometheus.Counter
@@ -58,6 +61,9 @@ type Prom struct {
 // This does not include metrics registration.
 func New() *Prom {
 	return &Prom{
+		StickyRecords:       prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "sticky_records_total", Help: "Records admitted to sticky relay queues."}, []string{"cluster", "upstream_host"}),
+		StickyFailovers:     prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "sticky_failover_records_total", Help: "Records admitted to a relay other than their preferred sticky relay."}, []string{"cluster", "upstream_host"}),
+		StickyUnhealthy:     prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: "nanotube", Name: "sticky_unhealthy_relays", Help: "Sticky relays withheld due to connection failure, queue pressure, or recovery hysteresis."}, []string{"cluster"}),
 		RouteCacheHits:      prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_hits_total", Help: "Raw path route cache hits."}),
 		RouteCacheMisses:    prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_misses_total", Help: "Raw path route cache misses."}),
 		RouteCacheEvictions: prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_evictions_total", Help: "Entries removed from the route cache."}),
@@ -162,7 +168,7 @@ func New() *Prom {
 		NumberOfTargets: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "nanotube",
 			Name:      "number_of_targets",
-			Help:      "Number of targets by cluster as seen by LB. Only counted for LB clusters.",
+			Help:      "Number of configured targets by cluster.",
 		}, []string{"cluster"}),
 		GlobalRateLimiterBlockedReaders: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
@@ -210,6 +216,7 @@ func New() *Prom {
 // Register registers the metrics. It fatally fails and exits if metrics fail to register.
 // Meant to be called from main and fail completely if something goes wrong.
 func Register(m *Prom, cfg *conf.Main) {
+	prometheus.MustRegister(m.StickyRecords, m.StickyFailovers, m.StickyUnhealthy)
 	for _, c := range []prometheus.Collector{m.RouteCacheHits, m.RouteCacheMisses, m.RouteCacheEvictions, m.RouteCacheBytes} {
 		if err := prometheus.Register(c); err != nil {
 			log.Fatalf("error registering route cache metric: %v", err)

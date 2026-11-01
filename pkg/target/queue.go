@@ -177,6 +177,19 @@ func nextQueueID() int {
 	return int(lastQueueID.Add(1))
 }
 
+func targetQueue(t Target) *recQueue {
+	switch h := t.(type) {
+	case *HostTCP:
+		return h.q
+	case *Host:
+		return h.q
+	case *HostMTCP:
+		return h.q
+	default:
+		return nil
+	}
+}
+
 // Batch stages records per target host so that each host queue is locked once
 // per batch instead of once per record. A Batch belongs to one goroutine.
 // Records reach the hosts only on Flush; the order per host is preserved.

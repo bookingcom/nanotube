@@ -115,15 +115,7 @@ func (cls Clusters) ReportTCPShutdown(lg *zap.Logger, abandoning bool) bool {
 	var records, bytes int64
 	for _, cl := range cls {
 		for _, host := range cl.Hosts {
-			var q *recQueue
-			switch h := host.(type) {
-			case *HostTCP:
-				q = h.q
-			case *Host:
-				q = h.q
-			case *HostMTCP:
-				q = h.q
-			}
+			q := targetQueue(host)
 			if q != nil {
 				r, b := q.reportTCPShutdown(lg, abandoning)
 				records += r

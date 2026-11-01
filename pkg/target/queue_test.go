@@ -197,6 +197,7 @@ func TestHostMTCPDeliversAll(t *testing.T) {
 	var mu sync.Mutex
 	var lines []string
 	var connWG sync.WaitGroup
+	accepted := make(chan struct{}, 4)
 	go func() {
 		for {
 			c, err := l.Accept()
@@ -206,6 +207,7 @@ func TestHostMTCPDeliversAll(t *testing.T) {
 			connWG.Add(1)
 			go func() {
 				defer connWG.Done()
+				defer c.Close()
 				sc := bufio.NewScanner(c)
 				for sc.Scan() {
 					mu.Lock()
@@ -213,6 +215,7 @@ func TestHostMTCPDeliversAll(t *testing.T) {
 					mu.Unlock()
 				}
 			}()
+			accepted <- struct{}{}
 		}
 	}()
 
@@ -239,6 +242,16 @@ func TestHostMTCPDeliversAll(t *testing.T) {
 		}
 	}
 	bt.Flush()
+	// A successful dial/write can precede Accept. Closing the listener before
+	// every MTCP socket is accepted discards unread connections and can also
+	// race connWG.Add with Wait. Wait for registration of all receiver workers.
+	for range h.NumMTCP {
+		select {
+		case <-accepted:
+		case <-time.After(5 * time.Second):
+			t.Fatal("not all MTCP connections were accepted")
+		}
+	}
 	h.Stop()
 	wg.Wait()
 	for i := range h.MTCPs {
