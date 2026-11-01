@@ -8,9 +8,10 @@ import (
 )
 
 // tcpCompressionConfig resolves the host override after cluster inheritance.
-// gRPC construction shares Host, but does not use its TCP output buffer.
+// gRPC and stream bypass the plaintext TCP output buffer. Stream compression
+// is controlled only by stream_options.zstd, regardless of inherited defaults.
 func tcpCompressionConfig(c conf.Main, h conf.Host) conf.Main {
-	if h.GRPC {
+	if h.GRPC || h.Stream {
 		c.TCPOutCompression = ""
 		return c
 	}

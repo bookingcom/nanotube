@@ -63,7 +63,7 @@ func New() *Prom {
 		RouteCacheEvictions: prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_evictions_total", Help: "Entries removed from the route cache."}),
 		RouteCacheBytes:     prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "route_cache_bytes", Help: "Conservatively accounted retained route cache bytes, including index storage; excludes transient worker references and GC garbage."}),
 		TCP:                 newTCPMetrics(),
-		Stream: newStreamMetrics(),
+		Stream:              newStreamMetrics(),
 		InRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "in_records_total",

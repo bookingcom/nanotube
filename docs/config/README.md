@@ -73,3 +73,9 @@ Reconnecting a connection starts a fresh preamble and re-encodes only that
 connection's pending share; the other dictionaries keep their ids and deltas.
 The host's shared queue, availability and reconnect backpressure are unchanged.
 Plaintext MTCP continues to distribute whole queue chunks round-robin.
+
+Stream hosts ignore `TCPOutCompression` and cluster/host `compression` defaults.
+Only `stream_options.zstd` controls stream frame compression; no outer zstd
+wrapper is emitted. This lets stream and zstd-plaintext hosts share a cluster
+with a global compression default. Invalid compression names still fail normal
+configuration validation, even when a host selects stream.
