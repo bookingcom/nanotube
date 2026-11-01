@@ -56,6 +56,63 @@ type Host struct {
 	// Optional, number of TCP connections to open to the host.
 	MTCP        int    `toml:"mtcp"`
 	Compression string `toml:"compression"`
+	// Stream selects the go-carbon binary stream protocol on TCP connections.
+	Stream        bool          `toml:"stream"`
+	StreamOptions StreamOptions `toml:"stream_options"`
+}
+
+// StreamOptions bounds each connection's frames and name dictionary. Zero
+// values select defaults; these settings have no effect on plaintext hosts.
+type StreamOptions struct {
+	MaxRows       int  `toml:"max_rows"`
+	MaxBytes      int  `toml:"max_bytes"`
+	FlushPeriodMS int  `toml:"flush_period_ms"`
+	Zstd          bool `toml:"zstd"`
+	MaxNames      int  `toml:"max_names"`
+}
+
+// WithDefaults returns effective stream settings. Stream always flushes at
+// least once a second, even when periodic plaintext flushing is disabled.
+func (s StreamOptions) WithDefaults(tcpFlushSeconds uint32) StreamOptions {
+	if s.MaxRows == 0 {
+		s.MaxRows = 4096
+	}
+	if s.MaxBytes == 0 {
+		s.MaxBytes = 1 << 20
+	}
+	if s.FlushPeriodMS == 0 {
+		s.FlushPeriodMS = 1000
+	}
+	if tcpFlushSeconds > 0 && uint64(s.FlushPeriodMS) > uint64(tcpFlushSeconds)*1000 {
+		s.FlushPeriodMS = int(uint64(tcpFlushSeconds) * 1000)
+	}
+	if s.MaxNames == 0 {
+		s.MaxNames = 4 << 20
+	}
+	return s
+}
+
+func (h Host) validateStream() error {
+	s := h.StreamOptions
+	if h.Stream && h.GRPC {
+		return errors.New("stream and grpc are mutually exclusive")
+	}
+	if s.MaxRows < 0 || s.MaxRows > 64<<10 {
+		return errors.New("stream max_rows must be between 0 and 65536")
+	}
+	if s.MaxBytes < 0 || s.MaxBytes > 4<<20 {
+		return errors.New("stream max_bytes must be between 0 and 4194304")
+	}
+	if s.FlushPeriodMS < 0 || s.FlushPeriodMS > 1000 {
+		return errors.New("stream flush_period_ms must be between 0 and 1000")
+	}
+	if s.MaxNames < 0 || uint64(s.MaxNames) > 1<<32-1 {
+		return errors.New("stream max_names must fit a positive uint32")
+	}
+	if h.Stream && h.MTCP < 0 {
+		return errors.New("stream mtcp cannot be negative")
+	}
+	return nil
 }
 
 // ReadClustersConfig reads clusters set from a reader.
@@ -89,6 +146,11 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 		}
 		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster {
 			return cls, fmt.Errorf("cluster with index %d does not have any hosts", idx)
+		}
+		for _, host := range cluster.Hosts {
+			if err := host.validateStream(); err != nil {
+				return cls, errors.Wrapf(err, "host %s in cluster %s", host.Name, cluster.Name)
+			}
 		}
 		if cluster.Type == JumpCluster {
 			inxs := map[int]bool{}

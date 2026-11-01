@@ -32,7 +32,8 @@ type Host struct {
 	Lg *zap.Logger
 	Ms *metrics.Prom
 
-	conf *conf.Main
+	conf          *conf.Main
+	streamOptions *conf.StreamOptions
 
 	jitterEnabled        bool
 	rnd                  *rand.Rand
@@ -55,6 +56,7 @@ type Connection struct {
 	sync.Mutex
 	LastConnUse time.Time
 	W           *recordBuffer
+	streamCodec streamCodec
 	attempted   bool
 }
 
@@ -73,6 +75,11 @@ func (c *Connection) New(conn net.Conn, bufSize int) {
 // Overrides c.Conn.Close().
 // Use instead the default close.
 func (c *Connection) Close() error {
+	if c.streamCodec != nil {
+		c.streamCodec.close()
+		c.streamCodec = nil
+	}
+
 	if c.Conn == nil {
 		return nil
 	}
@@ -94,6 +101,11 @@ func NewHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg *zap.L
 	}
 	if hostCfg.MTCP > 1 {
 		return NewHostMTCP(clusterName, mainCfg, hostCfg, lg, ms)
+	}
+	if hostCfg.Stream {
+		// Keep the original Host pointer: an asynchronous initial check owns
+		// its connection and encoder, which must not be copied into HostTCP.
+		return ConstructHost(clusterName, mainCfg, hostCfg, lg, ms)
 	}
 	return NewHostTCP(clusterName, mainCfg, hostCfg, lg, ms)
 }
@@ -135,6 +147,10 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 	h.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	h.Ms = ms
 	h.Lg = lg.With(zap.Stringer("target_host", &h))
+	if hostCfg.Stream {
+		options := hostCfg.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec)
+		h.streamOptions = &options
+	}
 	if !hostCfg.GRPC {
 		h.q.trackTCP(ms.TCP.For(promLabels), clusterName, h.String())
 	}
@@ -186,6 +202,10 @@ func (h *Host) Stop() {
 // Exits when queue is closed and sending is finished.
 func (h *Host) Stream(wg *sync.WaitGroup) {
 	defer wg.Done()
+	if h.streamOptions != nil {
+		h.streamRecords(*h.streamOptions)
+		return
+	}
 	flushDone := make(chan struct{})
 	if h.conf.TCPOutBufFlushPeriodSec != 0 {
 		go func() { defer close(flushDone); h.flush(time.Second * time.Duration(h.conf.TCPOutBufFlushPeriodSec)) }()
@@ -361,6 +381,15 @@ func (h *Host) connect(attemptCount int) {
 
 	h.Conn.New(conn, h.conf.TCPOutBufSize)
 	h.Conn.W.configureCompression(*h.conf)
+	if h.streamOptions != nil {
+		h.Conn.streamCodec, err = startStreamSocket(conn, *h.streamOptions, h.conf, h.q, h.Lg)
+		if err != nil {
+			h.Lg.Warn("stream preamble failed", zap.Error(err))
+			_ = h.Conn.Close()
+			h.setAvailability(false)
+			return
+		}
+	}
 	h.setAvailability(true)
 }
 

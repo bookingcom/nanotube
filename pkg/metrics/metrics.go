@@ -11,6 +11,7 @@ import (
 // Prom is the set of Prometheus metrics.
 type Prom struct {
 	TCP            *TCPMetrics
+	Stream         *StreamMetrics
 	InRecs         prometheus.Counter
 	InRecsBySource *prometheus.CounterVec
 	ThrottledRecs  prometheus.Counter
@@ -62,6 +63,7 @@ func New() *Prom {
 		RouteCacheEvictions: prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_evictions_total", Help: "Entries removed from the route cache."}),
 		RouteCacheBytes:     prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "route_cache_bytes", Help: "Conservatively accounted retained route cache bytes, including index storage; excludes transient worker references and GC garbage."}),
 		TCP:                 newTCPMetrics(),
+		Stream:              newStreamMetrics(),
 		InRecs: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "nanotube",
 			Name:      "in_records_total",
@@ -215,6 +217,11 @@ func Register(m *Prom, cfg *conf.Main) {
 	}
 	if err := m.TCP.register(prometheus.DefaultRegisterer, !cfg.LessMetrics); err != nil {
 		log.Fatalf("error registering TCP output metrics: %v", err)
+	}
+	if !cfg.LessMetrics {
+		if err := m.Stream.register(prometheus.DefaultRegisterer); err != nil {
+			log.Fatalf("error registering stream output metrics: %v", err)
+		}
 	}
 	err := prometheus.Register(m.InRecs)
 	if err != nil {

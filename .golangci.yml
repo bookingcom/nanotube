@@ -19,6 +19,12 @@ linters:
         - "-QF1008" # exclude 'could remove embedded field "<field>" from selector' 
   exclusions:
     generated: lax
+    rules:
+      # Preserve the copied codec source; this checksum table is read-only.
+      - path: ^pkg/streamcodec/frame\.go$
+        linters:
+          - gochecknoglobals
+        text: castagnoli is a global variable
     presets:
       - comments
       - common-false-positives
