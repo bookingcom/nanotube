@@ -67,11 +67,12 @@ type Host struct {
 // StreamOptions bounds each connection's frames and name dictionary. Zero
 // values select defaults; these settings have no effect on plaintext hosts.
 type StreamOptions struct {
-	MaxRows       int  `toml:"max_rows"`
-	MaxBytes      int  `toml:"max_bytes"`
-	FlushPeriodMS int  `toml:"flush_period_ms"`
-	Zstd          bool `toml:"zstd"`
-	MaxNames      int  `toml:"max_names"`
+	MaxRows         int  `toml:"max_rows"`
+	MaxBytes        int  `toml:"max_bytes"`
+	FlushPeriodMS   int  `toml:"flush_period_ms"`
+	Zstd            bool `toml:"zstd"`
+	MaxNames        int  `toml:"max_names"`
+	DictionaryBytes int  `toml:"dictionary_bytes"`
 }
 
 // WithDefaults returns effective stream settings. Stream always flushes at
@@ -92,6 +93,9 @@ func (s StreamOptions) WithDefaults(tcpFlushSeconds uint32) StreamOptions {
 	if s.MaxNames == 0 {
 		s.MaxNames = 4 << 20
 	}
+	if s.DictionaryBytes == 0 {
+		s.DictionaryBytes = 12 << 20
+	}
 	return s
 }
 
@@ -108,6 +112,9 @@ func (h Host) validateStream() error {
 	}
 	if s.FlushPeriodMS < 0 || s.FlushPeriodMS > 1000 {
 		return errors.New("stream flush_period_ms must be between 0 and 1000")
+	}
+	if s.DictionaryBytes < 0 || (s.DictionaryBytes > 0 && s.DictionaryBytes < 4096) {
+		return errors.New("stream dictionary_bytes must be zero or at least 4096")
 	}
 	if s.MaxNames < 0 || uint64(s.MaxNames) > 1<<32-1 {
 		return errors.New("stream max_names must fit a positive uint32")

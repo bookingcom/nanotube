@@ -11,6 +11,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
+	codec "github.com/bookingcom/nanotube/pkg/streamcodec"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -35,6 +36,7 @@ type HostMTCP struct {
 
 	conf          *conf.Main
 	streamOptions *conf.StreamOptions
+	streamNames   *codec.NameTable
 
 	jitterEnabled        bool
 	rnd                  *rand.Rand
@@ -144,6 +146,11 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 	if hostCfg.Stream {
 		options := hostCfg.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec)
 		h.streamOptions = &options
+		budget := mainCfg.StreamDictionaryBytes
+		if budget == 0 {
+			budget = 1 << 30
+		}
+		h.streamNames = ms.Stream.NameTable(budget/2, mainCfg.StreamFullNames)
 	}
 	h.q.trackTCP(ms.TCP.For(promLabels), clusterName, h.String())
 
@@ -168,7 +175,7 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 // Push adds a new record to send to the host queue.
 func (h *HostMTCP) Push(r *rec.RecBytes) {
 	if h.streamOptions != nil {
-		r.PathHash() // Initialize before publishing to concurrent stream consumers.
+		prepareStreamName(r, h.streamNames)
 	}
 	if !h.q.pushOne(r) {
 		h.throttled.Inc()
@@ -180,7 +187,7 @@ func (h *HostMTCP) Push(r *rec.RecBytes) {
 func (h *HostMTCP) pushBulk(rs []*rec.RecBytes) {
 	if h.streamOptions != nil {
 		for _, r := range rs {
-			r.PathHash()
+			prepareStreamName(r, h.streamNames)
 		}
 	}
 	if dropped := h.q.push(rs); dropped > 0 {
@@ -407,7 +414,7 @@ func (h *HostMTCP) connect(c *MultiConnection, attemptCount int) {
 	c.New(conn, h.conf.TCPOutBufSize)
 	c.W.configureCompression(*h.conf)
 	if h.streamOptions != nil {
-		c.streamCodec, err = startStreamSocket(conn, *h.streamOptions, h.conf, h.q, h.Lg)
+		c.streamCodec, err = startStreamSocket(conn, *h.streamOptions, h.conf, h.q, h.Lg, h.streamNames)
 		if err != nil {
 			h.Lg.Warn("stream preamble failed", zap.Error(err))
 			_ = c.Close()

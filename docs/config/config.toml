@@ -33,6 +33,10 @@ TCPOutBufSize = 4096
 # Applies to all TCP targets; cluster/host compression overrides may canary it.
 # Empty (default) or "none" sends plaintext; "zstd" sends independent frames.
 # Upgrade all receivers before enabling. gRPC targets ignore these settings.
+# Total stream dictionary capacity across all configured TCP destinations.
+StreamDictionaryBytes = 1073741824
+# Exact arena-backed names instead of statistical 128-bit identities.
+StreamFullNames = false
 TCPOutCompression = ""
 TCPOutZstdLevel = "fastest" # "fastest" or "default"
 TCPOutZstdFrameSize = 1048576 # plaintext bytes per frame; maximum 16 MiB

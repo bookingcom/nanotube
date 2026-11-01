@@ -69,6 +69,7 @@ func BenchmarkStream(b *testing.B) {
 					o := Options{Flags: flags, MaxNames: max(n, DefaultMaxNames)}
 					e, d := encoder(b, o), decoder(b, o)
 					var dst []byte
+					var coldBytes int64
 					// Warm all encoder and decoder names without retaining a plaintext epoch.
 					for i, name := range names {
 						if err := e.Add(name, syntheticValue(i, 0), 1700000000); err != nil {
@@ -76,10 +77,12 @@ func BenchmarkStream(b *testing.B) {
 						}
 						if e.Ready() {
 							dst = flush(b, e, dst[:0])
+							coldBytes += int64(len(dst))
 							decodeAll(b, d, dst, nil)
 						}
 					}
 					dst = flush(b, e, dst[:0])
+					coldBytes += int64(len(dst))
 					decodeAll(b, d, dst, nil)
 					var steady []byte
 					for i, name := range names {
@@ -122,6 +125,7 @@ func BenchmarkStream(b *testing.B) {
 					count := float64(b.N) * float64(n)
 					b.ReportMetric(float64(b.Elapsed().Nanoseconds())/count, "ns/point")
 					b.ReportMetric(float64(wireBytes)/count, "wire-B/point")
+					b.ReportMetric(float64(coldBytes)/float64(n), "cold-B/point")
 				})
 			}
 		})

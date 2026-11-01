@@ -39,12 +39,12 @@ func TestStreamDefaults(t *testing.T) {
 	for _, seconds := range []uint32{0, 1, 2} {
 		t.Run(fmt.Sprint(seconds), func(t *testing.T) {
 			s := (StreamOptions{}).WithDefaults(seconds)
-			if s.MaxRows != 4096 || s.MaxBytes != 1<<20 || s.FlushPeriodMS != 1000 || s.MaxNames != 4<<20 || s.Zstd {
+			if s.MaxRows != 4096 || s.MaxBytes != 1<<20 || s.FlushPeriodMS != 1000 || s.MaxNames != 4<<20 || s.Zstd || s.DictionaryBytes != 12<<20 {
 				t.Fatalf("unexpected defaults: %+v", s)
 			}
 		})
 	}
-	s := StreamOptions{MaxRows: 10, MaxBytes: 2000, FlushPeriodMS: 50, Zstd: true, MaxNames: 3}
+	s := StreamOptions{MaxRows: 10, MaxBytes: 2000, FlushPeriodMS: 50, Zstd: true, MaxNames: 3, DictionaryBytes: 4096}
 	if got := s.WithDefaults(2); got != s {
 		t.Fatalf("explicit options changed: %+v", got)
 	}

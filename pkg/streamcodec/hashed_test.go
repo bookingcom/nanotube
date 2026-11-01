@@ -2,17 +2,11 @@ package codec
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"hash/fnv"
 	"math"
 	"testing"
 )
-
-func nameHash(name []byte) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write(name)
-	return h.Sum64()
-}
 
 func TestHashedEncoderParity(t *testing.T) {
 	for _, flags := range []byte{0, FlagZstd} {
@@ -48,7 +42,7 @@ func checkHashedParity(t *testing.T, opts Options, data []byte, hash func([]byte
 		var e1, e2 error
 		want, e1 = oracle.Flush(want)
 		got, e2 = hashed.Flush(got)
-		if e1 != e2 || !bytes.Equal(want, got) {
+		if !errors.Is(e1, e2) || !bytes.Equal(want, got) {
 			t.Fatalf("flush differs: errors %v / %v, bytes %d / %d", e1, e2, len(want), len(got))
 		}
 	}
@@ -66,7 +60,7 @@ func checkHashedParity(t *testing.T, opts Options, data []byte, hash func([]byte
 			ts := int64(i) - int64(repeat)*1700000000
 			d1, r1, e1 := oracle.AddObserved(name, value, ts)
 			d2, r2, e2 := hashed.AddHashed(name, hash(name), value, ts)
-			if e1 != e2 || d1 != d2 || r1 != r2 || oracle.Ready() != hashed.Ready() || oracle.NameCount() != hashed.NameCount() {
+			if !errors.Is(e1, e2) || d1 != d2 || r1 != r2 || oracle.Ready() != hashed.Ready() || oracle.NameCount() != hashed.NameCount() {
 				t.Fatalf("add differs at %d: (%v,%v,%v) / (%v,%v,%v)", i, d1, r1, e1, d2, r2, e2)
 			}
 			// Neither the dictionary nor a collision entry may borrow name.
@@ -76,7 +70,7 @@ func checkHashedParity(t *testing.T, opts Options, data []byte, hash func([]byte
 				flushBoth()
 			}
 			if token%29 == 0 {
-				if e1, e2 := oracle.Reset(), hashed.Reset(); e1 != e2 {
+				if e1, e2 := oracle.Reset(), hashed.Reset(); !errors.Is(e1, e2) {
 					t.Fatalf("reset differs: %v / %v", e1, e2)
 				}
 			}

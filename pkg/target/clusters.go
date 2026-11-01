@@ -39,9 +39,43 @@ func (cls Clusters) Send(finish chan struct{}) chan struct{} {
 
 // NewClusters builds new set of clusters from config.
 func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *metrics.Prom) (Clusters, error) {
+	// Reserve an equal share even for disconnected sockets. No connection
+	// can consume another's allowance, and reconnects release their old state.
+	connections := 0
+	for _, cc := range cfg.Cluster {
+		for _, h := range cc.Hosts {
+			if h.Stream {
+				connections += max(1, h.MTCP)
+			}
+		}
+	}
+	total := mainCfg.StreamDictionaryBytes
+	if total == 0 {
+		total = 1 << 30
+	}
+	if total < 0 || (connections > 0 && (total-total/2)/connections < 4096) {
+		return nil, fmt.Errorf("StreamDictionaryBytes is too small for %d connections", connections)
+	}
+	if connections > 0 {
+		if err := ms.Stream.ConfigureNames(total/2, mainCfg.StreamFullNames); err != nil {
+			return nil, err
+		}
+	}
+	limit := total
+	if connections > 0 {
+		limit = (total - total/2) / connections
+	}
 	cls := make(map[string]*Cluster)
 	var err error
 	for _, cc := range cfg.Cluster {
+		cc.Hosts = append([]conf.Host(nil), cc.Hosts...)
+		for i := range cc.Hosts {
+			h := &cc.Hosts[i]
+			if h.Stream {
+				h.StreamOptions = h.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec)
+				h.StreamOptions.DictionaryBytes = min(h.StreamOptions.DictionaryBytes, limit)
+			}
+		}
 		clusterCfg := *mainCfg
 		if cc.Compression != "" {
 			clusterCfg.TCPOutCompression = cc.Compression
