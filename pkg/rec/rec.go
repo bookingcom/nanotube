@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash/fnv"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -13,9 +14,10 @@ import (
 
 // RecBytes represents a single piece of data (a datapoint) that can be sent.
 type RecBytes struct { // nolint:revive
-	Path []byte
-	Val  []byte
-	Time []byte
+	streamToken uint64 // first for atomic alignment on 32-bit platforms
+	Path        []byte
+	Val         []byte
+	Time        []byte
 
 	Received time.Time
 
@@ -91,6 +93,7 @@ func ParseRecWithPath(s []byte, normalize bool, nowF func() time.Time, resolve f
 // SetPathHash seeds PathHash for the current Path. The caller must supply its
 // exact 64-bit FNV-1a hash. Reassigning Path still invalidates this value.
 func (r *RecBytes) SetPathHash(hash uint64) {
+	atomic.StoreUint64(&r.streamToken, 0)
 	r.pathHash, r.pathHashLen = hash, len(r.Path)
 	r.pathHashFor = nil
 	if len(r.Path) > 0 {
@@ -348,3 +351,7 @@ func validChar(c byte) bool {
 
 	return false
 }
+
+// StreamToken caches a generation-checked name hint across replica outputs.
+func (r *RecBytes) StreamToken() uint64         { return atomic.LoadUint64(&r.streamToken) }
+func (r *RecBytes) SetStreamToken(token uint64) { atomic.StoreUint64(&r.streamToken, token) }

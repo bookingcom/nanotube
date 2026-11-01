@@ -12,6 +12,11 @@ import (
 
 // Main is the main and generic nanotube config.
 type Main struct {
+	// Total retained stream dictionary capacity, divided across configured sockets.
+	StreamDictionaryBytes int
+	// Use exact names instead of 128-bit fingerprints in the shared table.
+	StreamFullNames bool
+
 	// Clusters config path. Mandatory.
 	ClustersConfig string
 	// Rules config path. Mandatory.
@@ -231,9 +236,10 @@ func ReadMain(r io.Reader) (Main, error) {
 // MakeDefault creates configuration with default values.
 func MakeDefault() Main {
 	return Main{
-		ClustersConfig: "",
-		RulesConfig:    "",
-		RewritesConfig: "",
+		StreamDictionaryBytes: 1 << 30,
+		ClustersConfig:        "",
+		RulesConfig:           "",
+		RewritesConfig:        "",
 
 		K8sMode:                  false,
 		K8sUseK8sServer:          false,

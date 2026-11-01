@@ -1,16 +1,15 @@
 package target
 
 import (
-	"hash/maphash"
 	"io"
 	"math"
 	"net"
-	"strconv"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
+	codec "github.com/bookingcom/nanotube/pkg/streamcodec"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 )
@@ -19,12 +18,14 @@ import (
 // bytes alone would refer to the previous connection's dictionary and deltas.
 type streamPoint struct {
 	name       []byte
+	hash       uint64
+	global     uint64
 	value      float64
 	timestamp  int64
 	plainBytes int
 }
 
-type streamFrameStats struct{ frames, names, resets, records int }
+type streamFrameStats struct{ frames, names, resets, records, unshared, peerResets, localResets, nameResets int }
 
 type streamCodec interface {
 	preamble() []byte
@@ -33,22 +34,24 @@ type streamCodec interface {
 }
 
 type streamConnection struct {
-	adopt        func() streamCodec
-	lock, unlock func()
-	ensure       func() net.Conn
-	disconnect   func() error
-	markDown     func()
-	lastUse      *time.Time
-	conn         net.Conn
-	codec        streamCodec
-	points       []streamPoint
-	plainBytes   int
+	adopt                                  func() streamCodec
+	lock, unlock                           func()
+	ensure                                 func() net.Conn
+	disconnect                             func() error
+	markDown                               func()
+	lastUse                                *time.Time
+	conn                                   net.Conn
+	codec                                  streamCodec
+	points                                 []streamPoint
+	plainBytes                             int
+	retainedNames, retainedBytes, mapBytes int
+	lastReset, lastWarning                 time.Time
 }
 
 type streamSender struct {
-	hashSeed                             maphash.Seed
 	batches                              [][]*rec.RecBytes
 	options                              conf.StreamOptions
+	names                                *codec.NameTable
 	main                                 *conf.Main
 	q                                    *recQueue
 	connections                          []streamConnection
@@ -58,18 +61,18 @@ type streamSender struct {
 	stop                                 chan int
 }
 
-// parseStreamPoint deliberately uses the same float parser and conversions as
-// go-carbon receiver/parse.PlainLine, including NaN timestamp rejection.
+// parseStreamPoint preserves strconv.ParseFloat's bits and conversions,
+// including NaN timestamp rejection and truncation after float64 rounding.
 func parseStreamPoint(r *rec.RecBytes) (streamPoint, bool) {
-	v, err := strconv.ParseFloat(string(r.Val), 64)
+	v, err := parseStreamNumber(r.Val)
 	if err != nil || math.IsNaN(v) {
 		return streamPoint{}, false
 	}
-	t, err := strconv.ParseFloat(string(r.Time), 64)
+	t, err := parseStreamNumber(r.Time)
 	if err != nil || math.IsNaN(t) {
 		return streamPoint{}, false
 	}
-	return streamPoint{r.Path, v, int64(t), len(r.Path) + len(r.Val) + len(r.Time) + 3}, true
+	return streamPoint{name: r.Path, hash: r.PathHash(), global: r.StreamToken(), value: v, timestamp: int64(t), plainBytes: len(r.Path) + len(r.Val) + len(r.Time) + 3}, true
 }
 
 func (s *streamSender) run() {
@@ -83,6 +86,9 @@ func (s *streamSender) run() {
 			case <-s.stop:
 				return
 			case <-ticker.C:
+				if s.names != nil {
+					s.names.Sweep()
+				}
 				s.lockAll()
 				for i := range s.connections {
 					s.flush(&s.connections[i])
@@ -103,6 +109,7 @@ func (s *streamSender) run() {
 		c := &s.connections[i]
 		s.flush(c)
 		if c.codec != nil {
+			s.releaseRetention(c)
 			c.codec.close()
 			c.codec = nil
 		}
@@ -112,11 +119,15 @@ func (s *streamSender) run() {
 	}
 }
 
-// Each connection owns a stable share of names. The process-local independent
-// hash seed prevents correlation with the FNV/jump hash that selects the host.
-// Reconnects leave this seed and the connection count unchanged.
-func (s *streamSender) connectionIndex(path []byte) int {
-	return int(maphash.Bytes(s.hashSeed, path) % uint64(len(s.connections)))
+// Avalanche the cached routing hash with the SplitMix64 finalizer before taking
+// a connection index. Using hash%connections directly can correlate with the
+// jump hash that chooses the host. This mapping depends only on the name hash
+// and connection count, so reconnects and host placement leave it unchanged.
+func (s *streamSender) connectionIndex(hash uint64) int {
+	hash = (hash ^ (hash >> 30)) * 0xbf58476d1ce4e5b9
+	hash = (hash ^ (hash >> 27)) * 0x94d049bb133111eb
+	hash ^= hash >> 31
+	return int(hash % uint64(len(s.connections)))
 }
 
 // Group each queue chunk before locking. Points for each name retain FIFO order,
@@ -136,7 +147,7 @@ func (s *streamSender) dispatch(rs []*rec.RecBytes) {
 		}
 	}
 	for _, r := range rs {
-		i := s.connectionIndex(r.Path)
+		i := s.connectionIndex(r.PathHash())
 		s.batches[i] = append(s.batches[i], r)
 	}
 	for i, batch := range s.batches {
@@ -198,8 +209,12 @@ func (s *streamSender) sendBatch(c *streamConnection, rs []*rec.RecBytes) {
 	s.outTotal.Add(float64(len(rs)))
 }
 
-func startStreamSocket(conn net.Conn, options conf.StreamOptions, main *conf.Main, q *recQueue, lg *zap.Logger) (streamCodec, error) {
-	codec, err := newStreamCodec(options)
+func startStreamSocket(conn net.Conn, options conf.StreamOptions, main *conf.Main, q *recQueue, lg *zap.Logger, tables ...*codec.NameTable) (streamCodec, error) {
+	var table *codec.NameTable
+	if len(tables) > 0 {
+		table = tables[0]
+	}
+	codec, err := newStreamCodec(options, table)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +235,7 @@ func (s *streamSender) ensure(c *streamConnection) {
 				return
 			}
 		}
-		codec, err := startStreamSocket(c.conn, s.options, s.main, s.q, s.lg)
+		codec, err := startStreamSocket(c.conn, s.options, s.main, s.q, s.lg, s.names)
 		if err == nil {
 			c.codec = codec
 			return
@@ -232,6 +247,7 @@ func (s *streamSender) ensure(c *streamConnection) {
 
 func (s *streamSender) disconnect(c *streamConnection) {
 	if c.codec != nil {
+		s.releaseRetention(c)
 		c.codec.close()
 		c.codec = nil
 	}
@@ -257,9 +273,25 @@ func (s *streamSender) flush(c *streamConnection) {
 			s.disconnect(c)
 			continue
 		}
+		s.observeRetention(c)
+		if stats.unshared > 0 && time.Since(c.lastWarning) > 30*time.Second {
+			s.lg.Warn("shared stream name table budget exhausted; definitions bypass shared retention", zap.Int("unshared_definitions", stats.unshared))
+			c.lastWarning = time.Now()
+		}
+		if stats.resets > 0 {
+			now := time.Now()
+			if !c.lastReset.IsZero() && now.Sub(c.lastReset) < time.Minute && now.Sub(c.lastWarning) > 30*time.Second {
+				s.lg.Warn("stream dictionary limit forces frequent resets", zap.Int("dictionary_bytes", s.options.DictionaryBytes), zap.Int("peer_dictionary_bytes", s.options.PeerDictionaryBytes), zap.Int("peer_resets", stats.peerResets), zap.Int("local_resets", stats.localResets), zap.Int("name_resets", stats.nameResets), zap.Duration("reset_interval", now.Sub(c.lastReset)))
+				c.lastWarning = now
+			}
+			c.lastReset = now
+		}
 		s.ms.Frames.Add(float64(stats.frames))
 		s.ms.Names.Add(float64(stats.names))
 		s.ms.Resets.Add(float64(stats.resets))
+		s.ms.PeerResets.Add(float64(stats.peerResets))
+		s.ms.LocalResets.Add(float64(stats.localResets))
+		s.ms.NameResets.Add(float64(stats.nameResets))
 		s.ms.Records.Add(float64(stats.records))
 		plainBytes := 0
 		for _, p := range c.points[:n] {
@@ -301,14 +333,14 @@ func (s *streamSender) write(c *streamConnection, wire []byte, records, plainByt
 }
 
 func (h *Host) makeStreamSender(options conf.StreamOptions) *streamSender {
-	s := streamSender{hashSeed: maphash.MakeSeed(), options: options, main: h.conf, q: h.q, ms: h.Ms.Stream.For(prometheus.Labels{"cluster": h.q.output.cluster, "upstream_host": h.Name}), out: h.outRecs, outTotal: h.outRecsTotal, refresh: h.oldConnectionRefresh, refreshTotal: h.oldConnectionRefreshTotal, lg: h.Lg, stop: h.stop}
+	s := streamSender{names: h.streamNames, options: options, main: h.conf, q: h.q, ms: h.Ms.Stream.For(prometheus.Labels{"cluster": h.q.output.cluster, "upstream_host": h.Name}), out: h.outRecs, outTotal: h.outRecsTotal, refresh: h.oldConnectionRefresh, refreshTotal: h.oldConnectionRefreshTotal, lg: h.Lg, stop: h.stop}
 	c := &h.Conn
 	s.connections = []streamConnection{{lock: c.Lock, unlock: c.Unlock, ensure: func() net.Conn { h.ensureConnection(); return c.Conn }, disconnect: c.Close, adopt: func() streamCodec { codec := c.streamCodec; c.streamCodec = nil; return codec }, markDown: func() { h.setAvailability(false) }, lastUse: &c.LastConnUse}}
 	return &s
 }
 
 func (h *HostMTCP) makeStreamSender(options conf.StreamOptions) *streamSender {
-	s := streamSender{hashSeed: maphash.MakeSeed(), options: options, main: h.conf, q: h.q, ms: h.Ms.Stream.For(prometheus.Labels{"cluster": h.q.output.cluster, "upstream_host": h.Name}), out: h.outRecs, outTotal: h.outRecsTotal, refresh: h.oldConnectionRefresh, refreshTotal: h.oldConnectionRefreshTotal, lg: h.Lg, stop: h.stop}
+	s := streamSender{names: h.streamNames, options: options, main: h.conf, q: h.q, ms: h.Ms.Stream.For(prometheus.Labels{"cluster": h.q.output.cluster, "upstream_host": h.Name}), out: h.outRecs, outTotal: h.outRecsTotal, refresh: h.oldConnectionRefresh, refreshTotal: h.oldConnectionRefreshTotal, lg: h.Lg, stop: h.stop}
 	for i := range h.MTCPs {
 		c := &h.MTCPs[i]
 		s.connections = append(s.connections, streamConnection{lock: c.Lock, unlock: c.Unlock, ensure: func() net.Conn { h.ensureConnection(c); return c.Conn }, disconnect: c.Close, adopt: func() streamCodec { codec := c.streamCodec; c.streamCodec = nil; return codec }, markDown: func() { c.Available.Store(false); h.setHostAvailability() }, lastUse: &c.LastConnUse})
@@ -318,3 +350,36 @@ func (h *HostMTCP) makeStreamSender(options conf.StreamOptions) *streamSender {
 
 func (h *Host) streamRecords(options conf.StreamOptions)     { h.makeStreamSender(options).run() }
 func (h *HostMTCP) streamRecords(options conf.StreamOptions) { h.makeStreamSender(options).run() }
+
+// Resolve once on the publishing goroutine. Atomic hints let other outputs and
+// overlapping reloads safely reuse the record; held wire ids own real refs.
+func prepareStreamName(r *rec.RecBytes, table *codec.NameTable) {
+	hash := r.PathHash()
+	if table == nil {
+		return
+	}
+	token := r.StreamToken()
+	if !table.Valid(token, hash) {
+		r.SetStreamToken(table.Resolve(r.Path, hash))
+	}
+}
+
+func (s *streamSender) observeRetention(c *streamConnection) {
+	if r, ok := c.codec.(interface{ retention() (int, int, int) }); ok {
+		names, bytes, maps := r.retention()
+		s.ms.RetainedNames.Add(float64(names - c.retainedNames))
+		s.ms.RetainedBytes.Add(float64(bytes - c.retainedBytes))
+		s.ms.MapBytes.Add(float64(maps - c.mapBytes))
+		c.retainedNames = names
+		c.retainedBytes = bytes
+		c.mapBytes = maps
+	}
+}
+func (s *streamSender) releaseRetention(c *streamConnection) {
+	s.ms.RetainedNames.Sub(float64(c.retainedNames))
+	s.ms.RetainedBytes.Sub(float64(c.retainedBytes))
+	s.ms.MapBytes.Sub(float64(c.mapBytes))
+	c.retainedNames = 0
+	c.retainedBytes = 0
+	c.mapBytes = 0
+}

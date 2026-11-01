@@ -8,17 +8,28 @@ import (
 )
 
 type carbonStreamCodec struct {
-	encoder *codec.Encoder
+	encoder *codec.HashedEncoder
 	marker  []byte
 	wire    []byte
 }
 
-func newStreamCodec(o conf.StreamOptions) (streamCodec, error) {
+func newStreamCodec(o conf.StreamOptions, tables ...*codec.NameTable) (streamCodec, error) {
+	var table *codec.NameTable
+	if len(tables) > 0 {
+		table = tables[0]
+	}
 	flags := byte(0)
 	if o.Zstd {
 		flags = codec.FlagZstd
 	}
-	e, err := codec.NewEncoder(codec.Options{Flags: flags, FrameSize: o.MaxBytes, MaxRows: o.MaxRows, MaxNames: o.MaxNames})
+	opts := codec.Options{Flags: flags, FrameSize: o.MaxBytes, MaxRows: o.MaxRows, MaxNames: o.MaxNames, DictionaryBytes: o.DictionaryBytes, PeerDictionaryBytes: o.PeerDictionaryBytes}
+	var e *codec.Encoder
+	var err error
+	if table == nil {
+		e, err = codec.NewEncoder(opts)
+	} else {
+		e, err = codec.NewSharedEncoder(opts, table)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -33,9 +44,10 @@ func (c *carbonStreamCodec) preamble() []byte { return c.marker }
 func (c *carbonStreamCodec) close()           { c.encoder.Close() }
 func (c *carbonStreamCodec) encode(points []streamPoint) ([]byte, int, streamFrameStats, error) {
 	n := 0
+	beforeUnshared := c.encoder.UnsharedTotal()
 	stats := streamFrameStats{}
 	for _, p := range points {
-		defined, reset, addErr := c.encoder.AddObserved(p.name, p.value, p.timestamp)
+		defined, reset, addErr := c.encoder.AddGlobal(p.name, p.hash, p.global, p.value, p.timestamp)
 		if addErr != nil {
 			if n == 0 {
 				return nil, 0, streamFrameStats{}, addErr
@@ -47,6 +59,14 @@ func (c *carbonStreamCodec) encode(points []streamPoint) ([]byte, int, streamFra
 		}
 		if reset {
 			stats.resets++
+			switch c.encoder.LastResetReason() {
+			case codec.ResetPeerBytes:
+				stats.peerResets++
+			case codec.ResetLocalBytes:
+				stats.localResets++
+			case codec.ResetNames:
+				stats.nameResets++
+			}
 		}
 		n++
 		if c.encoder.Ready() {
@@ -56,9 +76,14 @@ func (c *carbonStreamCodec) encode(points []streamPoint) ([]byte, int, streamFra
 	wire, err := c.encoder.Flush(c.wire[:0])
 	c.wire = wire
 	stats.records = n
+	stats.unshared = int(c.encoder.UnsharedTotal() - beforeUnshared)
 	for rest := wire; len(rest) >= codec.HeaderSize; {
 		stats.frames++
 		rest = rest[codec.HeaderSize+int(binary.BigEndian.Uint32(rest[4:8])):]
 	}
 	return wire, n, stats, err
+}
+
+func (c *carbonStreamCodec) retention() (int, int, int) {
+	return c.encoder.NameCount(), c.encoder.RetainedBytes(), c.encoder.MapBytes()
 }

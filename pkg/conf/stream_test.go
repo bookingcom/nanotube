@@ -22,6 +22,13 @@ func TestStreamConfig(t *testing.T) {
 		{"stream=true\n[cluster.hosts.stream_options]\nmax_bytes=4194305", false},
 		{"stream=true\n[cluster.hosts.stream_options]\nflush_period_ms=1001", false},
 		{"stream=true\n[cluster.hosts.stream_options]\nmax_names=-1", false},
+		{"stream=true\n[cluster.hosts.stream_options]\npeer_dictionary_bytes=-1", false},
+		{"stream=true\n[cluster.hosts.stream_options]\npeer_dictionary_bytes=0", true},
+		{"stream=true\n[cluster.hosts.stream_options]\npeer_dictionary_bytes=1048575", false},
+		{"stream=true\n[cluster.hosts.stream_options]\npeer_dictionary_bytes=1048576", true},
+		{"stream=true\n[cluster.hosts.stream_options]\npeer_dictionary_bytes=536870912", true},
+		{"stream=true\n[cluster.hosts.stream_options]\npeer_dictionary_bytes=1073741824", true},
+		{"stream=true\n[cluster.hosts.stream_options]\npeer_dictionary_bytes=1073741825", false},
 	} {
 		t.Run(tc.options, func(t *testing.T) {
 			c, err := ReadClustersConfig(strings.NewReader(prefix + tc.options))
@@ -39,12 +46,12 @@ func TestStreamDefaults(t *testing.T) {
 	for _, seconds := range []uint32{0, 1, 2} {
 		t.Run(fmt.Sprint(seconds), func(t *testing.T) {
 			s := (StreamOptions{}).WithDefaults(seconds)
-			if s.MaxRows != 4096 || s.MaxBytes != 1<<20 || s.FlushPeriodMS != 1000 || s.MaxNames != 4<<20 || s.Zstd {
+			if s.MaxRows != 4096 || s.MaxBytes != 1<<20 || s.FlushPeriodMS != 1000 || s.MaxNames != 4<<20 || s.Zstd || s.DictionaryBytes != 12<<20 || s.PeerDictionaryBytes != 64<<20 {
 				t.Fatalf("unexpected defaults: %+v", s)
 			}
 		})
 	}
-	s := StreamOptions{MaxRows: 10, MaxBytes: 2000, FlushPeriodMS: 50, Zstd: true, MaxNames: 3}
+	s := StreamOptions{MaxRows: 10, MaxBytes: 2000, FlushPeriodMS: 50, Zstd: true, MaxNames: 3, DictionaryBytes: 4096, PeerDictionaryBytes: 256 << 20}
 	if got := s.WithDefaults(2); got != s {
 		t.Fatalf("explicit options changed: %+v", got)
 	}

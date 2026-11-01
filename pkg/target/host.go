@@ -11,6 +11,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
+	codec "github.com/bookingcom/nanotube/pkg/streamcodec"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -34,6 +35,7 @@ type Host struct {
 
 	conf          *conf.Main
 	streamOptions *conf.StreamOptions
+	streamNames   *codec.NameTable
 
 	jitterEnabled        bool
 	rnd                  *rand.Rand
@@ -150,6 +152,11 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 	if hostCfg.Stream {
 		options := hostCfg.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec)
 		h.streamOptions = &options
+		budget := mainCfg.StreamDictionaryBytes
+		if budget == 0 {
+			budget = 1 << 30
+		}
+		h.streamNames = ms.Stream.NameTable(budget/2, mainCfg.StreamFullNames)
 	}
 	if !hostCfg.GRPC {
 		h.q.trackTCP(ms.TCP.For(promLabels), clusterName, h.String())
@@ -171,6 +178,9 @@ func ConstructHost(clusterName string, mainCfg conf.Main, hostCfg conf.Host, lg 
 
 // Push adds a new record to send to the host queue.
 func (h *Host) Push(r *rec.RecBytes) {
+	if h.streamOptions != nil {
+		prepareStreamName(r, h.streamNames)
+	}
 	if !h.q.pushOne(r) {
 		h.throttled.Inc()
 		h.throttledTotal.Inc()
@@ -178,6 +188,11 @@ func (h *Host) Push(r *rec.RecBytes) {
 }
 
 func (h *Host) pushBulk(rs []*rec.RecBytes) {
+	if h.streamOptions != nil {
+		for _, r := range rs {
+			prepareStreamName(r, h.streamNames)
+		}
+	}
 	if dropped := h.q.push(rs); dropped > 0 {
 		h.throttled.Add(float64(dropped))
 		h.throttledTotal.Add(float64(dropped))
@@ -382,7 +397,7 @@ func (h *Host) connect(attemptCount int) {
 	h.Conn.New(conn, h.conf.TCPOutBufSize)
 	h.Conn.W.configureCompression(*h.conf)
 	if h.streamOptions != nil {
-		h.Conn.streamCodec, err = startStreamSocket(conn, *h.streamOptions, h.conf, h.q, h.Lg)
+		h.Conn.streamCodec, err = startStreamSocket(conn, *h.streamOptions, h.conf, h.q, h.Lg, h.streamNames)
 		if err != nil {
 			h.Lg.Warn("stream preamble failed", zap.Error(err))
 			_ = h.Conn.Close()
