@@ -49,6 +49,8 @@ type = 'toall'
     flush_period_ms = 1000
     zstd = false
     max_names = 4194304
+    dictionary_bytes = 12582912 # local connection map/predictor budget
+    peer_dictionary_bytes = 67108864 # must be <= receiver stream-dictionary-bytes
 
 # Interchangeable relays: stable name affinity with health-aware failover.
 # All clients must use the same endpoint strings and ports; index is unused.

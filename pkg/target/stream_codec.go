@@ -22,7 +22,7 @@ func newStreamCodec(o conf.StreamOptions, tables ...*codec.NameTable) (streamCod
 	if o.Zstd {
 		flags = codec.FlagZstd
 	}
-	opts := codec.Options{Flags: flags, FrameSize: o.MaxBytes, MaxRows: o.MaxRows, MaxNames: o.MaxNames, DictionaryBytes: o.DictionaryBytes}
+	opts := codec.Options{Flags: flags, FrameSize: o.MaxBytes, MaxRows: o.MaxRows, MaxNames: o.MaxNames, DictionaryBytes: o.DictionaryBytes, PeerDictionaryBytes: o.PeerDictionaryBytes}
 	var e *codec.Encoder
 	var err error
 	if table == nil {
@@ -59,6 +59,14 @@ func (c *carbonStreamCodec) encode(points []streamPoint) ([]byte, int, streamFra
 		}
 		if reset {
 			stats.resets++
+			switch c.encoder.LastResetReason() {
+			case codec.ResetPeerBytes:
+				stats.peerResets++
+			case codec.ResetLocalBytes:
+				stats.localResets++
+			case codec.ResetNames:
+				stats.nameResets++
+			}
 		}
 		n++
 		if c.encoder.Ready() {

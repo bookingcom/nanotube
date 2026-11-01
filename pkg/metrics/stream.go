@@ -16,6 +16,7 @@ type StreamMetrics struct {
 	nameBudget                             int
 	nameFull                               bool
 	Frames, Names, Resets, Records         *prometheus.CounterVec
+	ResetReasons                           *prometheus.CounterVec
 	Dropped                                *prometheus.CounterVec
 	RetainedBytes, RetainedNames, MapBytes *prometheus.GaugeVec
 }
@@ -23,6 +24,7 @@ type StreamMetrics struct {
 // StreamOutput binds counters once per destination, outside the record hot path.
 type StreamOutput struct {
 	Frames, Names, Resets, Records         prometheus.Counter
+	PeerResets, LocalResets, NameResets    prometheus.Counter
 	Dropped                                prometheus.Counter
 	RetainedBytes, RetainedNames, MapBytes prometheus.Gauge
 }
@@ -36,20 +38,22 @@ func newStreamMetrics() *StreamMetrics {
 	}
 	return &StreamMetrics{
 		RetainedBytes: gauge("stream_connection_dictionary_bytes", "Retained connection map and predictor capacity in bytes."), RetainedNames: gauge("stream_connection_names", "Names held by connection dictionaries."), MapBytes: gauge("stream_connection_map_bytes", "Allocated global-to-wire map capacity in bytes."),
-		Frames:  counter("stream_frames_total", "Binary frames encoded, including retry attempts."),
-		Names:   counter("stream_names_defined_total", "Name definitions encoded, including retry attempts."),
-		Resets:  counter("stream_dictionary_resets_total", "Dictionary resets encoded after reaching the per-connection byte or name cap."),
-		Records: counter("stream_records_encoded_total", "Points encoded, including retry attempts."),
-		Dropped: counter("stream_records_dropped_total", "Points rejected by numeric parsing (including NaN) or codec size limits."),
+		Frames:       counter("stream_frames_total", "Binary frames encoded, including retry attempts."),
+		Names:        counter("stream_names_defined_total", "Name definitions encoded, including retry attempts."),
+		Resets:       counter("stream_dictionary_resets_total", "Dictionary resets encoded after reaching the peer byte, local byte or name cap."),
+		ResetReasons: prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_dictionary_resets_by_reason_total", Help: "Dictionary resets by binding limit: peer_bytes, local_bytes or names; peer bytes take precedence when multiple limits bind."}, []string{"cluster", "upstream_host", "reason"}),
+		Records:      counter("stream_records_encoded_total", "Points encoded, including retry attempts."),
+		Dropped:      counter("stream_records_dropped_total", "Points rejected by numeric parsing (including NaN) or codec size limits."),
 	}
 }
 
 func (m *StreamMetrics) For(labels prometheus.Labels) *StreamOutput {
-	return &StreamOutput{Frames: m.Frames.With(labels), Names: m.Names.With(labels), Resets: m.Resets.With(labels), Records: m.Records.With(labels), Dropped: m.Dropped.With(labels), RetainedBytes: m.RetainedBytes.With(labels), RetainedNames: m.RetainedNames.With(labels), MapBytes: m.MapBytes.With(labels)}
+	reasons := m.ResetReasons.MustCurryWith(labels)
+	return &StreamOutput{Frames: m.Frames.With(labels), Names: m.Names.With(labels), Resets: m.Resets.With(labels), PeerResets: reasons.WithLabelValues(string(codec.ResetPeerBytes)), LocalResets: reasons.WithLabelValues(string(codec.ResetLocalBytes)), NameResets: reasons.WithLabelValues(string(codec.ResetNames)), Records: m.Records.With(labels), Dropped: m.Dropped.With(labels), RetainedBytes: m.RetainedBytes.With(labels), RetainedNames: m.RetainedNames.With(labels), MapBytes: m.MapBytes.With(labels)}
 }
 
 func (m *StreamMetrics) register(reg prometheus.Registerer) error {
-	for _, c := range []prometheus.Collector{m.Frames, m.Names, m.Resets, m.Records, m.Dropped, m.RetainedBytes, m.RetainedNames, m.MapBytes} {
+	for _, c := range []prometheus.Collector{m.Frames, m.Names, m.Resets, m.ResetReasons, m.Records, m.Dropped, m.RetainedBytes, m.RetainedNames, m.MapBytes} {
 		if err := reg.Register(c); err != nil {
 			return err
 		}

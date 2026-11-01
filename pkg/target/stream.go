@@ -25,7 +25,7 @@ type streamPoint struct {
 	plainBytes int
 }
 
-type streamFrameStats struct{ frames, names, resets, records, unshared int }
+type streamFrameStats struct{ frames, names, resets, records, unshared, peerResets, localResets, nameResets int }
 
 type streamCodec interface {
 	preamble() []byte
@@ -281,7 +281,7 @@ func (s *streamSender) flush(c *streamConnection) {
 		if stats.resets > 0 {
 			now := time.Now()
 			if !c.lastReset.IsZero() && now.Sub(c.lastReset) < time.Minute && now.Sub(c.lastWarning) > 30*time.Second {
-				s.lg.Warn("stream dictionary budget forces frequent resets", zap.Int("dictionary_bytes", s.options.DictionaryBytes), zap.Duration("reset_interval", now.Sub(c.lastReset)))
+				s.lg.Warn("stream dictionary limit forces frequent resets", zap.Int("dictionary_bytes", s.options.DictionaryBytes), zap.Int("peer_dictionary_bytes", s.options.PeerDictionaryBytes), zap.Int("peer_resets", stats.peerResets), zap.Int("local_resets", stats.localResets), zap.Int("name_resets", stats.nameResets), zap.Duration("reset_interval", now.Sub(c.lastReset)))
 				c.lastWarning = now
 			}
 			c.lastReset = now
@@ -289,6 +289,9 @@ func (s *streamSender) flush(c *streamConnection) {
 		s.ms.Frames.Add(float64(stats.frames))
 		s.ms.Names.Add(float64(stats.names))
 		s.ms.Resets.Add(float64(stats.resets))
+		s.ms.PeerResets.Add(float64(stats.peerResets))
+		s.ms.LocalResets.Add(float64(stats.localResets))
+		s.ms.NameResets.Add(float64(stats.nameResets))
 		s.ms.Records.Add(float64(stats.records))
 		plainBytes := 0
 		for _, p := range c.points[:n] {

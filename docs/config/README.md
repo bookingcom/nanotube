@@ -37,7 +37,9 @@ an empty dictionary, including after reconnects.
 The optional `[cluster.hosts.stream_options]` table sets `max_rows` (default
 4096), `max_bytes` (default 1048576; a payload/replay-buffer target), `flush_period_ms` (default 1000), `zstd`
 (default false), `max_names` (default 4194304), and `dictionary_bytes`
-(default 12582912; connection id-map and predictor capacity). Frames flush at their row or
+(default 12582912; connection id-map and predictor capacity), and
+`peer_dictionary_bytes` (default 67108864; estimated decoded dictionary capacity
+at the receiver, including names). Frames flush at their row or
 byte bound, periodically, and on shutdown. The delay cannot exceed one second
 or the positive main-config `TCPOutBufFlushPeriodSec`. A zero plaintext flush
 period does not disable stream flushing. A v1 reset flushes pending rows before clearing only that connection’s ids
@@ -114,9 +116,27 @@ new definitions can bypass shared retention until connection resets free space.
 No point is dropped for this condition. Names used in new wire definitions are
 copied only into bounded frame scratch and released after flushing.
 
-The encoder also limits the decoded dictionary footprint to the receiver's
-64 MiB default, including long names and dictionary-capacity growth. A receiver
-with a smaller custom budget needs matching sender limits.
+`stream_options.peer_dictionary_bytes` independently bounds the encoder's
+estimate of the decoded dictionary, including long names and capacity growth.
+Zero selects 64 MiB; explicit values must be between 1048576 (1 MiB) and
+1073741824 (1 GiB) bytes. This is a per-host setting applied to every connection;
+it does not allocate that amount on the relay or raise its local byte budget.
+The encoder resets before either byte limit or the name cap would be exceeded.
+
+For high-churn pools, raise the receiver's `[tcp].stream-dictionary-bytes` first
+and restart it, then set the sender's `peer_dictionary_bytes` to no more than
+that value. For example, `peer_dictionary_bytes = 268435456` matches a 256 MiB
+receiver limit. Also size `stream-dictionary-total-bytes` for the maximum number
+of simultaneous stream connections times the per-connection receiver allowance,
+with room for overlapping connections during restarts. The receiver reserves the
+full allowance per stream. Neither receiver limit reloads on SIGHUP.
+These are dictionary limits; frame/compression buffers and cache need additional
+memory. There is no limit negotiation in the v1 protocol. If the sender's cap
+exceeds the receiver's, an over-budget definition causes a decode error and the
+receiver closes the connection before emitting rows from that frame. Pending
+sender writes can then reconnect/replay, so a mismatch can cause repeated
+failures and uncertain delivery. Destination settings take effect on relay
+reload as connections are recreated; global relay memory changes need a restart.
 
 `nanotube_stream_name_table_retained_bytes`,
 `nanotube_stream_name_table_retained_names`,
@@ -125,8 +145,13 @@ with a smaller custom budget needs matching sender limits.
 `nanotube_stream_connection_dictionary_bytes`,
 `nanotube_stream_connection_map_bytes`, and
 `nanotube_stream_connection_names` sum live connections per destination.
-Reset counters remain cumulative. Frequent resets and shared-table exhaustion
-produce rate-limited warning logs.
+Reset counters remain cumulative. The additional
+`nanotube_stream_dictionary_resets_by_reason_total{reason=~"peer_bytes|local_bytes|names"}`
+counter uses the same destination labels and identifies the binding limit. If
+several limits bind at once, peer bytes take precedence, then local bytes, then
+names; the reason counters sum to the existing reset counter. Frequent-reset
+warnings include both byte limits and counts for each reset reason in that
+encoded batch. Shared-table exhaustion also produces rate-limited warnings.
 
 An opt-in churn soak uses the real enqueue, dispatch, frame, compression and
 write path with nine hosts, three aligned site replicas and ten sockets per host:
@@ -144,3 +169,17 @@ zstd-plaintext baseline. Fixture construction is outside output process-CPU
 measurements. Per-minute output includes RSS, heap, retained capacities, name
 counts, definitions, resets and wire bytes. Synthetic results still need a
 representative target-architecture canary before a production CPU claim.
+
+`STREAM_CHURN_ROLLUP=1` selects a fixed active pool of 10.8 million names
+(about 360k per socket at scale 1), copied across three sites. Cohorts repeat
+every 1–60 modeled minutes. Minute zero primes the pool; every quarter hour,
+one eighth changes generation and emits four nearby updates. Run 61 minutes
+to include all repeat periods and four bursts. `STREAM_CHURN_PEER` sets the
+peer cap in bytes, independently of scale. For example, compare 67108864,
+134217728, 268435456 and 536870912 with `STREAM_CHURN_TOTAL=4294967296` and
+`STREAM_CHURN_BUDGET=16777216`. The latter two local budgets divide by scale.
+`STREAM_CHURN_RECEIVER=/path/to/churn_receiver` enables the independent
+40-connection receiver with the matching per-connection limit;
+`STREAM_CHURN_RECEIVER_LOG=/path/to/receiver.jsonl` receives its measurements.
+Use counting sockets without the receiver child for relay CPU comparisons so
+pipe writes do not distort output-path cost. Repeat at scale 1 for actual RSS.

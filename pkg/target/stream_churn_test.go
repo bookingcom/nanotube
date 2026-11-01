@@ -47,6 +47,8 @@ func TestStreamChurn(t *testing.T) {
 		return fallback
 	}
 	scale, minutes := integer("STREAM_CHURN_SCALE", 100), integer("STREAM_CHURN_MINUTES", 120)
+	rollup := os.Getenv("STREAM_CHURN_ROLLUP") == "1"
+	peerBytes := integer("STREAM_CHURN_PEER", 64<<20)
 	// 12.7M names/min / 4 relays = core + new. 32M definitions in
 	// twelve minutes / three replicas = core + 12*new.
 	core, normal := 2_493_939/scale, 681_061/scale
@@ -58,7 +60,7 @@ func TestStreamChurn(t *testing.T) {
 	var output *bufio.Reader
 	var receiverLog *os.File
 	if path := os.Getenv("STREAM_CHURN_RECEIVER"); path != "" {
-		child = exec.Command(path, "-connections=40", "-profile="+os.Getenv("STREAM_CHURN_RECEIVER_PROFILE"))
+		child = exec.Command(path, "-connections=40", "-dictionary-bytes="+strconv.Itoa(peerBytes), "-profile="+os.Getenv("STREAM_CHURN_RECEIVER_PROFILE"))
 		var err error
 		input, err = child.StdinPipe()
 		if err != nil {
@@ -101,6 +103,7 @@ func TestStreamChurn(t *testing.T) {
 		cfg.TCPOutCompression = "zstd"
 		cfg.TCPOutZstdFrameSize = 1 << 20
 		opts := conf.StreamOptions{Zstd: true}.WithDefaults(1)
+		opts.PeerDictionaryBytes = peerBytes
 		// Decode through JSON so the same harness compiles against the baseline.
 		budget := integer("STREAM_CHURN_BUDGET", ((1<<30)-(1<<30)/2)/90) / scale
 		if err := json.Unmarshal(fmt.Appendf(nil, `{"DictionaryBytes":%d}`, budget), &opts); err != nil {
@@ -161,6 +164,10 @@ func TestStreamChurn(t *testing.T) {
 			}
 		}
 		count := 39_000_000 / scale
+		var rollupIDs func(int) uint64
+		if rollup {
+			count, rollupIDs = rollupMinute(minute, 10_800_000/scale)
+		}
 		// Spread four updates per new name through the minute; the rest
 		// cycles uniformly through the core. A bounded 64k-record input window
 		// keeps generation outside timing without a syscall per queue chunk.
@@ -173,6 +180,9 @@ func TestStreamChurn(t *testing.T) {
 				id := uint64((i - int(j)) % core)
 				if i == 0 || j != previous {
 					id = next + uint64(j/4)
+				}
+				if rollup {
+					id = rollupIDs(i)
 				}
 				name := fmt.Appendf(lines[k%queueChunkLen][:0], "example.application.%02d.region.%02d.namespace.%s.node.%012x.requests", id%uint64(max(1, 32/scale)), id%uint64(max(1, 7/scale)), strings.Repeat("component.", 16+int(id%uint64(max(1, 7/scale)))), id)
 				parsed, err := rec.ParseRec(fmt.Appendf(name, " %d.%03d %d", (id%10000+uint64(minute*17+i/core))%10000, (id+uint64(minute*13+i/core*3))%1000, 1700000000+minute*60+i*60/count), false, false, time.Now, zap.NewNop())
@@ -255,12 +265,16 @@ func TestStreamChurn(t *testing.T) {
 				}
 			}
 		}
-		definitions, resets := 0.0, 0.0
+		definitions, resets, peerResets, localResets, nameResets := 0.0, 0.0, 0.0, 0.0, 0.0
 		for _, s := range senders {
 			definitions += testutil.ToFloat64(s.ms.Names)
 			resets += testutil.ToFloat64(s.ms.Resets)
+			peerResets += testutil.ToFloat64(s.ms.PeerResets)
+			localResets += testutil.ToFloat64(s.ms.LocalResets)
+			nameResets += testutil.ToFloat64(s.ms.NameResets)
 		}
 		fmt.Printf("DICT minute=%d shared_bytes=%d shared_names=%d name_bytes=%d connection_bytes=%d map_bytes=%d connection_names=%d definitions=%.0f resets=%.0f evictions=%d\n", minute+1, sharedBytes, sharedNames, nameBytes, retained, maps, names, definitions, resets, evictions)
+		fmt.Printf("REASONS minute=%d peer_bytes=%.0f local_bytes=%.0f names=%.0f peer_limit=%d rollup=%v\n", minute+1, peerResets, localResets, nameResets, peerBytes, rollup)
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		rss, _ := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(os.Getpid())).Output()
@@ -286,6 +300,53 @@ func TestStreamChurn(t *testing.T) {
 	}
 	runtime.KeepAlive(hosts)
 	runtime.KeepAlive(senders)
+}
+
+// rollupMinute keeps 360k active names per connection at full scale: 10.8M
+// names, three partitions and ten sockets, copied to three replica sites.
+// Equal-sized cohorts repeat every 1..60 minutes with evenly spread phases.
+// Minute zero primes every cohort. At each quarter hour, one eighth of the
+// pool changes generation and emits four nearby updates; subsequent scheduled
+// updates use that generation. This models short bursts and slow rollup reuse
+// without retaining an unbounded generated input fixture.
+func rollupMinute(minute, pool int) (int, func(int) uint64) {
+	cohort := pool / 60
+	pool = cohort * 60
+	if minute == 0 {
+		return pool, func(i int) uint64 { return uint64(i) }
+	}
+	type span struct{ first, step, count int }
+	spans := make([]span, 0, 60)
+	count := 0
+	for period := 1; period <= 60; period++ {
+		phase := minute % period
+		n := (cohort - phase + period - 1) / period
+		spans = append(spans, span{(period-1)*cohort + phase, period, n})
+		count += n
+	}
+	burst := 0
+	if minute%15 == 0 {
+		burst = pool / 8 * 4
+	}
+	return count + burst, func(i int) uint64 {
+		var id int
+		if i < burst {
+			id = i / 4 * 8
+		} else {
+			i -= burst
+			for _, s := range spans {
+				if i < s.count {
+					id = s.first + i*s.step
+					break
+				}
+				i -= s.count
+			}
+		}
+		if id%8 == 0 {
+			id += pool * (minute / 15)
+		}
+		return uint64(id)
+	}
 }
 
 type churnPipeConn struct {
