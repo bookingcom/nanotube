@@ -334,3 +334,30 @@ func FuzzDecoder(f *testing.F) {
 		}
 	})
 }
+
+// Keep lengths and CRC valid so mutations reach the column/state parsers too.
+func FuzzFramePayload(f *testing.F) {
+	wire := golden(f)[PreambleSize:]
+	size := binary.BigEndian.Uint32(wire[4:8])
+	f.Add(DataFrame, uint32(3), wire[HeaderSize:HeaderSize+int(size)])
+	f.Add(StateFrame, uint32(0), []byte{0, 1, 1, 'x', 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0})
+	f.Fuzz(func(t *testing.T, kind byte, rows uint32, raw []byte) {
+		if len(raw) > 64<<10 {
+			return
+		}
+		o := Options{MaxFrameSize: 64 << 10, MaxNames: 1024, MaxRows: 1024, MaxNameSize: 1024}
+		d := decoder(t, o)
+		frame, err := appendFrame(nil, raw, kind%3, int(rows%1025), nil, o.MaxFrameSize)
+		if err != nil {
+			return
+		}
+		if _, err = d.Decode(frame, nil); err != nil {
+			return
+		}
+		snapshot, err := d.Snapshot(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decodeAll(t, decoder(t, o), snapshot, nil)
+	})
+}

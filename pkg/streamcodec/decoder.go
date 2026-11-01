@@ -84,7 +84,7 @@ func (d *Decoder) ReadFrame(r io.Reader, visit Visit) (FrameInfo, error) {
 	}
 	if d.readN < size {
 		if err := readMore(r, d.wire, &d.readN); err != nil {
-			if err == io.EOF {
+			if err == io.EOF { //nolint:errorlint // Only ReadFull's direct EOF needs upgrading after a consumed header.
 				err = io.ErrUnexpectedEOF
 			} // A header was already consumed.
 			return info, err
