@@ -2,8 +2,14 @@
 
 Copied from `github.com/go-graphite/go-carbon/receiver/stream/codec` at
 `cde09ec1887c5dd5cae4dff980715a22440b4dd5`. Original source files and golden
-vectors are unchanged. `observed.go` adds counter observations around `Add`
-without changing its encoding or maintaining a second dictionary.
+vectors are unchanged. `observed.go` adds counter observations around `Add`.
+`hashed.go` adds an optional `HashedEncoder` for callers that already have a
+stable 64-bit name hash. It verifies names byte for byte and follows collision
+chains, delegating definitions, resets and wire encoding to the copied encoder.
+Only its known-name append bypasses the string map; differential tests pin this
+small fast path against `Encoder.Add`, including implicit frame boundaries,
+forced collisions and resets. The extra index costs a uint64-to-id map plus one
+uint32 collision link per name. Hashes and collision links never go on the wire.
 
 Importing the whole module upgraded the relay's Prometheus, OpenTelemetry,
 compression, protobuf, networking, syscall, and other shared dependencies.

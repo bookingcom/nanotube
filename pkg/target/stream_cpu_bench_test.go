@@ -25,7 +25,7 @@ import (
 // ns/record is elapsed time. Fixture construction and warmup are outside both.
 func BenchmarkStreamOutputCPU(b *testing.B) {
 	const names = 250_000 // approximately 25k distinct names on each of 10 sockets
-	const samples = 4 // changed values avoid an unrealistically all-zero XOR column
+	const samples = 4     // changed values avoid an unrealistically all-zero XOR column
 	rs := make([]*rec.RecBytes, names*samples)
 	for n := range rs {
 		i, sample := n%names, n/names
@@ -53,7 +53,7 @@ func BenchmarkStreamOutputCPU(b *testing.B) {
 			cfg.HostQueueSize = 1024
 			cfg.TCPOutCompression = "zstd"
 			cfg.TCPOutZstdFrameSize = 1 << 20
-			h := ConstructHostMTCP("example", cfg, conf.Host{Name: "localhost", MTCP: 10}, zap.NewNop(), metrics.New())
+			h := ConstructHostMTCP("example", cfg, conf.Host{Name: "localhost", MTCP: 10, Stream: mode == "stream-zstd", StreamOptions: conf.StreamOptions{Zstd: true}}, zap.NewNop(), metrics.New())
 			wires := make([]*countingStreamConn, 10)
 			for i := range h.MTCPs {
 				wires[i] = &countingStreamConn{}
@@ -92,7 +92,7 @@ func BenchmarkStreamOutputCPU(b *testing.B) {
 				}()
 			}
 			cycle := func(batch []*rec.RecBytes) {
-				h.q.push(batch)
+				h.pushBulk(batch)
 				chunk := h.q.pop()
 				send(chunk.recs[:chunk.n])
 				h.q.recycle(chunk)
@@ -139,5 +139,5 @@ func outputCPUTime(b testing.TB) int64 {
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err != nil {
 		b.Fatal(err)
 	}
-	return (usage.Utime.Sec+usage.Stime.Sec)*1e9 + int64(usage.Utime.Usec+usage.Stime.Usec)*1e3
+	return (int64(usage.Utime.Sec)+int64(usage.Stime.Sec))*1e9 + (int64(usage.Utime.Usec)+int64(usage.Stime.Usec))*1e3
 }

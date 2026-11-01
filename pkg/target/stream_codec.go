@@ -8,7 +8,7 @@ import (
 )
 
 type carbonStreamCodec struct {
-	encoder *codec.Encoder
+	encoder *codec.HashedEncoder
 	marker  []byte
 	wire    []byte
 }
@@ -18,7 +18,7 @@ func newStreamCodec(o conf.StreamOptions) (streamCodec, error) {
 	if o.Zstd {
 		flags = codec.FlagZstd
 	}
-	e, err := codec.NewEncoder(codec.Options{Flags: flags, FrameSize: o.MaxBytes, MaxRows: o.MaxRows, MaxNames: o.MaxNames})
+	e, err := codec.NewHashedEncoder(codec.Options{Flags: flags, FrameSize: o.MaxBytes, MaxRows: o.MaxRows, MaxNames: o.MaxNames})
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func (c *carbonStreamCodec) encode(points []streamPoint) ([]byte, int, streamFra
 	n := 0
 	stats := streamFrameStats{}
 	for _, p := range points {
-		defined, reset, addErr := c.encoder.AddObserved(p.name, p.value, p.timestamp)
+		defined, reset, addErr := c.encoder.AddHashed(p.name, p.hash, p.value, p.timestamp)
 		if addErr != nil {
 			if n == 0 {
 				return nil, 0, streamFrameStats{}, addErr

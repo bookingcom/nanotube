@@ -167,6 +167,9 @@ func ConstructHostMTCP(clusterName string, mainCfg conf.Main, hostCfg conf.Host,
 
 // Push adds a new record to send to the host queue.
 func (h *HostMTCP) Push(r *rec.RecBytes) {
+	if h.streamOptions != nil {
+		r.PathHash() // Initialize before publishing to concurrent stream consumers.
+	}
 	if !h.q.pushOne(r) {
 		h.throttled.Inc()
 		h.throttledTotal.Inc()
@@ -175,6 +178,11 @@ func (h *HostMTCP) Push(r *rec.RecBytes) {
 }
 
 func (h *HostMTCP) pushBulk(rs []*rec.RecBytes) {
+	if h.streamOptions != nil {
+		for _, r := range rs {
+			r.PathHash()
+		}
+	}
 	if dropped := h.q.push(rs); dropped > 0 {
 		h.throttled.Add(float64(dropped))
 		h.throttledTotal.Add(float64(dropped))

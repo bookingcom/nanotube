@@ -359,7 +359,7 @@ func TestStreamPinsNamesAcrossConnectionsAndReconnect(t *testing.T) {
 		timelines[p.name] = append(timelines[p.name], p.timestamp)
 	}
 	for _, r := range rs {
-		if owners[string(r.Path)] != s.connectionIndex(r.Path) {
+		if owners[string(r.Path)] != s.connectionIndex(r.PathHash()) {
 			t.Fatal("incorrect path partition")
 		}
 	}
