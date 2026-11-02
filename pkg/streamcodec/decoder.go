@@ -29,6 +29,7 @@ type Decoder struct {
 	names       []nameRef
 	definitions [][]byte
 	resolve     func([]byte) any
+	release     func(any)
 	nameBytes   int
 	arena       nameArena
 	rows        []row
@@ -51,6 +52,7 @@ func NewDecoder(o Options) (*Decoder, error) {
 }
 
 func (d *Decoder) Close() {
+	d.releaseNames()
 	if d.z != nil {
 		d.z.Close()
 	}
@@ -151,7 +153,7 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 		return info, ErrFrame
 	}
 	if info.Kind == ResetFrame {
-		clear(d.entries)
+		d.releaseNames()
 		d.entries = d.entries[:0]
 		d.arena.reset()
 		d.names = d.names[:0]
@@ -234,8 +236,7 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 		if r.err != nil || len(r.data) != 0 || count == 0 {
 			return info, ErrFrame
 		}
-		d.bind(int(first))
-		return info, nil
+		return info, d.bind(int(first))
 	}
 	idsLen, stampsLen := r.uint(), r.uint()
 	ids := reader{data: r.bytes(idsLen)}
@@ -265,7 +266,9 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 	if ids.err != nil || stamps.err != nil || values.err != nil || len(ids.data)+len(stamps.data)+len(values.data) != 0 {
 		return info, ErrFrame
 	}
-	d.bind(int(first))
+	if err = d.bind(int(first)); err != nil {
+		return info, err
+	}
 	if visit != nil {
 		for _, p := range d.rows {
 			e := &d.entries[p.id]
@@ -367,17 +370,41 @@ type NameReference interface{ StreamName() []byte }
 // Call between frames. Existing ids are resolved once; no point is emitted.
 // Returned values must implement NameReference and live until their last slot
 // is released. Visit must preserve the bound reference in *slot.
-// The resolver is never called for a rejected frame.
+// The resolver is never called for a malformed frame.
+// A resolver may return an error to reject admission after validation; no rows
+// are visited, and Close releases any earlier definitions admitted in that frame.
 func (d *Decoder) SetNameResolver(resolve func([]byte) any) {
 	if resolve == nil || d.resolve != nil {
 		return
 	}
 	for i := range d.entries {
-		d.entries[i].slot = resolve(d.name(i))
+		ref := resolve(d.name(i))
+		if _, rejected := ref.(error); rejected {
+			clear(d.entries[i:]) // Unbound caller slots must not reach the releaser.
+			d.broken = true
+			return
+		}
+		d.entries[i].slot = ref
 	}
 	d.resolve = resolve
 	d.names = nil
 	d.arena = nameArena{quantum: d.arena.quantum}
+}
+
+// SetNameReleaser releases externally bound slots on RESET and Close, including
+// slots bound by STATE replay. Call before decoding; each non-nil slot is released
+// exactly once. Malformed frames never bind their definitions.
+func (d *Decoder) SetNameReleaser(release func(any)) { d.release = release }
+
+func (d *Decoder) releaseNames() {
+	if d.release != nil {
+		for i := range d.entries {
+			if slot := d.entries[i].slot; slot != nil {
+				d.release(slot)
+			}
+		}
+	}
+	clear(d.entries)
 }
 func (d *Decoder) name(i int) []byte {
 	if d.resolve != nil {
@@ -385,12 +412,17 @@ func (d *Decoder) name(i int) []byte {
 	}
 	return d.arena.name(d.names[i])
 }
-func (d *Decoder) bind(first int) {
+func (d *Decoder) bind(first int) error {
 	if d.resolve != nil {
 		for i, name := range d.definitions {
-			d.entries[first+i].slot = d.resolve(name)
+			ref := d.resolve(name)
+			if err, ok := ref.(error); ok {
+				return err
+			}
+			d.entries[first+i].slot = ref
 		}
 	}
 	clear(d.definitions)
 	d.definitions = d.definitions[:0]
+	return nil
 }

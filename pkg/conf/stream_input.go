@@ -1,6 +1,7 @@
 package conf
 
-// StreamInputDictionaryLimit bounds the shared decoder's allocated dictionary.
+// StreamInputDictionaryLimit bounds decoder capacity plus a connection's logical
+// charge for the shared names and index entries its ids can retain.
 func (c Main) StreamInputDictionaryLimit() int {
 	if c.StreamInputMaxDictionaryBytes == 0 {
 		return 64 << 20
@@ -16,7 +17,8 @@ func (c Main) StreamInputRouteLimit() int {
 	return c.StreamInputMaxRouteBytes
 }
 
-// StreamInputTotalLimit bounds aggregate dictionary/route reservations. It does
+// StreamInputTotalLimit bounds the fixed shared index and aggregate connection
+// dictionary/route reservations. It does
 // not allocate eagerly or include queues, frame buffers and compression contexts.
 func (c Main) StreamInputTotalLimit() int {
 	if c.StreamInputTotalBytes == 0 {

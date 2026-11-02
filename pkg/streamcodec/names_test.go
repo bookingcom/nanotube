@@ -226,6 +226,93 @@ func TestSharedTableUnusedGrace(t *testing.T) {
 type testSeries struct{ name []byte }
 
 func (s *testSeries) StreamName() []byte { return s.name }
+
+func TestExternalNameReleaseRequiresValidatedReset(t *testing.T) {
+	for _, mode := range []string{"valid", "crc", "header", "admission"} {
+		t.Run(mode, func(t *testing.T) {
+			e := encoder(t, Options{})
+			add(t, e, "name.one", 1, 2)
+			wire := flush(t, e, nil)
+			d := decoder(t, Options{})
+			bound, released := 0, 0
+			d.SetNameResolver(func(name []byte) any {
+				bound++
+				if mode == "admission" && bound == 2 {
+					return ErrLimit
+				}
+				return &testSeries{bytes.Clone(name)}
+			})
+			d.SetNameReleaser(func(any) { released++ })
+			decodeAll(t, d, wire, nil)
+			if mode == "admission" {
+				add(t, e, "name.two", 1, 2)
+				wire = flush(t, e, nil)
+				visited := 0
+				if _, err := d.ReadFrame(bytes.NewReader(wire), func(uint32, []byte, float64, int64, *any) { visited++ }); err != ErrLimit || visited != 0 {
+					t.Fatal("admission failure emitted rows")
+				}
+			} else {
+				if err := e.Reset(); err != nil {
+					t.Fatal(err)
+				}
+				wire = flush(t, e, nil)
+				if mode == "crc" {
+					wire[16] ^= 1
+				}
+				if mode == "header" {
+					wire[15] = 1
+				}
+				_, err := d.ReadFrame(bytes.NewReader(wire), nil)
+				if (err == nil) != (mode == "valid") {
+					t.Fatal("reset validation changed")
+				}
+			}
+			want := 0
+			if mode == "valid" {
+				want = 1
+			}
+			if released != want {
+				t.Fatal("unvalidated reset released live names")
+			}
+			d.Close()
+			d.Close()
+			if released != 1 {
+				t.Fatal("close did not release each admitted reference exactly once")
+			}
+		})
+	}
+}
+
+func TestExternalNameAdmissionWhenBindingExistingIDs(t *testing.T) {
+	e := encoder(t, Options{})
+	for _, name := range []string{"one", "two", "three"} {
+		add(t, e, name, 1, 2)
+	}
+	d := decoder(t, Options{})
+	decodeAll(t, d, flush(t, e, nil), func(_ uint32, _ []byte, _ float64, _ int64, slot *any) { *slot = "private caller state" })
+	bound, released := 0, 0
+	d.SetNameReleaser(func(ref any) {
+		if _, ok := ref.(*testSeries); !ok {
+			t.Fatal("released a slot that was never bound")
+		}
+		released++
+	})
+	d.SetNameResolver(func(name []byte) any {
+		bound++
+		if bound == 2 {
+			return ErrLimit
+		}
+		return &testSeries{bytes.Clone(name)}
+	})
+	if _, err := d.Decode(nil, nil); err != ErrBroken {
+		t.Fatal("admission failure did not invalidate the decoder")
+	}
+	d.Close()
+	if released != 1 {
+		t.Fatal("partial binding leaked or over-released a reference")
+	}
+}
+
 func TestExternalSeriesValidationSnapshotAndReset(t *testing.T) {
 	for _, flags := range []byte{0, FlagZstd} {
 		identities := map[string]*testSeries{}

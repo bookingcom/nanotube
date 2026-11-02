@@ -23,6 +23,17 @@ type StreamSink interface {
 }
 type StreamFactory func() StreamSink
 
+// StreamNameBinder shares immutable definitions and plans across connections.
+// NameBytes is a conservative per-connection charge for everything its slots can
+// keep alive; physical shared bytes are reported by the binder itself. ReleaseName
+// must undo every BindName, including definitions restored by a handoff snapshot.
+type StreamNameBinder interface {
+	BindName([]byte) any
+	ReleaseName(any)
+	NameBytes() int
+	SetNameLimit(int)
+}
+
 // Names bound outside the decoder arena remain immutable across reset. Queued
 // records can outlive the dictionary generation; the copied codec reuses arenas.
 type inputName struct {
@@ -96,17 +107,25 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		return
 	}
 	nameBytes := 0
-	d.SetNameResolver(func(name []byte) any {
-		owned := append([]byte(nil), name...)
-		// Match the decoder's external-name reservation: payload plus caller object.
-		nameBytes += len(owned) + 64
-		return &inputName{name: owned}
-	})
-	defer d.Close()
+	binder, shared := sink.(StreamNameBinder)
+	if shared {
+		d.SetNameResolver(func(name []byte) any {
+			binder.SetNameLimit(cfg.StreamInputDictionaryLimit() - d.RetainedBytes())
+			return binder.BindName(name)
+		})
+		d.SetNameReleaser(binder.ReleaseName)
+	} else {
+		d.SetNameResolver(func(name []byte) any {
+			owned := append([]byte(nil), name...)
+			nameBytes += len(owned) + 64
+			return &inputName{name: owned}
+		})
+	}
 	defer sink.Flush()
 	if closer, ok := sink.(interface{ Close() }); ok {
 		defer closer.Close()
 	}
+	defer d.Close() // Release names before closing their sink, including on handoff.
 	retained := 0
 	defer func() { ms.StreamInputDictionaryBytes.Sub(float64(retained)) }()
 	// Stage at most one bounded frame. No point reaches routing before both
@@ -119,8 +138,12 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		}
 		pending = pending[:0]
 		info, err := d.ReadFrame(r, func(id uint32, name []byte, value float64, ts int64, slot *any) {
-			ref := (*slot).(*inputName)
-			pending = append(pending, inputPoint{id, name, value, ts, &ref.route})
+			if !shared {
+				slot = &(*slot).(*inputName).route
+			}
+			// Decoder slots can move only on the next frame. All pending points
+			// are delivered (or discarded) before then.
+			pending = append(pending, inputPoint{id, name, value, ts, slot})
 		})
 		if err != nil {
 			if c.moving() {
@@ -141,6 +164,10 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 			nameBytes = 0
 		}
 		current := d.RetainedBytes() + nameBytes
+		if shared && d.RetainedBytes()+binder.NameBytes() > cfg.StreamInputDictionaryLimit() {
+			fail(errors.New("stream input dictionary allowance exhausted"))
+			return
+		}
 		ms.StreamInputDictionaryBytes.Add(float64(current - retained))
 		retained = current
 		if info.Kind == codec.ResetFrame {
