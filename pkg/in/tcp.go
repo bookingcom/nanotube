@@ -221,6 +221,12 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan stru
 			return
 		default:
 		}
+		// An idle client hitting IncomingConnIdleTimeoutSec is a normal close, not a read error.
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			lg.Info("TCP input connection idle, closing", zap.String("peer", conn.RemoteAddr().String()))
+			return
+		}
 		ms.ErrorRecs.Inc()
 		lg.Error("TCP input scan failed", zap.Error(err))
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/ratelimiter"
 	"github.com/klauspost/compress/zstd"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/zap"
 )
 
@@ -150,5 +151,37 @@ func TestTCPCompressedPlaintextAutodetection(t *testing.T) {
 	}
 	if len(records) != 2 || string(records[0]) != "example.one 1 2" || string(records[1]) != "example.two 3 4" {
 		t.Fatalf("records: %q", records)
+	}
+}
+
+func TestTCPIdleTimeoutIsNotAnError(t *testing.T) {
+	cfg := conf.MakeDefault()
+	cfg.MainQueueBatchSize = 1
+	cfg.BatchFlushPerdiodSec = 0
+	cfg.IncomingConnIdleTimeoutSec = 1
+	ms := metrics.New()
+	queue := make(chan [][]byte, 10)
+	server, client := net.Pipe()
+	defer client.Close()
+	done := make(chan struct{})
+	go func() {
+		scanForRecordsTCPBuf(server, queue, make(chan struct{}), nil, &cfg, ms, zap.NewNop())
+		server.Close()
+		close(done)
+	}()
+	if _, err := client.Write([]byte("example.one 1 2\n")); err != nil {
+		t.Fatal(err)
+	}
+	// The client stays connected but sends nothing more, so the idle deadline closes it.
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("idle input was not closed")
+	}
+	if n := testutil.ToFloat64(ms.ErrorRecs); n != 0 {
+		t.Fatalf("idle close counted as %v error records", n)
+	}
+	if len(queue) != 1 {
+		t.Fatalf("records before idle close: %d", len(queue))
 	}
 }
