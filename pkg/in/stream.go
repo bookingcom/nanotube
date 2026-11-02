@@ -24,8 +24,8 @@ type StreamSink interface {
 type StreamFactory func() StreamSink
 
 // StreamNameBinder shares immutable definitions and plans across connections.
-// NameBytes is a conservative per-connection charge for everything its slots can
-// keep alive; physical shared bytes are reported by the binder itself. ReleaseName
+// NameBytes is the connection's admission charge, the codec's external-name
+// estimate; physical shared bytes are reported by the binder itself. ReleaseName
 // must undo every BindName, including definitions restored by a handoff snapshot.
 type StreamNameBinder interface {
 	BindName([]byte) any

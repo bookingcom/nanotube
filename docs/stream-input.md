@@ -40,7 +40,7 @@ Main settings, with zero selecting defaults:
 | --- | ---: | --- |
 | `StreamInputMaxFrameBytes` | 8388608 | Wire and expanded frame ceiling |
 | `StreamInputMaxNames` | 1000000 | Dictionary names per connection |
-| `StreamInputMaxDictionaryBytes` | 67108864 | Decoder capacity plus each slot's conservative logical name/table charge |
+| `StreamInputMaxDictionaryBytes` | 67108864 | Decoder capacity plus each slot's codec name estimate (name bytes + 64) |
 | `StreamInputMaxRouteBytes` | 134217728 | Logical cached-plan allowance per connection |
 | `StreamInputTotalBytes` | 3221225472 | Global fixed shared index plus connection admission reservations |
 
@@ -48,11 +48,14 @@ The dictionary limit accepts 4096–1073741824 bytes. The route limit accepts a
 positive value up to 1073741824. Global admission reserves the entire dictionary
 and route allowance before constructing each decoder, without eager allocation,
 and reserves the fixed shared index once at startup. Each slot is charged the
-full name, entry and index-growth allowance it can pin, plus a canonical entry
-for a normalized alias. This conservative scheme remains fair after the producer
-that first introduced a name disconnects. Physical shared storage is counted only
-once. Each cached slot is also charged its full plan; cache eligibility is stored
-in the reference's type without another per-slot allocation.
+codec's external-name estimate (name bytes plus 64), the same estimate senders
+budget `peer_dictionary_bytes` against, so a sender that fits its peer allowance
+is never rejected for sharing metadata. Physical shared storage is counted only
+once; a name held by a single connection can exceed its charge by its entry and
+index share (about 80 bytes), a name shared by two or more cannot. Each cached
+slot is also charged its full plan, and a cached normalized alias its canonical
+entry, to the route allowance; cache eligibility is stored in the reference's
+type without another per-slot allocation.
 
 A full route allowance stops retaining new plans; those points still route
 normally. Uncached slots hold name references only and cannot keep another
@@ -87,8 +90,7 @@ the old per-ID caches, plan headers reside inside the shared name entries.
 Gauges publish deltas at frame boundaries and close; after all clients disconnect,
 only the fixed index remains. Route hits count points using cached plans; misses
 count plan builds (including uncached fallback), so they are not complementary
-point counts. Dictionary accounting is stricter than the codec's peer estimate;
-leave headroom in the sender's peer allowance for shared-entry/index metadata.
+point counts.
 Decode, truncation and budget failures log errors with peer addresses. Decoded
 rows also contribute to normal input counters and rate limiting. Malformed
 frames emit no rows. Definitions bind only after complete frame validation.

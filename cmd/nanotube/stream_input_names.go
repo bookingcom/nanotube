@@ -142,15 +142,18 @@ func (t *streamNames) get(s *streamNameShard, name []byte, hash uint64, changes 
 	return e
 }
 
-// Logical charges include index growth. At 1/4 occupancy the retained index is
-// at most 32 bytes/name beyond its fixed allocation; 64 covers resize overlap.
+// nameStorage is the physical entry and name allocation, counted once in gauges.
 func nameStorage(e *streamName) int {
 	return int(streamInputCharge(uint64(unsafe.Sizeof(*e)))) + int(e.nameClass)*8
 }
-func nameAllowance(e *streamName) int { return nameStorage(e) + 64 }
-func nameSizeAllowance(n int) int {
-	return int(streamInputCharge(uint64(unsafe.Sizeof(streamName{})))+streamInputCharge(uint64(n))) + 64
-}
+
+// Admission charges each slot the codec's external-name estimate (name bytes
+// plus 64), the one senders budget peer_dictionary_bytes against. A stricter
+// charge rejects producers that fill their peer allowance. A name only one
+// connection holds can exceed its charge by its entry rounding and index share
+// (about 80 bytes); names shared by two or more connections cannot.
+func nameAllowance(e *streamName) int { return len(e.name) + 64 }
+func nameSizeAllowance(n int) int     { return n + 64 }
 
 func (e *streamName) routeStorage() int {
 	if e.canonical != nil {
@@ -159,12 +162,14 @@ func (e *streamName) routeStorage() int {
 	return int(e.routeBytes)
 }
 
+// A cached alias charges its canonical entry with the plan, to the route
+// allowance: like the old per-ID normalized path, a full route allowance falls
+// back to uncached routing instead of failing the sender's dictionary.
 func (e *streamName) allowance() (int, int) {
-	dict := nameAllowance(e)
 	if e.canonical != nil {
-		dict += nameAllowance(e.canonical)
+		return nameAllowance(e), nameAllowance(e.canonical) + e.canonical.routeStorage()
 	}
-	return dict, e.routeStorage()
+	return nameAllowance(e), e.routeStorage()
 }
 
 // acquire runs only on dictionary definitions. Plans are built under their
@@ -215,12 +220,9 @@ func (t *streamNames) acquire(name []byte, routeLimit, dictLimit int, changes *s
 	// Canonical names can hash to the same shard. Never hold two shard locks.
 	// Pin the raw name while acquiring its canonical plan, then release a
 	// redundant canonical reference if another alias binder won the race.
+	// The canonical entry is charged to the route allowance (see allowance).
 	s.mu.Unlock()
-	if nameAllowance(e)+nameSizeAllowance(len(path)) > dictLimit {
-		t.release(e, false, changes)
-		return nil, false, 0, 0, codec.ErrLimit
-	}
-	canonical, cached, _, route, acquireErr := t.acquire(path, routeLimit, dictLimit-nameAllowance(e), changes)
+	canonical, cached, _, route, acquireErr := t.acquire(path, routeLimit-nameSizeAllowance(len(path)), int(^uint(0)>>1), changes)
 	if acquireErr != nil {
 		t.release(e, false, changes)
 		return nil, false, 0, 0, acquireErr
@@ -235,7 +237,7 @@ func (t *streamNames) acquire(name []byte, routeLimit, dictLimit int, changes *s
 		e.canonical = canonical
 		e.routeRefs = 1
 		s.mu.Unlock()
-		return e, true, nameAllowance(e) + nameAllowance(canonical), route, nil
+		return e, true, nameAllowance(e), nameAllowance(canonical) + route, nil
 	}
 	e.routeRefs++
 	dict, route := e.allowance()

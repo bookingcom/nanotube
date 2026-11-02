@@ -227,6 +227,52 @@ func TestStreamInputSharedSnapshotRebindAndAdmissionFailure(t *testing.T) {
 	}
 }
 
+// A sender filling its peer allowance must fit a relay whose dictionary limit
+// equals it: shared-entry metadata must not tighten connection admission.
+func TestStreamInputSharedAdmitsFullPeerAllowance(t *testing.T) {
+	rs, rw, ms, _ := differentialPipeline(t)
+	s := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
+	const limit = 1 << 20
+	e, err := codec.NewEncoder(codec.Options{DictionaryBytes: 64 << 20, PeerDictionaryBytes: limit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := codec.NewDecoder(codec.Options{DictionaryBytes: limit})
+	d.SetNameResolver(func(name []byte) any { // As readStream binds names.
+		s.SetNameLimit(limit - d.RetainedBytes())
+		return s.BindName(name)
+	})
+	d.SetNameReleaser(s.ReleaseName)
+	resets, peak := 0, 0
+	for i := range 40000 {
+		if _, reset, err := e.AddHashed(fmt.Appendf(nil, "example.good.%080d", i), uint64(i), 1, 2); err != nil {
+			t.Fatal(err)
+		} else if reset {
+			resets++
+		}
+		if i%1000 != 999 {
+			continue
+		}
+		wire, err := e.Flush(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for r := bytes.NewReader(wire); r.Len() > 0; {
+			if _, err := d.ReadFrame(r, nil); err != nil {
+				t.Fatalf("relay rejected a sender within its peer allowance: %v", err)
+			}
+			peak = max(peak, d.RetainedBytes()+s.NameBytes())
+		}
+	}
+	if resets == 0 || peak < limit*3/4 || peak > limit {
+		t.Fatalf("dictionary never filled the peer allowance: resets=%d peak=%d", resets, peak)
+	}
+	e.Close()
+	d.Close()
+	s.Close()
+	assertEmptyStreamNames(t, s)
+}
+
 func TestStreamInputSharedProductionShapeChurn(t *testing.T) {
 	streams, ms := modelStreams(t)
 	for epoch := range 3 {
