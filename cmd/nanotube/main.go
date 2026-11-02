@@ -128,7 +128,7 @@ func main() {
 	defer signal.Stop(sgn)
 
 	n := gracenet.Net{}
-	queue, budget, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms, func() in.StreamSink {
+	queue, budget, input, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms, func() in.StreamSink {
 		s := newStreamRouter(rules, rewrites, cfg.NormalizeRecords, lg, ms)
 		s.maxBytes = cfg.StreamInputRouteLimit()
 		return s
@@ -143,7 +143,7 @@ func main() {
 	// SIGTERM gracefully terminates with timeout
 	// SIGKILL terminates immediately
 	// SIGUSR2 triggers zero-downtime restart
-	if err := announceReplacementReady(); err != nil {
+	if err := announceReplacementReady(input); err != nil {
 		lg.Error("Reload: Cannot announce replacement readiness; draining.", zap.Error(err))
 		// Do not abandon input accepted before the readiness exchange failed.
 		select {
@@ -164,7 +164,7 @@ func main() {
 				continue
 			}
 			lg.Info("Reload: Config OK. Starting a new instance.")
-			pid, err := startReplacement(ctx, n.StartProcess, time.Second*time.Duration(cfg.TermTimeoutSec))
+			pid, err := startReplacement(ctx, n.StartProcess, time.Second*time.Duration(cfg.TermTimeoutSec), input)
 			if err != nil {
 				lg.Error("Reload: Failed to start ready replacement", zap.Error(err))
 				if cfg.PidFilePath != "" {

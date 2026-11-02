@@ -241,3 +241,8 @@ func TestTCPBudgetShutdownDrainsBlockedReader(t *testing.T) {
 		}
 	}
 }
+
+func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
+	c := &inputConn{Conn: conn, input: &TCPInput{cfg: cfg, ms: ms, lg: lg}}
+	scanInput(c, queue, term, rateLimiters, cfg, ms, lg, budget, stream...)
+}

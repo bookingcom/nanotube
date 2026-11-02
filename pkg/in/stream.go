@@ -40,7 +40,11 @@ type inputPoint struct {
 	slot      *any
 }
 
-func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, sink StreamSink) {
+func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, sink StreamSink, handoff ...*inputConn) {
+	var c *inputConn
+	if len(handoff) > 0 {
+		c = handoff[0]
+	}
 	fail := func(err error) {
 		// An idle producer hitting IncomingConnIdleTimeoutSec is a normal close, not a stream error.
 		var ne net.Error
@@ -62,7 +66,11 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 	ms.StreamInputActive.Inc()
 	defer ms.StreamInputActive.Dec()
 	preamble := make([]byte, codec.PreambleSize)
-	if _, err := io.ReadFull(r, preamble); err != nil {
+	if n, err := io.ReadFull(r, preamble); err != nil {
+		if c.moving() {
+			c.detach(func(w io.Writer) error { return writeWirePrefix(w, c, r, preamble[:n]) })
+			return
+		}
 		fail(err)
 		return
 	}
@@ -105,12 +113,20 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 	// codec validation and the aggregate dictionary-byte budget pass.
 	var pending []inputPoint
 	for {
+		if c.moving() {
+			detachStream(c, r, d, flags)
+			return
+		}
 		pending = pending[:0]
 		info, err := d.ReadFrame(r, func(id uint32, name []byte, value float64, ts int64, slot *any) {
 			ref := (*slot).(*inputName)
 			pending = append(pending, inputPoint{id, name, value, ts, &ref.route})
 		})
 		if err != nil {
+			if c.moving() {
+				detachStream(c, r, d, flags)
+				return
+			}
 			select {
 			case <-term:
 				return
@@ -145,4 +161,26 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		sink.Flush()
 		clear(pending) // No decoder names remain retained across the next reset.
 	}
+}
+
+func detachStream(c *inputConn, r *bufio.Reader, d *codec.Decoder, flags byte) {
+	c.detach(func(w io.Writer) error {
+		prefix, err := codec.AppendPreamble(nil, flags)
+		if err == nil {
+			prefix, err = d.Snapshot(prefix)
+		}
+		if err != nil {
+			return err
+		}
+		if _, err = w.Write([]byte{0}); err != nil {
+			return err
+		}
+		if _, err = w.Write(prefix); err != nil {
+			return err
+		}
+		if _, err = w.Write(d.Pending()); err != nil {
+			return err
+		}
+		return writeBuffered(w, c, r)
+	})
 }

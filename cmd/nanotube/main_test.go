@@ -60,7 +60,7 @@ func setup(t *testing.T) {
 	term := make(chan struct{})
 	var rateLimiters []*ratelimiter.SlidingWindow
 	n := gracenet.Net{}
-	pipe, budget, err := Listen(&n, rateLimiters, &cfg, term, lg, ms)
+	pipe, budget, _, err := Listen(&n, rateLimiters, &cfg, term, lg, ms)
 	if err != nil {
 		t.Fatalf("error launching listener, %v", err)
 	}

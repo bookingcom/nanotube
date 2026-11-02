@@ -16,6 +16,7 @@ func TestTerminalAccountingBypassesSampling(t *testing.T) {
 	lg := zap.New(shutdownCore{Core: zapcore.NewSamplerWithOptions(core, time.Hour, 10, 1000), terminal: core}).With(zap.String("context", "preserved"))
 	for i := 0; i < 12; i++ {
 		lg.Info("ordinary runtime log")
+		lg.Error("Reload: input connection handoff failed", zap.Int("connection", i))
 		lg.Info("Shutdown: TCP target summary", zap.Int("target", i))
 	}
 	lg.Info("Shutdown: TCP output summary")
@@ -31,7 +32,7 @@ func TestTerminalAccountingBypassesSampling(t *testing.T) {
 		}
 		counts[entry["msg"].(string)]++
 	}
-	if counts["ordinary runtime log"] != 10 || counts["Shutdown: TCP target summary"] != 12 || counts["Shutdown: TCP output summary"] != 1 {
+	if counts["Reload: input connection handoff failed"] != 12 || counts["ordinary runtime log"] != 10 || counts["Shutdown: TCP target summary"] != 12 || counts["Shutdown: TCP output summary"] != 1 {
 		t.Fatalf("unexpected log counts: %v", counts)
 	}
 }
