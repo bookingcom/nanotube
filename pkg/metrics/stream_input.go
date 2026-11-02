@@ -1,10 +1,13 @@
 package metrics
 
-// ReserveStreamInput reserves the fixed shared index at startup, and admits a
-// connection only if both of its full logical dictionary and route allowances
-// fit. Connection reservation happens before constructing a decoder.
+// ReserveStreamInput admits fixed connection costs and growth of decoder slots,
+// shared names, indexes, routes and frame buffers before retaining them. Shared storage is
+// charged once, independently of each sender's logical per-connection limits.
 func (m *Prom) ReserveStreamInput(n, limit int64) bool {
 	for {
+		if n < 0 {
+			return false
+		}
 		used := m.streamInputReserved.Load()
 		if n > limit-used {
 			return false
@@ -16,7 +19,7 @@ func (m *Prom) ReserveStreamInput(n, limit int64) bool {
 	}
 }
 
-// ReleaseStreamInput releases a closed input's admission reservation.
+// ReleaseStreamInput returns storage released by RESET, close or handoff.
 func (m *Prom) ReleaseStreamInput(n int64) {
 	m.streamInputReserved.Add(-n)
 	m.StreamInputReservedBytes.Sub(float64(n))

@@ -1,7 +1,9 @@
 package in
 
 import (
+	"bufio"
 	"bytes"
+	"io"
 	"net"
 	"sync"
 	"testing"
@@ -14,6 +16,50 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/zap"
 )
+
+type firstShortReader struct {
+	io.Reader
+	first bool
+}
+
+func (r *firstShortReader) Read(p []byte) (int, error) {
+	size := 4096
+	if !r.first {
+		r.first = true
+		size = 1000
+	}
+	return r.Reader.Read(p[:min(len(p), size)])
+}
+
+func TestPlaintextReaderUpgradeLeavesNoHiddenHandoffBytes(t *testing.T) {
+	first := append(bytes.Repeat([]byte{'a'}, 63000), []byte(" 1 100\n")...)
+	second := append(bytes.Repeat([]byte{'b'}, 8000), []byte(" 2 101\n")...)
+	wire := append(bytes.Clone(first), second...)
+	source := &firstShortReader{Reader: bytes.NewReader(wire)}
+	r := bufio.NewReaderSize(source, 4096)
+	if _, err := r.Peek(1); err != nil {
+		t.Fatal(err)
+	}
+	r = plaintextReader(r, source)
+	if _, err := r.Peek(4); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.ReadSlice('\n')
+	if err != nil || !bytes.Equal(got, first) {
+		t.Fatalf("long line: %v", err)
+	}
+	buffered, _ := r.Peek(r.Buffered())
+	tail := bytes.Clone(buffered)
+	rest, err := io.ReadAll(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Handoff serializes this reader's buffer, then the remaining raw source.
+	// A nested small reader can hide an extra chunk between those two owners.
+	if !bytes.Equal(append(tail, rest...), second) {
+		t.Fatal("reader upgrade hid bytes from accepted-connection handoff")
+	}
+}
 
 // pipeListener lets a completed client Write prove that the reader has received
 // the records before shutdown, without waiting for the batch's flush interval.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"time"
+	"unsafe"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
@@ -24,9 +25,9 @@ type StreamSink interface {
 type StreamFactory func() StreamSink
 
 // StreamNameBinder shares immutable definitions and plans across connections.
-// NameBytes is the connection's admission charge, the codec's external-name
-// estimate; physical shared bytes are reported by the binder itself. ReleaseName
-// must undo every BindName, including definitions restored by a handoff snapshot.
+// NameBytes is the connection's logical allowance charge, the codec's external-
+// name estimate; physical shared bytes are admitted and reported by the binder.
+// ReleaseName must undo every BindName, including handoff snapshot definitions.
 type StreamNameBinder interface {
 	BindName([]byte) any
 	ReleaseName(any)
@@ -68,12 +69,26 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		lg.Error("stream input failed", zap.Error(err))
 	}
 	ms.StreamInputConnections.Inc()
-	reservation := int64(cfg.StreamInputDictionaryLimit()) + int64(cfg.StreamInputRouteLimit())
+	// Fixed connection allowance, independent of its maximum dictionary size.
+	const initialReservation = 4096
+	reservation := int64(initialReservation)
 	if !ms.ReserveStreamInput(reservation, int64(cfg.StreamInputTotalLimit())) {
 		fail(errors.New("stream input global dictionary/route reservation exhausted"))
 		return
 	}
-	defer ms.ReleaseStreamInput(reservation)
+	defer func() { ms.ReleaseStreamInput(reservation) }()
+	resize := func(n int) bool {
+		want := int64(initialReservation + n)
+		if want > reservation {
+			if !ms.ReserveStreamInput(want-reservation, int64(cfg.StreamInputTotalLimit())) {
+				return false
+			}
+		} else if want < reservation {
+			ms.ReleaseStreamInput(reservation - want)
+		}
+		reservation = want
+		return true
+	}
 	ms.StreamInputActive.Inc()
 	defer ms.StreamInputActive.Dec()
 	preamble := make([]byte, codec.PreambleSize)
@@ -106,7 +121,11 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		fail(err)
 		return
 	}
-	nameBytes := 0
+	if c != nil && c.input != nil {
+		d.SetDecoderPool(c.input.decoders)
+	}
+	nameBytes, decoderBytes, bufferBytes, pendingBytes := 0, 0, 0, 0
+	var pending []inputPoint
 	binder, shared := sink.(StreamNameBinder)
 	if shared {
 		d.SetNameResolver(func(name []byte) any {
@@ -116,11 +135,34 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		d.SetNameReleaser(binder.ReleaseName)
 	} else {
 		d.SetNameResolver(func(name []byte) any {
+			charge := len(name) + 64
+			if !resize(decoderBytes + bufferBytes + pendingBytes + nameBytes + charge) {
+				return codec.ErrLimit
+			}
 			owned := append([]byte(nil), name...)
-			nameBytes += len(owned) + 64
+			nameBytes += charge
 			return &inputName{name: owned}
 		})
 	}
+	d.SetDictionaryBudget(func(n int) bool {
+		if !resize(n + bufferBytes + pendingBytes + nameBytes) {
+			return false
+		}
+		decoderBytes = n
+		return true
+	})
+	d.SetBufferBudget(func(n, rows int) bool {
+		capacity := max(cap(pending), rows)
+		staging := capacity * int(unsafe.Sizeof(inputPoint{}))
+		if !resize(decoderBytes + n + staging + nameBytes) {
+			return false
+		}
+		if capacity > cap(pending) {
+			pending = make([]inputPoint, 0, capacity)
+		}
+		bufferBytes, pendingBytes = n, staging
+		return true
+	})
 	defer sink.Flush()
 	if closer, ok := sink.(interface{ Close() }); ok {
 		defer closer.Close()
@@ -130,7 +172,6 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 	defer func() { ms.StreamInputDictionaryBytes.Sub(float64(retained)) }()
 	// Stage at most one bounded frame. No point reaches routing before both
 	// codec validation and the aggregate dictionary-byte budget pass.
-	var pending []inputPoint
 	for {
 		if c.moving() {
 			detachStream(c, r, d, flags)
@@ -162,6 +203,8 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		}
 		if info.Kind == codec.ResetFrame {
 			nameBytes = 0
+			pending, pendingBytes = nil, 0
+			_ = resize(decoderBytes + bufferBytes)
 		}
 		current := d.RetainedBytes() + nameBytes
 		if shared && d.RetainedBytes()+binder.NameBytes() > cfg.StreamInputDictionaryLimit() {

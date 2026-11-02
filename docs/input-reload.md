@@ -40,10 +40,10 @@ handoff version 1; client wire protocols are unchanged.
 
 One connection's snapshot is constructed at a time. Stream snapshots temporarily
 require memory proportional to that connection's bounded dictionary; they do not
-retain a fleet-wide snapshot. The successor reserves its configured dictionary
-and route allowances through the normal `StreamInputTotalBytes` admission path
-before constructing a stream decoder. Lower limits or admission exhaustion can
-reject inherited input and trigger the logged fallback.
+retain a fleet-wide snapshot. The successor reserves its fixed connection allowance and admits retained
+decoder, buffer, shared-name and route growth through the normal
+`StreamInputTotalBytes` path. Lower per-connection limits or exhausted growth
+admission can reject inherited input and trigger the logged fallback.
 
 Read-ahead keeps at most sixteen 64 KiB blocks plus its current read/consumer
 blocks in memory per inherited connection. Excess input spills to an unlinked

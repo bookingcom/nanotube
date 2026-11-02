@@ -42,36 +42,52 @@ Main settings, with zero selecting defaults:
 | `StreamInputMaxNames` | 1000000 | Dictionary names per connection |
 | `StreamInputMaxDictionaryBytes` | 67108864 | Decoder capacity plus each slot's codec name estimate (name bytes + 64) |
 | `StreamInputMaxRouteBytes` | 134217728 | Logical cached-plan allowance per connection |
-| `StreamInputTotalBytes` | 3221225472 | Global fixed shared index plus connection admission reservations |
+| `StreamInputTotalBytes` | 3221225472 | Global connection allowances, decoder/frame buffers, and shared name/index/route storage |
 
 The dictionary limit accepts 4096–1073741824 bytes. The route limit accepts a
-positive value up to 1073741824. Global admission reserves the entire dictionary
-and route allowance before constructing each decoder, without eager allocation,
-and reserves the fixed shared index once at startup. Each slot is charged the
+positive value up to 1073741824. Global admission reserves 4096 bytes per stream
+before constructing its decoder, and the fixed shared index once at startup.
+Decoder slot and wire/raw/row/definition/staging buffer capacity is reserved
+before growth. Shared names, index capacity
+and cached plans reserve their physical charge once, before retention; additional
+connections holding the same name or plan do not reserve another copy.
+Per-connection dictionary and route limits remain independent abuse bounds, not
+upfront global reservations. Each slot is logically charged the
 codec's external-name estimate (name bytes plus 64), the same estimate senders
 budget `peer_dictionary_bytes` against, so a sender that fits its peer allowance
 is never rejected for sharing metadata. Physical shared storage is counted only
 once; a name held by a single connection can exceed its charge by its entry and
-index share (about 80 bytes), a name shared by two or more cannot. Each cached
+index share (about 80 bytes), a name shared by two or more cannot. Global admission
+charges those physical costs independently. Each cached
 slot is also charged its full plan, and a cached normalized alias its canonical
 entry, to the route allowance; cache eligibility is stored in the reference's
 type without another per-slot allocation.
 
 A full route allowance stops retaining new plans; those points still route
 normally. Uncached slots hold name references only and cannot keep another
-producer's plans alive after that producer leaves. Dictionary overflow rejects
+producer's plans alive after that producer leaves. Dictionary or global growth overflow rejects
 the whole frame and closes the connection with an error, releasing any definitions
 already admitted from that frame. Admission also applies to STATE replay.
 The sender's `peer_dictionary_bytes` must not exceed the receiver dictionary
 allowance, and its name cap must fit the receiver name cap. There is no negotiation.
 
-Size total reservations for all simultaneous streams, plus the fixed empty index:
-at defaults, 3GiB admits 15 connections at 192MiB each (the old exact 16-connection
-boundary also needs the small index reservation). A single small client can use smaller explicit
-limits; large producer pools require a larger total. This conservative policy
-needs deliberate fleet sizing before enabling all clients. Frame/row buffers,
-zstd contexts, queued records and overlapping processes need additional memory;
-these settings are not an RSS cap. Configure input limits at startup/restart.
+Size total reservations for actual simultaneous decoder/buffer capacity and unique
+names/plans, plus 4KiB per connection and the fixed empty index. Idle streams no
+longer consume their maximum allowance. RESET releases dictionary slots, frame
+buffers and name/plan references; close and successful handoff release the connection allowance
+too. Handoff STATE replay passes the successor's normal growth admission.
+The sender still gets its full logical peer allowance while total headroom lasts;
+there is no guarantee that every connection can fill its maximum simultaneously.
+
+Stream sockets use a 4KiB read buffer. Decoder frame/row buffers grow with observed
+frames and rows rather than configured maxima. Compressed frames borrow zstd
+contexts from a listener pool bounded by `GOMAXPROCS`; contexts/windows belong to
+the pool, not idle sockets. The pool uses the configured frame/window ceiling.
+Temporary growth copies, zstd contexts, queued records, stacks,
+socket buffers and overlapping processes need additional memory; these settings
+are not an RSS cap. Configure input limits at startup/restart. See the opt-in
+`TestStreamAdmissionProcess`/`TestStreamAdmissionFixtures` helpers and
+`test/stream_admission_model.py` for a separate-client process model.
 
 Metrics have the `nanotube_` prefix:
 
@@ -91,6 +107,9 @@ Gauges publish deltas at frame boundaries and close; after all clients disconnec
 only the fixed index remains. Route hits count points using cached plans; misses
 count plan builds (including uncached fallback), so they are not complementary
 point counts.
+The reservation gauge changes immediately before retained storage grows and when
+it is released; it includes each connection's fixed 4KiB allowance. It can exceed
+dictionary plus route bytes by those allowances, frame buffers and unpublished deltas.
 Decode, truncation and budget failures log errors with peer addresses. Decoded
 rows also contribute to normal input counters and rate limiting. Malformed
 frames emit no rows. Definitions bind only after complete frame validation.

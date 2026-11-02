@@ -212,8 +212,8 @@ func ReadMain(r io.Reader) (Main, error) {
 	if cfg.StreamInputMaxFrameBytes < 0 || cfg.StreamInputMaxFrameBytes > 8<<20 || (cfg.StreamInputMaxFrameBytes > 0 && cfg.StreamInputMaxFrameBytes < 64) || cfg.StreamInputMaxNames < 0 || cfg.StreamInputMaxNames > 5000000 || cfg.StreamInputMaxDictionaryBytes < 0 || cfg.StreamInputMaxDictionaryBytes > 1<<30 || cfg.StreamInputMaxRouteBytes < 0 || cfg.StreamInputMaxRouteBytes > 1<<30 || cfg.StreamInputTotalBytes < 0 || (cfg.StreamInputMaxDictionaryBytes > 0 && cfg.StreamInputMaxDictionaryBytes < 4096) {
 		return cfg, errors.New("invalid stream input limits")
 	}
-	if int64(cfg.StreamInputTotalLimit()) < int64(cfg.StreamInputDictionaryLimit())+int64(cfg.StreamInputRouteLimit()) {
-		return cfg, errors.New("StreamInputTotalBytes must cover one dictionary and route allowance")
+	if cfg.StreamInputTotalLimit() < 4096 {
+		return cfg, errors.New("StreamInputTotalBytes must cover the initial connection allowance")
 	}
 	if cfg.ClustersConfig == "" {
 		return cfg, errors.New("missing mandatory ClustersConfig setting")
