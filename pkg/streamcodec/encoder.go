@@ -131,12 +131,12 @@ func (e *Encoder) AddGlobal(name []byte, hash, token uint64, value float64, ts i
 	if len(name) == 0 || len(name) > e.opts.MaxNameSize {
 		return false, false, ErrLimit
 	}
-	key := uint32(token) & 0xffffff
+	key := uint32(token)
 	id, ok := e.index.find(key, &e.states)
 	ok = ok && e.states.at(id).nameToken() == token
 	if !ok && !e.table.Valid(token, hash) {
 		token = e.table.Resolve(name, hash)
-		key = uint32(token) & 0xffffff
+		key = uint32(token)
 		id, ok = e.index.find(key, &e.states)
 		ok = ok && e.states.at(id).nameToken() == token
 	}
@@ -171,14 +171,17 @@ func (e *Encoder) AddGlobal(name []byte, hash, token uint64, value float64, ts i
 		reset = true
 	}
 	if !ok {
-		if !e.table.Acquire(token, hash) {
+		if key != 0 && !e.table.Acquire(token, hash) {
 			token = e.table.Resolve(name, hash)
 			if !e.table.Acquire(token, hash) {
 				token = 0
 			}
 		}
 		e.index.grow(e.states.n+1, &e.states)
-		key = uint32(token) & 0xffffff
+		key = uint32(token)
+		if key == 0 {
+			token = 0
+		}
 		id = e.states.add(token)
 		if token != 0 {
 			e.index.insert(key, id)

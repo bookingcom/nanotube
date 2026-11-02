@@ -14,7 +14,7 @@ type wirePoint struct {
 
 const predictorValid uint64 = 1 << 63
 
-func (p *wirePoint) global() uint32    { return uint32(p.token) & 0xffffff }
+func (p *wirePoint) global() uint32    { return uint32(p.token) }
 func (p *wirePoint) nameToken() uint64 { return p.token &^ predictorValid }
 func (p *wirePoint) valid() bool       { return p.token&predictorValid != 0 }
 

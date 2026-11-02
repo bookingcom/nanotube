@@ -14,6 +14,17 @@ parallel string map or mirrored known-name writer remains. The decoder can
 bind validated definitions to external immutable series references while
 keeping predictors and wire ids private to each connection.
 
+Local tokens use a 32-bit shard/slot key and a 31-bit epoch; the remaining bit
+belongs to the encoder's predictor. Epochs distinguish tables and slot reuse,
+rather than consuming a process-wide generation for each new name. They never
+wrap: exhaustion refuses retention and increments the table's exhaustion counter.
+A failed resolution returns a table-specific zero-key hint, valid for that
+input record, so replicas encode unshared definitions without retrying admission.
+Live references are never reclaimed. Reclamation skips entirely referenced
+shards, examines at most 64 slots per admission attempt, and uses backshift
+deletion instead of rebuilding the index. Periodic sweeps release shard locks
+between 64-slot chunks. Capacity and unshared-definition counters expose pressure.
+
 Importing the full receiver module would change unrelated shared dependencies.
 This small maintained copy uses the relay's existing vendored compression
 library. It can be removed when the codec is published independently or those
