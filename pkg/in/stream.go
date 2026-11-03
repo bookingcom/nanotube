@@ -35,6 +35,24 @@ type StreamNameBinder interface {
 	SetNameLimit(int)
 }
 
+// StreamBoundSink uses compact decoder references instead of arbitrary slots.
+type StreamBoundSink interface {
+	StreamNameBinder
+	codec.NameBinder
+	BoundPoint(*codec.BoundName, bool, float64, int64)
+}
+
+type inputNameBinder struct {
+	StreamBoundSink
+	decoder *codec.Decoder
+	limit   int
+}
+
+func (b *inputNameBinder) BindStreamName(name []byte) (*codec.BoundName, bool, error) {
+	b.SetNameLimit(b.limit - b.decoder.RetainedBytes())
+	return b.StreamBoundSink.BindStreamName(name)
+}
+
 // Names bound outside the decoder arena remain immutable across reset. Queued
 // records can outlive the dictionary generation; the copied codec reuses arenas.
 type inputName struct {
@@ -50,6 +68,13 @@ type inputPoint struct {
 	value     float64
 	timestamp int64
 	slot      *any
+}
+
+type boundInputPoint struct {
+	name      *codec.BoundName
+	value     float64
+	timestamp int64
+	cached    bool
 }
 
 func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, sink StreamSink, handoff ...*inputConn) {
@@ -126,8 +151,12 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 	}
 	nameBytes, decoderBytes, bufferBytes, pendingBytes := 0, 0, 0, 0
 	var pending []inputPoint
+	var boundPending []boundInputPoint
 	binder, shared := sink.(StreamNameBinder)
-	if shared {
+	boundSink, bound := sink.(StreamBoundSink)
+	if bound {
+		d.SetNameBinder(&inputNameBinder{StreamBoundSink: boundSink, decoder: d, limit: cfg.StreamInputDictionaryLimit()})
+	} else if shared {
 		d.SetNameResolver(func(name []byte) any {
 			binder.SetNameLimit(cfg.StreamInputDictionaryLimit() - d.RetainedBytes())
 			return binder.BindName(name)
@@ -153,11 +182,20 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 	})
 	d.SetBufferBudget(func(n, rows int) bool {
 		capacity := max(cap(pending), rows)
-		staging := capacity * int(unsafe.Sizeof(inputPoint{}))
+		pointBytes := int(unsafe.Sizeof(inputPoint{}))
+		if bound {
+			capacity = max(cap(boundPending), rows)
+			pointBytes = int(unsafe.Sizeof(boundInputPoint{}))
+		}
+		staging := capacity * pointBytes
 		if !resize(decoderBytes + n + staging + nameBytes) {
 			return false
 		}
-		if capacity > cap(pending) {
+		if bound {
+			if capacity > cap(boundPending) {
+				boundPending = make([]boundInputPoint, 0, capacity)
+			}
+		} else if capacity > cap(pending) {
 			pending = make([]inputPoint, 0, capacity)
 		}
 		bufferBytes, pendingBytes = n, staging
@@ -172,20 +210,28 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 	defer func() { ms.StreamInputDictionaryBytes.Sub(float64(retained)) }()
 	// Stage at most one bounded frame. No point reaches routing before both
 	// codec validation and the aggregate dictionary-byte budget pass.
+
 	for {
 		if c.moving() {
 			detachStream(c, r, d, flags)
 			return
 		}
 		pending = pending[:0]
-		info, err := d.ReadFrame(r, func(id uint32, name []byte, value float64, ts int64, slot *any) {
-			if !shared {
-				slot = &(*slot).(*inputName).route
-			}
-			// Decoder slots can move only on the next frame. All pending points
-			// are delivered (or discarded) before then.
-			pending = append(pending, inputPoint{id, name, value, ts, slot})
-		})
+		boundPending = boundPending[:0]
+		var info codec.FrameInfo
+		if bound {
+			info, err = d.ReadBoundFrame(r, func(name *codec.BoundName, cached bool, value float64, ts int64) {
+				boundPending = append(boundPending, boundInputPoint{name, value, ts, cached})
+			})
+		} else {
+			info, err = d.ReadFrame(r, func(id uint32, name []byte, value float64, ts int64, slot *any) {
+				if !shared {
+					slot = &(*slot).(*inputName).route
+				}
+				// Slots can move only on the next frame, after pending delivery.
+				pending = append(pending, inputPoint{id: id, name: name, value: value, timestamp: ts, slot: slot})
+			})
+		}
 		if err != nil {
 			if c.moving() {
 				detachStream(c, r, d, flags)
@@ -203,7 +249,7 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		}
 		if info.Kind == codec.ResetFrame {
 			nameBytes = 0
-			pending, pendingBytes = nil, 0
+			pending, boundPending, pendingBytes = nil, nil, 0
 			_ = resize(decoderBytes + bufferBytes)
 		}
 		current := d.RetainedBytes() + nameBytes
@@ -217,28 +263,30 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 			sink.Reset()
 			ms.StreamInputResets.Inc()
 		}
-		if limiters != nil && len(pending) > 0 {
-			if !ratelimiter.RateLimitWithStop(limiters, len(pending), time.Duration(cfg.RateLimiterRetryDurationMs)*time.Millisecond, term) {
+		count := len(pending) + len(boundPending)
+		if limiters != nil && count > 0 {
+			if !ratelimiter.RateLimitWithStop(limiters, count, time.Duration(cfg.RateLimiterRetryDurationMs)*time.Millisecond, term) {
 				return
 			}
 		}
 		ms.StreamInputFrames.Inc()
-		ms.StreamInputPoints.Add(float64(len(pending)))
-		ms.InRecs.Add(float64(len(pending)))
+		ms.StreamInputPoints.Add(float64(count))
+		ms.InRecs.Add(float64(count))
 		for _, p := range pending {
 			sink.Point(p.id, p.name, p.value, p.timestamp, p.slot)
 		}
+		for _, p := range boundPending {
+			boundSink.BoundPoint(p.name, p.cached, p.value, p.timestamp)
+		}
 		sink.Flush()
 		clear(pending) // No decoder names remain retained across the next reset.
+		clear(boundPending)
 	}
 }
 
 func detachStream(c *inputConn, r *bufio.Reader, d *codec.Decoder, flags byte) {
 	c.detach(func(w io.Writer) error {
 		prefix, err := codec.AppendPreamble(nil, flags)
-		if err == nil {
-			prefix, err = d.Snapshot(prefix)
-		}
 		if err != nil {
 			return err
 		}
@@ -246,6 +294,9 @@ func detachStream(c *inputConn, r *bufio.Reader, d *codec.Decoder, flags byte) {
 			return err
 		}
 		if _, err = w.Write(prefix); err != nil {
+			return err
+		}
+		if err = d.WriteSnapshot(w); err != nil {
 			return err
 		}
 		if _, err = w.Write(d.Pending()); err != nil {

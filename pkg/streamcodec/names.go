@@ -55,7 +55,8 @@ type nameShard struct {
 	blocks                            []atomic.Pointer[sharedBlock]
 	index                             []uint32
 	limit, used, count, idle          int
-	free                              []uint32
+	free                              uint32 // Intrusive list: retired entry.a stores the next id + 1.
+	indexLimit                        int
 	cursor                            uint32
 	quantum                           int
 	budget, bytes                     int
@@ -112,10 +113,10 @@ func NewNameTable(budget int, fullNames bool) (*NameTable, error) {
 			}
 		}
 		s.limit = capacity
-		s.free = make([]uint32, 0, capacity)
-		s.index = make([]uint32, size)
+		s.indexLimit = size
+		s.index = make([]uint32, 16)
 		s.blocks = make([]atomic.Pointer[sharedBlock], (capacity+15)/16)
-		s.bytes = len(s.index)*4 + len(s.blocks)*8 + cap(s.free)*4
+		s.bytes = len(s.index)*4 + len(s.blocks)*8
 	}
 	return t, nil
 }
@@ -177,21 +178,28 @@ func (t *NameTable) Resolve(name []byte, hash uint64) uint64 {
 			return atomic.LoadUint64(&e.generation)<<nameKeyBits | uint64((id<<5)|uint32(mixHash(hash)&uint64(len(t.shards)-1))) + 1
 		}
 	}
-	if len(s.free) == 0 && s.used >= s.limit {
+	// Name lookup is on every published record, not only new definitions.
+	// Keep probes sparse: denser indexes save bytes but raise steady CPU.
+	if (s.count+1)*8 > len(s.index) && len(s.index) < s.indexLimit {
+		s.growIndex()
+		mask = len(s.index) - 1
+		empty = -1
+	}
+	if s.free == 0 && s.used >= s.limit {
 		s.reclaim(64, true)
 		empty = -1
 	}
 	var id uint32
-	if n := len(s.free); n > 0 {
-		id = s.free[n-1]
-		s.free = s.free[:n-1]
+	if s.free != 0 {
+		id = s.free - 1
+		s.free = uint32(s.entry(id).a)
 	} else {
 		if s.used >= s.limit {
 			return t.unsharedToken()
 		}
 		id = uint32(s.used)
 		if s.blocks[id>>nameBlockBits].Load() == nil {
-			if s.bytes+16*48 > s.budget {
+			if 16*48 > s.available() {
 				return t.unsharedToken()
 			}
 			s.blocks[id>>nameBlockBits].Store(new(sharedBlock))
@@ -208,7 +216,7 @@ func (t *NameTable) Resolve(name []byte, hash uint64) uint64 {
 			empty = -1
 		}
 		if !ok {
-			s.free = append(s.free, id)
+			s.freeEntry(id)
 			return t.unsharedToken()
 		}
 		e.address = address
@@ -228,7 +236,7 @@ func (t *NameTable) Resolve(name []byte, hash uint64) uint64 {
 				s.releaseBytes(e.address, int(e.length))
 				e.length = 0
 			}
-			s.free = append(s.free, id)
+			s.freeEntry(id)
 			return t.unsharedToken()
 		}
 	}
@@ -343,9 +351,37 @@ func (s *nameShard) reclaim(work int, pressure bool) {
 		atomic.StoreUint64(&e.generation, gen|predictorValid)
 		s.count--
 		s.idle--
-		s.free = append(s.free, id)
+		s.freeEntry(id)
 		s.evictions++
 	}
+}
+
+// Keep enough budget for the full index even while its allocation is lazy.
+// Full-name arenas cannot spend that reservation and later prevent index growth.
+func (s *nameShard) available() int {
+	return s.budget - s.bytes - (s.indexLimit-len(s.index))*4
+}
+
+func (s *nameShard) freeEntry(id uint32) {
+	s.entry(id).a = uint64(s.free)
+	s.free = id + 1
+}
+
+func (s *nameShard) growIndex() {
+	old := s.index
+	s.index = make([]uint32, min(len(old)*2, s.indexLimit))
+	mask := len(s.index) - 1
+	for _, key := range old {
+		if key == 0 {
+			continue
+		}
+		i := int(mixHash(s.entry(key-1).route>>5)) & mask
+		for s.index[i] != 0 {
+			i = (i + 1) & mask
+		}
+		s.index[i] = key
+	}
+	s.bytes += (len(s.index) - len(old)) * 4
 }
 
 // Backshift deletion keeps lookup chains intact without tombstones or a
@@ -397,7 +433,7 @@ func (s *nameShard) allocate(name []byte) (uint32, bool) {
 	if s.cells[c] == 0 {
 		pageSize := max(size, s.quantum)
 		extra := pageSize + (nextCapacity(len(s.pages)+1, cap(s.pages))-cap(s.pages))*24
-		if s.bytes+extra > s.budget || len(s.pages) >= 1<<16 {
+		if extra > s.available() || len(s.pages) >= 1<<16 {
 			return 0, false
 		}
 		if s.cells[c] == 0 {

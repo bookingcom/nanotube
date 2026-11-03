@@ -38,8 +38,10 @@ func streamInputCharge(n uint64) uint64 {
 // No arenas or entry objects are recycled. refs/routeRefs are shard-locked;
 // a cached slot pins canonical, plans and flags, making Point lock-free.
 type streamName struct {
-	name       string
-	plans      []streamPlan
+	name       codec.BoundName // First field: compact decoder references point here.
+	plans      *streamPlan     // Rewritten paths only; points to the first array element.
+	hash       uint64          // Routing hash, or rewritten plan count when plans != nil.
+	route      *rules.Route
 	canonical  *streamName
 	refs       uint32
 	routeRefs  uint32
@@ -52,7 +54,7 @@ type streamName struct {
 func (e *streamName) StreamName() []byte {
 	// This read-only view avoids keeping both string and slice headers. The
 	// string owns its allocation; output records retain it through this slice.
-	return unsafe.Slice(unsafe.StringData(e.name), len(e.name))
+	return e.name.Bytes()
 }
 
 type uncachedStreamName streamName
@@ -109,7 +111,7 @@ func (t *streamNames) position(s *streamNameShard, name []byte) int {
 
 func (*streamNames) positionHash(s *streamNameShard, name []byte, hash uint64) int {
 	i := int(hash>>6) & (len(s.index) - 1)
-	for s.index[i] != nil && s.index[i].name != string(name) {
+	for s.index[i] != nil && s.index[i].name.Text != string(name) {
 		i = (i + 1) & (len(s.index) - 1)
 	}
 	return i
@@ -155,7 +157,7 @@ func (t *streamNames) get(s *streamNameShard, name []byte, hash uint64, changes 
 		}
 		i = t.positionHash(s, name, hash)
 	}
-	e := &streamName{name: string(name), refs: 1, nameClass: uint16(streamInputCharge(uint64(len(name))) / 8)}
+	e := &streamName{name: codec.BoundName{Text: string(name)}, refs: 1, nameClass: uint16(streamInputCharge(uint64(len(name))) / 8)}
 	s.index[i] = e
 	s.count++
 	changes.dictionary += cost
@@ -173,7 +175,7 @@ func nameStorage(e *streamName) int {
 // charge rejects producers that fill their peer allowance. A name only one
 // connection holds can exceed its charge by its entry rounding and index share
 // (about 80 bytes); names shared by two or more connections cannot.
-func nameAllowance(e *streamName) int { return len(e.name) + 64 }
+func nameAllowance(e *streamName) int { return len(e.name.Text) + 64 }
 func nameSizeAllowance(n int) int     { return n + 64 }
 
 func (e *streamName) routeStorage() int {
@@ -238,7 +240,7 @@ func (t *streamNames) acquire(name []byte, routeLimit, dictLimit int, changes *s
 			e.routeRefs = 1
 			changes.routes += cost
 		} else {
-			e.plans = nil
+			e.plans, e.route, e.hash = nil, nil, 0
 			cost = 0
 		}
 		s.mu.Unlock()
@@ -277,7 +279,7 @@ func (t *streamNames) acquire(name []byte, routeLimit, dictLimit int, changes *s
 // Uncached slots never read mutable plan fields. Queued path bytes are immutable
 // Go allocations and remain valid independently of either reference count.
 func (t *streamNames) release(e *streamName, cached bool, changes *streamNameChanges) (int, int) {
-	hash := maphash.String(t.seed, e.name)
+	hash := maphash.String(t.seed, e.name.Text)
 	s := t.shard(hash)
 	s.mu.Lock()
 	dict, route := nameAllowance(e), 0
@@ -291,7 +293,7 @@ func (t *streamNames) release(e *streamName, cached bool, changes *streamNameCha
 				changes.routes -= route
 				t.ms.ReleaseStreamInput(int64(route))
 			}
-			e.canonical, e.plans = nil, nil
+			e.canonical, e.plans, e.route, e.hash = nil, nil, nil, 0
 		}
 	}
 	e.refs--
@@ -312,7 +314,7 @@ func (t *streamNames) remove(s *streamNameShard, e *streamName, hash uint64, cha
 	mask := len(s.index) - 1
 	hole := t.positionHash(s, e.StreamName(), hash)
 	for i := (hole + 1) & mask; s.index[i] != nil; i = (i + 1) & mask {
-		home := int(maphash.String(t.seed, s.index[i].name)>>6) & mask
+		home := int(maphash.String(t.seed, s.index[i].name.Text)>>6) & mask
 		if (i-home)&mask >= (i-hole)&mask {
 			s.index[hole] = s.index[i]
 			hole = i
@@ -340,8 +342,19 @@ func (t *streamNames) buildNormalized(e *streamName, path []byte, invalid bool) 
 	// record/slice allocations entirely when no rewrite rules are configured.
 	if t.rewrites.Empty() {
 		input := rec.RecBytes{Path: path}
-		e.plans = append(e.plans, streamPlan{unsafe.String(unsafe.SliceData(path), len(path)), input.PathHash(), t.rules.Resolve(&input)})
-		cost := streamInputCharge(uint64(cap(e.plans))*uint64(unsafe.Sizeof(streamPlan{}))) + streamInputCharge(uint64(cap(e.plans[0].route))*uint64(unsafe.Sizeof(e.plans[0].route[0])))
+		var owned bool
+		e.hash = input.PathHash()
+		e.route, owned = t.rules.ResolveRef(&input)
+		if e.name.Text == "" { // Temporary uncached plan owns the normalized path.
+			e.name.Text = unsafe.String(unsafe.SliceData(path), len(path))
+		}
+		// The inline hash/pointer fit the existing 64-byte name entry, already
+		// charged to dictionary admission. Charge only independently owned
+		// routes; configuration headers and destinations are retained once.
+		cost := uint64(0)
+		if owned {
+			cost = streamInputCharge(uint64(unsafe.Sizeof(*e.route))) + streamInputCharge(uint64(cap(*e.route))*uint64(unsafe.Sizeof((*e.route)[0])))
+		}
 		e.routeBytes = uint32(min(cost, uint64(^uint32(0))))
 		return
 	}
@@ -354,17 +367,19 @@ func (t *streamNames) buildNormalized(e *streamName, path []byte, invalid bool) 
 		return
 	}
 	cost := uint64(0)
+	var plans []streamPlan
 	for _, r := range recs {
 		route := t.rules.Resolve(r)
 		cost += streamInputCharge(uint64(cap(route)) * uint64(unsafe.Sizeof(route[0])))
-		if len(r.Path) > 0 && (len(e.name) == 0 || &r.Path[0] != unsafe.StringData(e.name)) {
+		if len(r.Path) > 0 && (len(e.name.Text) == 0 || &r.Path[0] != unsafe.StringData(e.name.Text)) {
 			cost += streamInputCharge(uint64(cap(r.Path)))
 		}
 		// Keep the immutable path with one string header instead of a slice
 		// header. The backing allocation stays alive through the string.
-		e.plans = append(e.plans, streamPlan{unsafe.String(unsafe.SliceData(r.Path), len(r.Path)), r.PathHash(), route})
+		plans = append(plans, streamPlan{unsafe.String(unsafe.SliceData(r.Path), len(r.Path)), r.PathHash(), route})
 	}
-	cost += streamInputCharge(uint64(cap(e.plans)) * uint64(unsafe.Sizeof(streamPlan{})))
+	e.plans, e.hash = unsafe.SliceData(plans), uint64(len(plans))
+	cost += streamInputCharge(uint64(cap(plans)) * uint64(unsafe.Sizeof(streamPlan{})))
 	// Configuration caps cached plans at 1 GiB/connection. A larger temporary
 	// plan always takes the uncached fallback rather than wrapping its charge.
 	e.routeBytes = uint32(min(cost, uint64(^uint32(0))))

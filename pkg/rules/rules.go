@@ -219,6 +219,25 @@ func (rs Rules) Resolve(r *rec.RecBytes) Route {
 	return route
 }
 
+// ResolveRef shares the immutable route header when a single rule supplies it.
+// Continued rules that combine destinations own an independent header; the
+// boolean reports that allocation so callers can account for its storage.
+func (rs Rules) ResolveRef(r *rec.RecBytes) (*Route, bool) {
+	route := rs.Resolve(r)
+	if len(route) == 0 {
+		return nil, false
+	}
+	for i := range rs.rules {
+		targets := &rs.rules[i].Targets
+		if len(*targets) == len(route) && &(*targets)[0] == &route[0] {
+			return (*Route)(targets), false
+		}
+	}
+	owned := new(Route)
+	*owned = route
+	return owned, true
+}
+
 // PushRoute sends a record to a saved Route using the regular target methods.
 func (rs Rules) PushRoute(route Route, r *rec.RecBytes, lg *zap.Logger, b *target.Batch) {
 	for _, cl := range route {

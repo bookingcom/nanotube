@@ -73,63 +73,73 @@ func TestStreamInputRoutingMatchesPlaintext(t *testing.T) {
 		procBatch([]byte(line), rs, rw, true, false, time.Now, zap.NewNop(), plainMS, nil, nil)
 	}
 	sortPoints(*want)
-	for _, flags := range []byte{0, codec.FlagZstd} {
-		rs, rw, ms, got := differentialPipeline(t)
-		sink := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
-		e, err := codec.NewEncoder(codec.Options{Flags: flags, MaxNames: 5})
-		if err != nil {
-			t.Fatal(err)
-		}
-		wire, _ := codec.AppendPreamble(nil, flags)
-		for _, line := range lines {
-			var name, value string
-			var ts int64
-			_, err := fmt.Sscan(line, &name, &value, &ts)
+	for _, compact := range []bool{false, true} {
+		for _, flags := range []byte{0, codec.FlagZstd} {
+			rs, rw, ms, got := differentialPipeline(t)
+			sink := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
+			e, err := codec.NewEncoder(codec.Options{Flags: flags, MaxNames: 5})
 			if err != nil {
 				t.Fatal(err)
 			}
-			v, err := func() (float64, error) { var v float64; _, err := fmt.Sscan(value, &v); return v, err }()
+			wire, _ := codec.AppendPreamble(nil, flags)
+			for _, line := range lines {
+				var name, value string
+				var ts int64
+				_, err := fmt.Sscan(line, &name, &value, &ts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				v, err := func() (float64, error) { var v float64; _, err := fmt.Sscan(value, &v); return v, err }()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = e.Add([]byte(name), v, ts); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wire, err = e.Flush(wire)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = e.Add([]byte(name), v, ts); err != nil {
-				t.Fatal(err)
-			}
-		}
-		wire, err = e.Flush(wire)
-		if err != nil {
-			t.Fatal(err)
-		}
-		e.Close()
-		d, err := codec.NewDecoder(codec.Options{Flags: flags})
-		if err != nil {
-			t.Fatal(err)
-		}
-		d.SetNameResolver(sink.BindName)
-		d.SetNameReleaser(sink.ReleaseName)
-		for rest := wire[codec.PreambleSize:]; len(rest) > 0; {
-			n := codec.HeaderSize + int(uint32(rest[4])<<24|uint32(rest[5])<<16|uint32(rest[6])<<8|uint32(rest[7]))
-			frame := rest[:n]
-			if frame[0] == codec.ResetFrame {
-				sink.Reset()
-			}
-			_, err = d.Decode(frame, func(id uint32, name []byte, v float64, ts int64, slot *any) { sink.Point(id, name, v, ts, slot) })
+			e.Close()
+			d, err := codec.NewDecoder(codec.Options{Flags: flags})
 			if err != nil {
 				t.Fatal(err)
 			}
-			sink.Flush()
-			rest = rest[n:]
-		}
-		d.Close()
-		sortPoints(*got)
-		if !reflect.DeepEqual(*got, *want) {
-			t.Fatalf("flags %d routed points differ\n got %#v\nwant %#v", flags, *got, *want)
-		}
-		if testutil.ToFloat64(ms.BlackholedRecs) != testutil.ToFloat64(plainMS.BlackholedRecs) {
-			t.Fatal("blackhole count differs")
-		}
-		if testutil.ToFloat64(ms.RewrittenRecsTotal) != testutil.ToFloat64(plainMS.RewrittenRecsTotal) {
-			t.Fatal("rewrite point count differs")
+			if compact {
+				d.SetNameBinder(sink)
+			} else {
+				d.SetNameResolver(sink.BindName)
+				d.SetNameReleaser(sink.ReleaseName)
+			}
+			for rest := wire[codec.PreambleSize:]; len(rest) > 0; {
+				n := codec.HeaderSize + int(uint32(rest[4])<<24|uint32(rest[5])<<16|uint32(rest[6])<<8|uint32(rest[7]))
+				frame := rest[:n]
+				if frame[0] == codec.ResetFrame {
+					sink.Reset()
+				}
+				if compact {
+					_, err = d.DecodeBound(frame, sink.BoundPoint)
+				} else {
+					_, err = d.Decode(frame, func(id uint32, name []byte, v float64, ts int64, slot *any) { sink.Point(id, name, v, ts, slot) })
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				sink.Flush()
+				rest = rest[n:]
+			}
+			d.Close()
+			sortPoints(*got)
+			if !reflect.DeepEqual(*got, *want) {
+				t.Fatalf("flags %d routed points differ\n got %#v\nwant %#v", flags, *got, *want)
+			}
+			if testutil.ToFloat64(ms.BlackholedRecs) != testutil.ToFloat64(plainMS.BlackholedRecs) {
+				t.Fatal("blackhole count differs")
+			}
+			if testutil.ToFloat64(ms.RewrittenRecsTotal) != testutil.ToFloat64(plainMS.RewrittenRecsTotal) {
+				t.Fatal("rewrite point count differs")
+			}
 		}
 	}
 }

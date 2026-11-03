@@ -6,8 +6,11 @@ introduced from `cde09ec1887c5dd5cae4dff980715a22440b4dd5`.
 Keep wire behavior compatible with that copy. This relay adds optional decoder
 slot/buffer admission and bounded zstd-pool hooks (`SetDictionaryBudget`,
 `SetBufferBudget`, `SetDecoderPool`); callers that do not install them retain the
-existing behavior. RESET releases capacity when the admission hooks are installed. These local
-resource-management hooks are a maintained delta until the receiver adopts them
+existing caller-slot API. RESET releases both generic and compact capacities
+when the admission hooks are installed. These local
+resource-management hooks, optional compact `SetNameBinder` slots, streaming
+`WriteSnapshot`, and shared independent-frame encode workspaces are a maintained
+delta until the receiver adopts them
 or the codec is published independently. The v1 specification, sender peer
 estimate and golden vector are unchanged. Capture and benchmark helpers are
 mirrored too.

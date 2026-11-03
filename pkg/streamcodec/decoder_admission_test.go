@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"sync"
 	"testing"
@@ -131,5 +132,37 @@ func TestDecoderPoolConcurrentAndRejectedFrames(t *testing.T) {
 	wg.Wait()
 	if len(p.slots) != 1 {
 		t.Fatal("context token leaked")
+	}
+}
+
+func TestBoundDecoderAccountsPagesAndVectorExactly(t *testing.T) {
+	e := encoder(t, Options{MaxRows: 4096})
+	d := decoder(t, Options{})
+	binder := &testNameBinder{}
+	d.SetNameBinder(binder)
+	reserved := 0
+	d.SetDictionaryBudget(func(n int) bool { reserved = n; return true })
+	for i := range 2300 { // Cross page and pointer-vector capacity boundaries.
+		add(t, e, fmt.Sprintf("name.%d", i), 1, 2)
+		readBoundAll(t, d, flush(t, e, nil), nil)
+		if reserved != d.RetainedBytes() {
+			t.Fatalf("name %d: reserved %d, physical %d", i, reserved, d.RetainedBytes())
+		}
+	}
+	if err := e.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	readBoundAll(t, d, flush(t, e, nil), nil)
+	if reserved != 0 || d.RetainedBytes() != 0 || len(binder.refs) != 0 || d.peerEntries != 0 {
+		t.Fatal("RESET retained compact pages, vector, peer capacity or names")
+	}
+	// A fresh page must be admitted before allocation/binding; a rejected
+	// frame must neither deliver points nor retain a partial page.
+	d.SetDictionaryBudget(func(int) bool { return false })
+	add(t, e, "next", 1, 2)
+	visited := false
+	_, err := d.DecodeBound(flush(t, e, nil), func(*BoundName, bool, float64, int64) { visited = true })
+	if !errors.Is(err, ErrLimit) || visited || d.RetainedBytes() != 0 || len(binder.refs) != 0 {
+		t.Fatalf("rejected compact growth allocated/delivered: %v", err)
 	}
 }

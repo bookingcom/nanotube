@@ -8,6 +8,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rec"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
+	codec "github.com/bookingcom/nanotube/pkg/streamcodec"
 	"github.com/bookingcom/nanotube/pkg/target"
 	"go.uber.org/zap"
 )
@@ -97,11 +98,52 @@ func (s *streamRouter) ReleaseName(ref any) {
 	s.bytes -= route
 }
 
+func (s *streamRouter) BindStreamName(name []byte) (*codec.BoundName, bool, error) {
+	ref := s.BindName(name)
+	switch e := ref.(type) {
+	case *streamName:
+		return &e.name, true, nil
+	case *uncachedStreamName:
+		return &e.name, false, nil
+	case error:
+		return nil, false, e
+	default:
+		panic("invalid stream name binding")
+	}
+}
+
+// BoundName is the first field of streamName; both addresses are identical.
+// The decoder holds a real Go pointer and pins the entire enclosing allocation.
+func streamNameFromBound(ref *codec.BoundName) *streamName {
+	return (*streamName)(unsafe.Pointer(ref))
+}
+
+func (s *streamRouter) ReleaseStreamName(ref *codec.BoundName, cached bool) {
+	e := streamNameFromBound(ref)
+	if cached {
+		s.ReleaseName(e)
+	} else {
+		s.ReleaseName((*uncachedStreamName)(e))
+	}
+}
+
+func (s *streamRouter) BoundPoint(ref *codec.BoundName, cached bool, value float64, ts int64) {
+	var plan *streamName
+	if cached {
+		plan = streamNameFromBound(ref)
+	}
+	s.point(plan, ref.Bytes(), value, ts)
+}
+
 func (s *streamRouter) Point(_ uint32, name []byte, value float64, ts int64, slot *any) {
 	var plan *streamName
 	if slot != nil {
 		plan, _ = (*slot).(*streamName)
 	}
+	s.point(plan, name, value, ts)
+}
+
+func (s *streamRouter) point(plan *streamName, name []byte, value float64, ts int64) {
 	if plan == nil {
 		// Cache exhaustion preserves delivery. This temporary plan owns no
 		// shared state and does not read a concurrently retired cached plan.
@@ -123,10 +165,25 @@ func (s *streamRouter) Point(_ uint32, name []byte, value float64, ts int64, slo
 	if s.now.IsZero() {
 		s.now = time.Now()
 	}
-	for _, p := range plan.plans {
-		r := rec.NewTyped(unsafe.Slice(unsafe.StringData(p.path), len(p.path)), value, ts)
-		r.Received = s.now
-		r.SetPathHash(p.hash)
-		s.names.rules.PushRoute(p.route, r, s.lg, s.batch)
+	if plan.plans == nil {
+		if !s.names.rewrites.Empty() { // A rewrite that emits no paths.
+			return
+		}
+		var route rules.Route
+		if plan.route != nil {
+			route = *plan.route
+		}
+		s.pushPoint(plan.StreamName(), plan.hash, route, value, ts)
+		return
 	}
+	for _, p := range unsafe.Slice(plan.plans, int(plan.hash)) {
+		s.pushPoint(unsafe.Slice(unsafe.StringData(p.path), len(p.path)), p.hash, p.route, value, ts)
+	}
+}
+
+func (s *streamRouter) pushPoint(path []byte, hash uint64, route rules.Route, value float64, ts int64) {
+	r := rec.NewTyped(path, value, ts)
+	r.Received = s.now
+	r.SetPathHash(hash)
+	s.names.rules.PushRoute(route, r, s.lg, s.batch)
 }
