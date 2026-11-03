@@ -128,25 +128,33 @@ func (s *streamRouter) ReleaseStreamName(ref *codec.BoundName, cached bool) {
 }
 
 func (s *streamRouter) BoundPoint(ref *codec.BoundName, cached bool, value float64, ts int64) {
+	e := streamNameFromBound(ref)
 	var plan *streamName
 	if cached {
-		plan = streamNameFromBound(ref)
+		plan = e
 	}
-	s.point(plan, ref.Bytes(), value, ts)
+	s.point(plan, &e.token, ref.Bytes(), value, ts)
 }
 
 func (s *streamRouter) Point(_ uint32, name []byte, value float64, ts int64, slot *any) {
 	var plan *streamName
+	var tokenSource *uint64
 	if slot != nil {
 		plan, _ = (*slot).(*streamName)
+		if plan != nil {
+			tokenSource = &plan.token
+		}
+		if uncached, ok := (*slot).(*uncachedStreamName); ok {
+			tokenSource = &(*streamName)(uncached).token
+		}
 	}
-	s.point(plan, name, value, ts)
+	s.point(plan, tokenSource, name, value, ts)
 }
 
-func (s *streamRouter) point(plan *streamName, name []byte, value float64, ts int64) {
+func (s *streamRouter) point(plan *streamName, tokenSource *uint64, name []byte, value float64, ts int64) {
 	if plan == nil {
-		// Cache exhaustion preserves delivery. This temporary plan owns no
-		// shared state and does not read a concurrently retired cached plan.
+		// Cache exhaustion preserves delivery. The immutable raw identity can
+		// still own a token for a single resulting path.
 		plan = &streamName{}
 		s.names.build(plan, name)
 	} else {
@@ -154,6 +162,7 @@ func (s *streamRouter) point(plan *streamName, name []byte, value float64, ts in
 		if plan.canonical != nil {
 			plan = plan.canonical
 		}
+		tokenSource = &plan.token
 	}
 	if plan.invalid {
 		s.ms.ErrorRecs.Inc()
@@ -166,24 +175,28 @@ func (s *streamRouter) point(plan *streamName, name []byte, value float64, ts in
 		s.now = time.Now()
 	}
 	if plan.plans == nil {
-		if !s.names.rewrites.Empty() { // A rewrite that emits no paths.
+		if !s.names.rewrites.Empty() {
 			return
-		}
+		} // A rewrite that emits no paths.
 		var route rules.Route
 		if plan.route != nil {
 			route = *plan.route
 		}
-		s.pushPoint(plan.StreamName(), plan.hash, route, value, ts)
+		s.pushPoint(plan.StreamName(), plan.hash, route, tokenSource, value, ts)
 		return
 	}
+	if plan.hash != 1 {
+		tokenSource = nil
+	} // Each rewritten output path needs its own hint.
 	for _, p := range unsafe.Slice(plan.plans, int(plan.hash)) {
-		s.pushPoint(unsafe.Slice(unsafe.StringData(p.path), len(p.path)), p.hash, p.route, value, ts)
+		s.pushPoint(unsafe.Slice(unsafe.StringData(p.path), len(p.path)), p.hash, p.route, tokenSource, value, ts)
 	}
 }
 
-func (s *streamRouter) pushPoint(path []byte, hash uint64, route rules.Route, value float64, ts int64) {
+func (s *streamRouter) pushPoint(path []byte, hash uint64, route rules.Route, tokenSource *uint64, value float64, ts int64) {
 	r := rec.NewTyped(path, value, ts)
 	r.Received = s.now
 	r.SetPathHash(hash)
+	r.ShareStreamToken(tokenSource)
 	s.names.rules.PushRoute(route, r, s.lg, s.batch)
 }

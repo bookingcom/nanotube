@@ -381,8 +381,8 @@ func TestStreamInputSharedProductionShapeChurn(t *testing.T) {
 
 func TestStreamInputBoundNameLayout(t *testing.T) {
 	var e streamName
-	if unsafe.Offsetof(e.name) != 0 || unsafe.Sizeof(e) != 64 || streamNameFromBound(&e.name) != &e {
-		t.Fatal("compact name reference must pin the enclosing 64-byte identity")
+	if unsafe.Offsetof(e.name) != 0 || unsafe.Sizeof(e) != 72 || unsafe.Offsetof(e.token)%8 != 0 || streamInputCharge(uint64(unsafe.Sizeof(e))) != 80 || streamNameFromBound(&e.name) != &e {
+		t.Fatal("compact name reference must pin the aligned shared identity")
 	}
 }
 

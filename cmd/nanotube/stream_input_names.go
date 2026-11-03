@@ -33,12 +33,13 @@ func streamInputCharge(n uint64) uint64 {
 	return allocationCharge(n)
 }
 
-// A 64-byte entry replaces the old inputName + streamRoute allocations. The
+// A shared entry replaces the old inputName + streamRoute allocations. The
 // string and every path are immutable: queued records may outlive all table refs.
 // No arenas or entry objects are recycled. refs/routeRefs are shard-locked;
 // a cached slot pins canonical, plans and flags, making Point lock-free.
 type streamName struct {
 	name       codec.BoundName // First field: compact decoder references point here.
+	token      uint64          // Eight-byte aligned; atomic output identity hint.
 	plans      *streamPlan     // Rewritten paths only; points to the first array element.
 	hash       uint64          // Routing hash, or rewritten plan count when plans != nil.
 	route      *rules.Route
@@ -174,7 +175,7 @@ func nameStorage(e *streamName) int {
 // plus 64), the one senders budget peer_dictionary_bytes against. A stricter
 // charge rejects producers that fill their peer allowance. A name only one
 // connection holds can exceed its charge by its entry rounding and index share
-// (about 80 bytes); names shared by two or more connections cannot.
+// (about 96 bytes); names shared by two or more connections cannot.
 func nameAllowance(e *streamName) int { return len(e.name.Text) + 64 }
 func nameSizeAllowance(n int) int     { return n + 64 }
 
@@ -348,7 +349,7 @@ func (t *streamNames) buildNormalized(e *streamName, path []byte, invalid bool) 
 		if e.name.Text == "" { // Temporary uncached plan owns the normalized path.
 			e.name.Text = unsafe.String(unsafe.SliceData(path), len(path))
 		}
-		// The inline hash/pointer fit the existing 64-byte name entry, already
+		// The inline hash/pointer fit the shared name entry, already
 		// charged to dictionary admission. Charge only independently owned
 		// routes; configuration headers and destinations are retained once.
 		cost := uint64(0)

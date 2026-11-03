@@ -57,7 +57,7 @@ codec's external-name estimate (name bytes plus 64), the same estimate senders
 budget `peer_dictionary_bytes` against, so a sender that fits its peer allowance
 is never rejected for sharing metadata. Physical shared storage is counted only
 once; a name held by a single connection can exceed its charge by its entry and
-index share (about 80 bytes), a name shared by two or more cannot. Global admission
+index share (about 96 bytes), a name shared by two or more cannot. Global admission
 charges those physical costs independently. Each cached
 slot is also charged its full plan, and a cached normalized alias its canonical
 entry, to the route allowance; cache eligibility is stored in the reference's
@@ -130,7 +130,8 @@ conservative logical slot estimate remain unchanged. Listener-owned zstd decode
 contexts and process-owned output workspaces serve separate directions.
 
 Without rewrite rules, the routing hash and a pointer to an immutable rule route
-fit inside the existing 64-byte shared name entry. Ordinary routes need no
+live inside the shared name entry. The retained output token increases its
+allocation class from 64 to 80 bytes, charged once per shared identity. Ordinary routes need no
 per-name plan allocation or route-budget charge. Continued rules that combine
 destinations still charge their owned header/vector; rewritten paths retain
 bounded independent plans. Normalization, health checks, route ordering and
@@ -157,7 +158,9 @@ For a fresh-process local model, build the executable's test binary and run
 zstd output encoders. A separate process generates fixtures; another validates
 receiver fields, routes, counts and checksums. CPU excludes fixture loading and
 includes frame decoding, routing, output encoding/writes and automatic GC during
-processing. Samples distinguish pre-GC RSS, live heap and explicit scavenging.
+processing. Samples distinguish pre-GC RSS and live heap; `RELAY_MEMORY_SCAVENGE=1`
+adds a separate forced-scavenging diagnostic. Default runs preserve residency
+across phases.
 The full-name epochs exercise RESET/churn; steady passes replay resident IDs.
 Input frames use zstd by default (`RELAY_MEMORY_INPUT_ZSTD=0` selects raw).
 Correlated producer dictionaries preserve 20-way sharing among retained names;
@@ -236,3 +239,22 @@ The original real-process pool oracle and the repeated-input reload oracle check
 identities/values and duplicate acceptance independently at two real stores. The
 store-handoff case fences source submission; relay reload tests interrupt active
 persistent clients. Use the active tests when assessing graceful reload behavior.
+
+The input identity also owns an eight-byte-aligned atomic output token. Records
+for one resulting path borrow it, including canonical aliases and uncached
+single-path routes. Rewritten multi-path records retain independent hints.
+Output generation checks still validate each hint; failed table admission stays
+record-local so later records retry. Queued records keep the owning allocation
+alive. Record size/allocation class and canonical plaintext byte accounting stay
+unchanged. No per-point routing-counter batching is introduced.
+
+`NANOTUBE_RELAY_MODEL=1` enables the real 330-socket steady/burst/RESET CPU
+model. `RELAY_MODEL_NAMES`, `RELAY_MODEL_CYCLES` and the two fixture-archive
+paths control its local scale. Its direct input adapter uses compact slots and
+the listener-style decode pool; output uses the production sender and queues.
+The receiver reports actual wire bytes in addition to field/route digests.
+
+`RELAY_MODEL_ORDERED=1` is a bandwidth control: it publishes input frames in a
+fixed order while retaining the real concurrent output queues/sockets. Compare
+this with the ordinary eight-worker run to distinguish codec bytes from changed
+interleaving of the twenty partial values and timer-driven frame boundaries.
