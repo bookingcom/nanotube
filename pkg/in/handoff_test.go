@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -67,6 +68,149 @@ func handoffPair(t *testing.T) (*net.UnixConn, *net.UnixConn) {
 	a, b := left.(*net.UnixConn), right.(*net.UnixConn)
 	t.Cleanup(func() { a.Close(); b.Close() })
 	return a, b
+}
+
+func TestInputHandoffDoesNotWaitForFinalFlush(t *testing.T) {
+	for _, pressure := range []string{"budget", "queue"} {
+		for _, stateBytes := range []uint64{0, 123} {
+			t.Run(fmt.Sprintf("%s/state%d", pressure, stateBytes), func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				cfg := conf.MakeDefault()
+				cfg.IncomingConnIdleTimeoutSec = 30
+				q := make(chan [][]byte, 1)
+				limit := uint64(1 << 20)
+				if pressure == "budget" {
+					limit = 1
+				}
+				budget := NewBatchBudget(limit)
+				held := [][]byte{[]byte("held")}
+				budget.acquire(held)
+				q <- held
+				old := NewTCPInput(q, ctx.Done(), nil, &cfg, metrics.New(), zap.NewNop(), budget)
+				next := NewTCPInput(make(chan [][]byte, 8), ctx.Done(), nil, &cfg, metrics.New(), zap.NewNop(), nil)
+				ready := make(chan *inputConn)
+				flushStarted := make(chan struct{})
+				var index atomic.Int32
+				// Exercise the actual deferred BatchChan.Close path, with the
+				// first reader's parsed record still in its final partial batch.
+				// A synthetic state charge also checks delayed reclamation;
+				// real plaintext/zstd readers use the zero-charge case.
+				old.run = func(c *inputConn) {
+					defer old.wg.Done()
+					defer close(c.done)
+					defer c.Conn.Close()
+					defer old.ms.ActiveTCPConnections.Dec()
+					first := index.Add(1) == 1
+					qb := NewBatchChan(q, 8, 0, old.ms, budget)
+					defer func() {
+						if first {
+							close(flushStarted)
+						}
+						qb.Close()
+					}()
+					if first {
+						c.releaseBytes = stateBytes
+						qb.Push([]byte("first 1 100"))
+					}
+					ready <- c
+					var b [1]byte
+					_, _ = c.Read(b[:])
+					if c.moving() {
+						c.detach(func(w io.Writer) error { _, err := w.Write([]byte{0}); return err })
+					}
+				}
+				l, err := net.Listen("tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer l.Close()
+				a, b := handoffPair(t)
+				var clients []net.Conn
+				t.Cleanup(func() {
+					cancel()
+					_ = a.Close()
+					_ = b.Close()
+					for _, c := range clients {
+						_ = c.Close()
+					}
+					budget.Release(held)
+					go func() { old.wg.Wait(); close(q) }()
+					for batch := range q {
+						budget.Release(batch)
+					}
+					next.wg.Wait()
+				})
+				var conns []*inputConn
+				for range 3 {
+					client, err := net.Dial("tcp", l.Addr().String())
+					if err != nil {
+						t.Fatal(err)
+					}
+					clients = append(clients, client)
+					server, err := l.Accept()
+					if err != nil {
+						t.Fatal(err)
+					}
+					old.add(server, nil)
+					conns = append(conns, <-ready)
+				}
+				received := make(chan error, 1)
+				go func() { received <- next.Receive(ctx, b) }()
+				var capability [8]byte
+				if _, err := io.ReadFull(a, capability[:]); err != nil {
+					t.Fatal(err)
+				}
+				collections := 0
+				memory := startHandoffMemory(1000, func() { collections++ })
+				sent := make(chan error, 1)
+				// Deterministic connection order isolates the backpressure case.
+				go func() { sent <- old.sendConnections(ctx, a, conns, memory) }()
+				for _, result := range []<-chan error{sent, received} {
+					select {
+					case err := <-result:
+						if err != nil {
+							t.Fatal(err)
+						}
+					case <-ctx.Done():
+						t.Fatal("final Flush blocked the following transfers")
+					}
+				}
+				<-flushStarted
+				select {
+				case <-conns[0].done:
+					t.Fatal("first reader was not blocked flushing its final batch")
+				default:
+				}
+				for _, c := range conns[1:] {
+					<-c.done
+				}
+				if stateBytes == 0 {
+					select {
+					case <-memory.done:
+					case <-ctx.Done():
+						t.Fatal("zero-state reader delayed the collector")
+					}
+				}
+				budget.Release(held)
+				<-q // Make room for the blocked final batch.
+				batch := <-q
+				if len(batch) != 1 || string(batch[0]) != "first 1 100" {
+					t.Fatalf("lost final parsed record: %q", batch)
+				}
+				budget.Release(batch)
+				<-conns[0].done
+				<-memory.done
+				want := 0
+				if stateBytes != 0 {
+					want = 1
+				}
+				if collections != want || memory.released != stateBytes || budget.Bytes() != 0 {
+					t.Fatalf("delayed release: collections=%d, state=%d, budget=%g", collections, memory.released, budget.Bytes())
+				}
+			})
+		}
+	}
 }
 
 func TestInputHandoffEveryByte(t *testing.T) {
@@ -468,6 +612,12 @@ func TestInputLargeHandoff(t *testing.T) {
 				old.mu.Unlock()
 				if err = old.Send(ctx, a); err != nil {
 					t.Fatal(err)
+				}
+				// Replay can finish before deferred reader cleanup. Waiting here
+				// checks eventual release, without imposing that wait on Send.
+				<-transferred.done
+				if transferred.releaseBytes == 0 || testutil.ToFloat64(oldMS.StreamInputDictionaryBytes) != 0 || testutil.ToFloat64(oldMS.StreamInputReservedBytes) != 0 {
+					t.Fatal("handoff retained predecessor dictionary storage or reservations")
 				}
 				if err = <-received; err != nil {
 					t.Fatal(err)

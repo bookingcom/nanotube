@@ -47,6 +47,7 @@ type inputConn struct {
 	sending, moved chan struct{}
 	moveErr        error
 	stateBytes     int64
+	releaseBytes   uint64 // Reader-owned storage, reclaimable only after done.
 }
 
 func (c *inputConn) moving() bool {
@@ -204,6 +205,11 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 		conns = append(conns, c)
 	}
 	h.mu.Unlock()
+	return h.sendConnections(ctx, control, conns, newHandoffMemory())
+}
+
+func (h *TCPInput) sendConnections(ctx context.Context, control *net.UnixConn, conns []*inputConn, memory *handoffMemory) error {
+	defer memory.finish()
 	for _, c := range conns {
 		select {
 		case <-c.done:
@@ -228,6 +234,7 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 				if c.moveErr != nil {
 					return c.moveErr
 				}
+				memory.track(c)
 			default:
 			}
 			continue
@@ -245,6 +252,9 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 		if c.moveErr != nil {
 			return c.moveErr
 		}
+		// Reader cleanup can still be blocked flushing the old main queue.
+		// Account its storage asynchronously; never delay the next transfer.
+		memory.track(c)
 	}
 	_, err := control.Write([]byte{'E'})
 	return err

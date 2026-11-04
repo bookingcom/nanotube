@@ -64,6 +64,42 @@ Temporary storage must have headroom for a long open zstd frame and input arrivi
 during replay. Disk failures use the same explicit connection-close fallback;
 no temporary files need to survive a process exit.
 
+## Retiring-process memory
+
+Before starting a replacement, the predecessor collects garbage and returns
+unused heap pages to the OS. This also reduces the short-lived RSS of the forked
+child before exec; those pages are initially shared and do not represent a second
+full cgroup charge. Preparation changes no input ownership, so a rejected startup
+still leaves the original serving normally.
+
+After readiness/capability agreement the predecessor collects again. A separate
+worker observes completion of transferred readers with nonzero state and reclaims
+their storage in batches. Transfer never waits for reader cleanup or that worker:
+a final plaintext/zstd batch can still be blocked on main-queue backpressure.
+Zero-state readers need no completion observer. The worker accounts state only
+after decoder, sink and buffer cleanup finishes, including during output drain.
+
+The batch is one sixteenth of the predecessor's allocated heap at handoff start,
+with an 8 MiB minimum, using reader reservation bytes as the release estimate.
+There are at most five batch collections and one final collection, plus pre-fork
+and post-readiness collection: at most eight explicit calls per replacement.
+Finishing handoff starts asynchronous final accounting; it does not delay the
+end-of-transfer message or add a shutdown wait. Processes with less than 64 MiB
+of allocated heap skip explicit collection. These collections run only during
+replacement; GOGC and GOMEMLIMIT keep their configured values.
+
+This controls garbage/scavenger overlap, not total live memory. Old output
+dictionaries and queued records remain necessary until drain completes, shared
+input names remain pinned until their last old reader releases them, and the
+successor rebuilds output dictionaries as traffic arrives. No dictionary eviction,
+connection reset or queue discard is introduced. Memory headroom is still needed
+for live overlap, new traffic, compression and runtime overhead. Retain an
+RSS-based release guard; this is not a hard process or cgroup memory ceiling.
+
+The predecessor must contain this implementation to obtain its reclamation
+benefit. The first upgrade from a binary without it still uses that binary's
+memory policy, as does a rollback whose predecessor lacks it.
+
 ## Compatibility and failures
 
 | Predecessor | Successor | Behavior |

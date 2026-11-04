@@ -53,6 +53,9 @@ func startReplacement(ctx context.Context, start func() (int, error), timeout ti
 	} else {
 		_ = os.Unsetenv(inputHandoffEnv)
 	}
+	if len(input) > 0 {
+		input[0].PrepareHandoffMemory()
+	}
 	pid, err := start()
 	if hadInput {
 		_ = os.Setenv(inputHandoffEnv, oldInput)
