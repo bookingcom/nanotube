@@ -72,14 +72,21 @@ child before exec; those pages are initially shared and do not represent a secon
 full cgroup charge. Preparation changes no input ownership, so a rejected startup
 still leaves the original serving normally.
 
-After readiness/capability agreement the predecessor collects again, then waits
-for each transferred reader to finish decoder, sink and buffer cleanup before
-moving the next reader. It reclaims released storage in batches. The batch is
-one eighth of the predecessor's allocated heap at handoff start, clamped to
-8–256 MiB, using reader reservation bytes as the release estimate. It also
-collects the final partial batch. Processes with less than 64 MiB of allocated
-heap skip explicit collection. These collections run only during replacement;
-GOGC and GOMEMLIMIT keep their configured values.
+After readiness/capability agreement the predecessor collects again. A separate
+worker observes completion of transferred readers with nonzero state and reclaims
+their storage in batches. Transfer never waits for reader cleanup or that worker:
+a final plaintext/zstd batch can still be blocked on main-queue backpressure.
+Zero-state readers need no completion observer. The worker accounts state only
+after decoder, sink and buffer cleanup finishes, including during output drain.
+
+The batch is one sixteenth of the predecessor's allocated heap at handoff start,
+with an 8 MiB minimum, using reader reservation bytes as the release estimate.
+There are at most five batch collections and one final collection, plus pre-fork
+and post-readiness collection: at most eight explicit calls per replacement.
+Finishing handoff starts asynchronous final accounting; it does not delay the
+end-of-transfer message or add a shutdown wait. Processes with less than 64 MiB
+of allocated heap skip explicit collection. These collections run only during
+replacement; GOGC and GOMEMLIMIT keep their configured values.
 
 This controls garbage/scavenger overlap, not total live memory. Old output
 dictionaries and queued records remain necessary until drain completes, shared

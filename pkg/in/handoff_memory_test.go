@@ -1,48 +1,62 @@
 package in
 
-import (
-	"context"
-	"errors"
-	"testing"
-)
+import "testing"
 
 func TestHandoffMemoryBatchesReleasedStorage(t *testing.T) {
 	collections := 0
-	m := &handoffMemory{threshold: 100, free: func() { collections++ }}
-	m.release(60)
-	m.release(39)
-	if collections != 0 {
-		t.Fatal("collected before a batch was released")
-	}
-	m.release(2)
+	m := startHandoffMemory(100, func() { collections++ })
+	// Serial sends synchronize with the single collector. An extra send
+	// fences its processing of the preceding batch without timing sleeps.
+	m.completed <- 60
+	m.completed <- 39
+	m.completed <- 2
+	m.finish()
+	<-m.done
 	if collections != 1 || m.released != 0 {
-		t.Fatal("released batch was not collected")
+		t.Fatalf("released batch not collected: calls=%d remaining=%d", collections, m.released)
 	}
+
+	collections = 0
+	m = startHandoffMemory(100, func() { collections++ })
+	m.completed <- 1
 	m.finish()
+	<-m.done
 	if collections != 1 {
-		t.Fatal("collected an empty batch")
-	}
-	m.release(1)
-	m.finish()
-	if collections != 2 {
 		t.Fatal("final partial batch was not collected")
 	}
 	var small *handoffMemory
-	small.release(100)
+	small.track(&inputConn{})
 	small.finish()
 }
 
-func TestHandoffWaitsForReaderRelease(t *testing.T) {
-	c := &inputConn{done: make(chan struct{}), moved: make(chan struct{})}
-	close(c.moved) // Replay alone does not release the reader's dictionary.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := waitHandoffRelease(ctx, c); !errors.Is(err, context.Canceled) {
-		t.Fatalf("returned before reader cleanup: %v", err)
+func TestHandoffMemoryCapsCollections(t *testing.T) {
+	collections := 0
+	m := startHandoffMemory(100, func() { collections++ })
+	for range 100 {
+		m.completed <- 100
 	}
-	c.releaseBytes = 123
+	m.finish()
+	<-m.done
+	if collections != 6 || m.collections != 5 {
+		t.Fatalf("want five batches plus final collection; got %d / %d", collections, m.collections)
+	}
+}
+
+func TestHandoffMemoryObservesDelayedRelease(t *testing.T) {
+	collections := 0
+	m := startHandoffMemory(100, func() { collections++ })
+	c := &inputConn{releaseBytes: 123, done: make(chan struct{})}
+	m.track(c)
+	m.track(&inputConn{done: make(chan struct{})}) // Zero-state reader never finishes.
+	m.finish()
+	select {
+	case <-m.done:
+		t.Fatal("collector did not wait for nonzero reader storage")
+	default:
+	}
 	close(c.done)
-	if err := waitHandoffRelease(context.Background(), c); err != nil || c.releaseBytes != 123 {
-		t.Fatalf("reader cleanup was not observed: %v", err)
+	<-m.done
+	if collections != 1 {
+		t.Fatal("delayed storage was not collected")
 	}
 }

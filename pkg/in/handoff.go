@@ -205,7 +205,10 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 		conns = append(conns, c)
 	}
 	h.mu.Unlock()
-	memory := newHandoffMemory()
+	return h.sendConnections(ctx, control, conns, newHandoffMemory())
+}
+
+func (h *TCPInput) sendConnections(ctx context.Context, control *net.UnixConn, conns []*inputConn, memory *handoffMemory) error {
 	defer memory.finish()
 	for _, c := range conns {
 		select {
@@ -231,6 +234,7 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 				if c.moveErr != nil {
 					return c.moveErr
 				}
+				memory.track(c)
 			default:
 			}
 			continue
@@ -248,13 +252,9 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 		if c.moveErr != nil {
 			return c.moveErr
 		}
-		// moved acknowledges replay; done also fences decoder/sink/buffer
-		// cleanup. Do not move another reader before that cleanup, or collect
-		// while this reader still pins its dictionary.
-		if err := waitHandoffRelease(ctx, c); err != nil {
-			return err
-		}
-		memory.release(c.releaseBytes)
+		// Reader cleanup can still be blocked flushing the old main queue.
+		// Account its storage asynchronously; never delay the next transfer.
+		memory.track(c)
 	}
 	_, err := control.Write([]byte{'E'})
 	return err
