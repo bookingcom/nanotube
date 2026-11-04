@@ -57,7 +57,7 @@ codec's external-name estimate (name bytes plus 64), the same estimate senders
 budget `peer_dictionary_bytes` against, so a sender that fits its peer allowance
 is never rejected for sharing metadata. Physical shared storage is counted only
 once; a name held by a single connection can exceed its charge by its entry and
-index share (about 80 bytes), a name shared by two or more cannot. Global admission
+index share (about 96 bytes), a name shared by two or more cannot. Global admission
 charges those physical costs independently. Each cached
 slot is also charged its full plan, and a cached normalized alias its canonical
 entry, to the route allowance; cache eligibility is stored in the reference's
@@ -113,6 +113,72 @@ dictionary plus route bytes by those allowances, frame buffers and unpublished d
 Decode, truncation and budget failures log errors with peer addresses. Decoded
 rows also contribute to normal input counters and rate limiting. Malformed
 frames emit no rows. Definitions bind only after complete frame validation.
+
+The executable uses compact pinned-name decoder slots: a direct Go pointer,
+two 64-bit predictors and two bitmaps, allocated in 128-entry pages. On 64-bit
+Go these pages cost about 25 bytes per retained ID, with no doubled connection
+array. The ordinary resolver and arbitrary caller-slot API remain available.
+Admission still checks the original conservative peer estimate, so a producer
+within its configured peer allowance remains compatible. Input frame staging
+uses 32 bytes per compact row rather than the generic 56-byte row.
+The aggregate input budget charges actual 3,200-byte pages plus the explicitly
+sized page-pointer vector before growth, not the old geometric 40-byte slots.
+Wire/raw/row/definition buffers keep their admission hooks. RESET drops pages,
+vectors, buffers and staging; close/handoff release connection reservations back
+to the shared table's fixed baseline. The sender-facing name + 64 estimate and
+conservative logical slot estimate remain unchanged. Listener-owned zstd decode
+contexts and process-owned output workspaces serve separate directions.
+
+Without rewrite rules, the routing hash and a pointer to an immutable rule route
+live inside the shared name entry. The retained output token increases its
+allocation class from 64 to 80 bytes, charged once per shared identity. Ordinary routes need no
+per-name plan allocation or route-budget charge. Continued rules that combine
+destinations still charge their owned header/vector; rewritten paths retain
+bounded independent plans. Normalization, health checks, route ordering and
+uncached fallback retain their existing behavior.
+
+Independent output frames share CPU-bounded compression and column/sort scratch.
+No flush workspace is held while adding points, writing sockets or running an
+application callback. Definition arenas are borrowed without blocking and
+returned after their bytes have been copied into the completed frame. Their idle
+cache is bounded; active definitions retain the existing frame bounds. The zstd
+level and 1 MiB window are unchanged. Connection close releases only connection
+state, while process-owned scratch survives for reuse.
+
+Shared output indexes allocate lazily, with sparse probes to protect lookup CPU.
+Retired entries carry their own free-list link. Table capacity and the full index
+reservation remain bounded by the configured output budget. Output connections
+already partition names by a stable mixed routing hash.
+
+For a fresh-process local model, build the executable's test binary and run
+`TestRelayMemoryModel` with `RELAY_MEMORY_NAMES=260000` and
+`RELAY_MEMORY_FIXTURES` pointing inside an explicit scratch directory. It creates
+80 producer streams with 20 producers sharing each name, scales the
+224/256 MiB peer/input allowances and 8 GiB output budget, and retains all 330
+zstd output encoders. A separate process generates fixtures; another validates
+receiver fields, routes, counts and checksums. CPU excludes fixture loading and
+includes frame decoding, routing, output encoding/writes and automatic GC during
+processing. Samples distinguish pre-GC RSS and live heap; `RELAY_MEMORY_SCAVENGE=1`
+adds a separate forced-scavenging diagnostic. Default runs preserve residency
+across phases.
+The full-name epochs exercise RESET/churn; steady passes replay resident IDs.
+Input frames use zstd by default (`RELAY_MEMORY_INPUT_ZSTD=0` selects raw).
+Correlated producer dictionaries preserve 20-way sharing among retained names;
+`RELAY_MEMORY_PHASE_SPREAD=wide` stresses a larger distinct retained-name set.
+`RELAY_MEMORY_NAME_BYTES` overrides the default 60–120 byte name target.
+`RELAY_MEMORY_POOL=1 RELAY_MEMORY_NAMES=263500` models a synthetic producer pool at 2% scale:
+85-lane / 3.1M names-per-lane / 20-way-sharing shape (13.175M distinct names at
+full scale), with 1 GiB input peer allowance scaled to the fixture. Use counts
+divisible by 85. The same 33 hosts × ten output streams remain unscaled. It
+reports exact input reservation components and checks return to the fixed shared
+baseline after close; decoder and staging storage are actually allocated.
+Optional `RELAY_MEMORY_PROFILE` writes heap profiles under scratch. Use Linux for
+RSS/CPU conclusions: Darwin's page-reuse accounting and syscalls differ.
+
+These changes do not set GC environment variables. Operators can retain the
+normal `GOGC` policy and set a per-process `GOMEMLIMIT` with space for both sides
+of a reload and non-Go memory. A Go memory limit is soft; measure its CPU cost
+before tightening it toward the live heap.
 
 ## Client configuration
 
@@ -173,3 +239,22 @@ The original real-process pool oracle and the repeated-input reload oracle check
 identities/values and duplicate acceptance independently at two real stores. The
 store-handoff case fences source submission; relay reload tests interrupt active
 persistent clients. Use the active tests when assessing graceful reload behavior.
+
+The input identity also owns an eight-byte-aligned atomic output token. Records
+for one resulting path borrow it, including canonical aliases and uncached
+single-path routes. Rewritten multi-path records retain independent hints.
+Output generation checks still validate each hint; failed table admission stays
+record-local so later records retry. Queued records keep the owning allocation
+alive. Record size/allocation class and canonical plaintext byte accounting stay
+unchanged. No per-point routing-counter batching is introduced.
+
+`NANOTUBE_RELAY_MODEL=1` enables the real 330-socket steady/burst/RESET CPU
+model. `RELAY_MODEL_NAMES`, `RELAY_MODEL_CYCLES` and the two fixture-archive
+paths control its local scale. Its direct input adapter uses compact slots and
+the listener-style decode pool; output uses the production sender and queues.
+The receiver reports actual wire bytes in addition to field/route digests.
+
+`RELAY_MODEL_ORDERED=1` is a bandwidth control: it publishes input frames in a
+fixed order while retaining the real concurrent output queues/sockets. Compare
+this with the ordinary eight-worker run to distinguish codec bytes from changed
+interleaving of the twenty partial values and timer-driven frame boundaries.

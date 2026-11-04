@@ -13,6 +13,41 @@ import (
 
 func (s *nameShard) sweep(pressure bool) { s.reclaim(s.used, pressure) }
 
+func TestSharedTableAllocatesIndexForRetainedNames(t *testing.T) {
+	const budget = 256 << 20
+	table, err := NewNameTable(budget, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := table.Stats()
+	if initial.Bytes > budget/50 || initial.Capacity < budget/100 {
+		t.Fatal("empty table allocated its capacity or reduced retention")
+	}
+	tokens := make([]uint64, 10000)
+	for i := range tokens {
+		hash := nameHash(fmt.Appendf(nil, "metric.%d", i))
+		tokens[i] = table.Resolve(fmt.Appendf(nil, "metric.%d", i), hash)
+		if !table.Acquire(tokens[i], hash) {
+			t.Fatal("lazy index failed to retain a definition")
+		}
+	}
+	for i, token := range tokens {
+		name := fmt.Appendf(nil, "metric.%d", i)
+		if !table.Valid(token, nameHash(name)) || table.Resolve(name, nameHash(name)) != token {
+			t.Fatal("index growth changed a live identity")
+		}
+		table.Release(token)
+	}
+	for i := range table.shards {
+		s := &table.shards[i]
+		s.sweep(true)
+	}
+	final := table.Stats()
+	if final.Names != 0 || final.Capacity != initial.Capacity || final.Bytes > budget/25 {
+		t.Fatal("lazy table changed capacity or retained excessive metadata")
+	}
+}
+
 func TestSharedNameReferencesAndWire(t *testing.T) {
 	for _, full := range []bool{true, false} {
 		for _, flags := range []byte{0, FlagZstd} {

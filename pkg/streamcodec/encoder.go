@@ -46,9 +46,8 @@ type Encoder struct {
 	decodedUsed      int
 	decodedMaxBlocks int
 	defined          int
-	rows, tmp        []row
-	cols             [3][]byte
-	raw, pending     []byte
+	rows             []row
+	pending          []byte
 	estimate         int
 	z                *zstd.Encoder
 }
@@ -86,21 +85,20 @@ func NewSharedEncoder(o Options, table *NameTable) (*Encoder, error) {
 	}
 	e := &Encoder{opts: o, table: table, arena: nameArena{quantum: min(64<<10, o.MaxFrameSize)}}
 	if o.Flags&FlagZstd != 0 {
-		e.z, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderConcurrency(1), zstd.WithWindowSize(1<<20))
+		e.z, err = frameEncoder()
 	}
 	return e, err
 }
 
-// Close releases compression resources; it does not flush buffered points.
+// Close releases connection state and definition scratch; it does not flush
+// buffered points. Compression and frame workspaces belong to the process.
 func (e *Encoder) Close() {
 	for i := 0; i < e.states.n; i++ {
 		e.table.ReleaseKey(e.states.at(uint32(i)).global())
 	}
 	e.states = wireStates{}
 	e.index = nil
-	if e.z != nil {
-		_ = e.z.Close()
-	}
+	e.releaseDefinitionArena()
 }
 
 // Add copies name only on its first occurrence. Known names allocate nothing in
@@ -188,6 +186,9 @@ func (e *Encoder) AddGlobal(name []byte, hash, token uint64, value float64, ts i
 		} else {
 			e.unshared++
 		}
+		if e.arena.quantum == 64<<10 && len(e.arena.chunks) == 0 {
+			e.arena = takeDefinitionArena()
+		}
 		e.definitions = append(e.definitions, e.arena.add(name))
 		e.decodedEntries = nextCapacity(e.states.n, e.decodedEntries)
 		if e.decodedBlocks == 0 || e.decodedUsed+len(name) > 64<<10 {
@@ -253,7 +254,7 @@ func (e *Encoder) Reset() error {
 	clear(e.index)
 	e.states.n = 0
 	e.definitions = e.definitions[:0]
-	e.arena.reset()
+	e.releaseDefinitionArena()
 
 	e.defined = 0
 	e.decodedBlocks = 0
@@ -265,17 +266,28 @@ func (e *Encoder) flush(dst []byte) ([]byte, error) {
 	if len(e.rows) == 0 {
 		return dst, nil
 	}
-	e.rows, e.tmp = sortRows(e.rows, e.tmp, uint32(e.states.n-1))
-	raw := e.raw[:0]
+	pool := frameWorkspaces()
+	work := pool.take()
+	defer pool.put(work)
+	owned := e.rows
+	rows, tmp := sortRows(owned, work.tmp, uint32(e.states.n-1))
+	// Radix passes can swap the two arrays. Keep the original point buffer on
+	// its connection and return only the other array to the shared workspace.
+	if &rows[0] == &owned[0] {
+		work.tmp = tmp[:0]
+	} else {
+		work.tmp = rows[:0]
+	}
+	raw := work.raw[:0]
 	raw = binary.AppendUvarint(raw, uint64(e.defined))
 	raw = binary.AppendUvarint(raw, uint64(e.states.n-e.defined))
 	for _, name := range e.definitions {
 		raw = binary.AppendUvarint(raw, uint64(name.size))
 		raw = append(raw, e.arena.name(name)...)
 	}
-	ids, stamps, values := e.cols[0][:0], e.cols[1][:0], e.cols[2][:0]
+	ids, stamps, values := work.cols[0][:0], work.cols[1][:0], work.cols[2][:0]
 	prev := row{}
-	for _, r := range e.rows {
+	for _, r := range rows {
 		ids = binary.AppendUvarint(ids, uint64(r.id-prev.id))
 		want := *e.states.at(r.id)
 		if !want.valid() {
@@ -294,17 +306,17 @@ func (e *Encoder) flush(dst []byte) ([]byte, error) {
 	raw = append(raw, ids...)
 	raw = append(raw, stamps...)
 	raw = append(raw, values...)
-	e.raw = raw
-	e.cols[0], e.cols[1], e.cols[2] = ids, stamps, values
+	work.raw = raw
+	work.cols[0], work.cols[1], work.cols[2] = ids, stamps, values
 	var err error
-	dst, err = appendFrame(dst, raw, DataFrame, len(e.rows), e.z, e.opts.MaxFrameSize)
+	dst, err = appendFrame(dst, raw, DataFrame, len(rows), e.z, e.opts.MaxFrameSize)
 	if err != nil {
 		return dst, err
 	}
 	e.defined = e.states.n
 	e.definitions = e.definitions[:0]
-	e.arena.reset()
-	e.rows = e.rows[:0]
+	e.releaseDefinitionArena()
+	e.rows = owned[:0]
 	e.estimate = 0
 	return dst, nil
 }

@@ -3,6 +3,7 @@ package in
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -188,6 +189,14 @@ func TestStreamInputGrowthRejectsWholeFrame(t *testing.T) {
 	}
 }
 
+type boundChurnSink struct {
+	boundAccountingSink
+	counts *churnStreamSink
+}
+
+func (s *boundChurnSink) BoundPoint(*codec.BoundName, bool, float64, int64) { s.counts.rows.Add(1) }
+func (s *boundChurnSink) Reset()                                            { s.counts.resets.Add(1) }
+
 type churnStreamSink struct{ rows, resets *atomic.Int64 }
 
 func (s *churnStreamSink) Point(uint32, []byte, float64, int64, *any) { s.rows.Add(1) }
@@ -205,7 +214,7 @@ func TestStreamInputConnectResetCloseChurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := NewTCPInput(nil, stop, nil, &cfg, ms, zap.NewNop(), nil, func() StreamSink {
-		return &churnStreamSink{rows: &rows, resets: &resets}
+		return &boundChurnSink{counts: &churnStreamSink{rows: &rows, resets: &resets}}
 	})
 	go func() { input.Serve(l, stop); close(done) }()
 	defer func() { close(stop); <-done }()
@@ -247,5 +256,99 @@ func TestStreamInputConnectResetCloseChurn(t *testing.T) {
 	}
 	if resets.Load() != 200 || testutil.ToFloat64(ms.StreamInputDictionaryBytes) != 0 || testutil.ToFloat64(ms.StreamInputErrors) != 0 {
 		t.Fatal("connect/reset/close churn leaked state or rejected valid frames")
+	}
+}
+
+// This binder keeps the decoder in compact mode. Shared application storage is
+// covered separately by the real router tests; these checks isolate the exact
+// page/buffer/staging reservation installed by readStream.
+type boundAccountingSink struct {
+	testStreamSink
+	bytes   int
+	flush   func()
+	onReset func()
+}
+
+func (s *boundAccountingSink) BindStreamName(n []byte) (*codec.BoundName, bool, error) {
+	s.bytes += len(n) + 64
+	return &codec.BoundName{Text: string(n)}, true, nil
+}
+func (s *boundAccountingSink) ReleaseStreamName(n *codec.BoundName, _ bool) {
+	s.bytes -= len(n.Text) + 64
+}
+func (*boundAccountingSink) BindName([]byte) any                                 { panic("generic binding in compact input") }
+func (*boundAccountingSink) ReleaseName(any)                                     { panic("generic release in compact input") }
+func (s *boundAccountingSink) NameBytes() int                                    { return s.bytes }
+func (*boundAccountingSink) SetNameLimit(int)                                    {}
+func (s *boundAccountingSink) BoundPoint(*codec.BoundName, bool, float64, int64) { s.rows++ }
+func (s *boundAccountingSink) Reset() {
+	s.resets++
+	if s.onReset != nil {
+		s.onReset()
+	}
+}
+func (s *boundAccountingSink) Flush() {
+	if s.flush != nil {
+		s.flush()
+	}
+}
+
+func TestStreamInputBoundPhysicalReservationAndReset(t *testing.T) {
+	for _, flags := range []byte{0, codec.FlagZstd} {
+		e, err := codec.NewEncoder(codec.Options{Flags: flags})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wire, _ := codec.AppendPreamble(nil, flags)
+		_ = e.Add([]byte("example.one"), 1, 2)
+		frame, err := e.Flush(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wire = append(wire, frame...)
+		if err := e.Reset(); err != nil {
+			t.Fatal(err)
+		}
+		wire, err = e.Flush(wire)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Close()
+		// First page (allocator class) and 16-pointer vector, one codec row,
+		// one definition header, one compact staged point, and owned wire/raw.
+		want := 4096 + 3200 + 128 + 24 + 24 + 32 + len(frame)
+		if flags != 0 {
+			want += int(binary.BigEndian.Uint32(frame[8:12]))
+		}
+		for _, limit := range []int{want, want - 1} {
+			cfg := conf.MakeDefault()
+			cfg.StreamInputTotalBytes = limit
+			ms := metrics.New()
+			sink := &boundAccountingSink{}
+			sink.onReset = func() {
+				if got := testutil.ToFloat64(ms.StreamInputReservedBytes); got != 4096+codec.HeaderSize {
+					t.Fatalf("RESET retained reservation: %g", got)
+				}
+			}
+			sink.flush = func() {
+				if sink.bytes == 0 {
+					return
+				} // Deferred close flush.
+				if got := testutil.ToFloat64(ms.StreamInputReservedBytes); got != float64(want) {
+					t.Fatalf("reserved %g != physical %d", got, want)
+				}
+			}
+			readStream(bufio.NewReader(bytes.NewReader(wire)), make(chan struct{}), nil, &cfg, ms, zap.NewNop(), sink)
+			if sink.bytes != 0 || testutil.ToFloat64(ms.StreamInputReservedBytes) != 0 {
+				t.Fatal("compact close leaked names/reservation")
+			}
+			if limit == want {
+				if sink.rows != 1 || sink.resets != 1 || testutil.ToFloat64(ms.StreamInputErrors) != 0 {
+					t.Fatal("valid compact frame rejected")
+				}
+			} else if sink.rows != 0 || testutil.ToFloat64(ms.StreamInputErrors) != 1 {
+				t.Fatal("over-budget compact frame delivered")
+			}
+		}
 	}
 }

@@ -68,6 +68,7 @@ type modelStream struct {
 	receiver *modelReceiver
 	names    int
 	shared   bool
+	bound    bool
 }
 
 func modelWires(t testing.TB, unique, sharing, epoch int) ([][]byte, []byte) {
@@ -151,8 +152,13 @@ func modelStreams(t testing.TB, unique ...int) ([]*modelStream, *metrics.Prom) {
 		m := &modelStream{d: d, s: s, receiver: h}
 		if bind, ok := any(s).(modelBinder); ok {
 			m.shared = true
-			d.SetNameResolver(bind.BindName)
-			any(d).(interface{ SetNameReleaser(func(any)) }).SetNameReleaser(bind.ReleaseName)
+			if compact, ok := any(s).(codec.NameBinder); ok {
+				m.bound = true
+				d.SetNameBinder(compact)
+			} else {
+				d.SetNameResolver(bind.BindName)
+				any(d).(interface{ SetNameReleaser(func(any)) }).SetNameReleaser(bind.ReleaseName)
+			}
 		} else {
 			d.SetNameResolver(func(name []byte) any {
 				m.names += len(name) + 64
@@ -168,12 +174,18 @@ func (m *modelStream) decode(t testing.TB, wire []byte) {
 	t.Helper()
 	for len(wire) > 0 {
 		n := codec.HeaderSize + int(binary.BigEndian.Uint32(wire[4:8]))
-		info, err := m.d.Decode(wire[:n], func(id uint32, name []byte, v float64, ts int64, slot *any) {
-			if !m.shared {
-				slot = &(*slot).(*modelName).plan
-			}
-			m.s.Point(id, name, v, ts, slot)
-		})
+		var info codec.FrameInfo
+		var err error
+		if m.bound {
+			info, err = m.d.DecodeBound(wire[:n], m.s.BoundPoint)
+		} else {
+			info, err = m.d.Decode(wire[:n], func(id uint32, name []byte, v float64, ts int64, slot *any) {
+				if !m.shared {
+					slot = &(*slot).(*modelName).plan
+				}
+				m.s.Point(id, name, v, ts, slot)
+			})
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

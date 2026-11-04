@@ -26,6 +26,9 @@ type Visit func(id uint32, name []byte, value float64, timestamp int64, slot *an
 type Decoder struct {
 	opts        Options
 	entries     []entry
+	bound       boundEntries
+	binder      NameBinder
+	peerEntries int // Preserve the existing sender's conservative admission estimate.
 	names       []nameRef
 	definitions [][]byte
 	resolve     func([]byte) any
@@ -65,6 +68,10 @@ func (d *Decoder) Pending() []byte { return d.wire[:d.readN] }
 // can be resumed; protocol errors are terminal. io.EOF means a frame boundary,
 // io.ErrUnexpectedEOF means a truncated frame. It never reads into the next frame.
 func (d *Decoder) ReadFrame(r io.Reader, visit Visit) (FrameInfo, error) {
+	return d.readFrame(r, visit, nil)
+}
+
+func (d *Decoder) readFrame(r io.Reader, visit Visit, boundVisit BoundVisit) (FrameInfo, error) {
 	if d.broken {
 		return FrameInfo{}, ErrBroken
 	}
@@ -105,7 +112,7 @@ func (d *Decoder) ReadFrame(r io.Reader, visit Visit) (FrameInfo, error) {
 			return info, err
 		}
 	}
-	info, err = d.Decode(d.wire, visit)
+	info, err = d.decode(d.wire, visit, boundVisit)
 	if err == nil {
 		d.readN = 0
 		d.wire = d.wire[:HeaderSize]
@@ -140,6 +147,10 @@ func (d *Decoder) header(h []byte) (FrameInfo, error) {
 // Decode accepts exactly one complete frame (header included). All columns are
 // validated before visiting rows. A rejected frame never calls visit.
 func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) {
+	return d.decode(frame, visit, nil)
+}
+
+func (d *Decoder) decode(frame []byte, visit Visit, boundVisit BoundVisit) (info FrameInfo, err error) {
 	if d.broken {
 		return info, ErrBroken
 	}
@@ -168,6 +179,8 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 		if d.budget != nil {
 			// Admission must follow retained capacity, including after RESET.
 			d.entries, d.names = nil, nil
+			d.bound = boundEntries{}
+			d.peerEntries = 0
 			d.arena = nameArena{quantum: d.arena.quantum}
 			_ = d.budget(0)
 		}
@@ -210,10 +223,10 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 	}
 	r := reader{data: raw}
 	first, count := r.uint(), r.uint()
-	if r.err != nil || first != uint64(len(d.entries)) {
+	if r.err != nil || first != uint64(d.NameCount()) {
 		return info, ErrFrame
 	}
-	if count > uint64(d.opts.MaxNames)-uint64(len(d.entries)) || count > uint64(len(r.data)) {
+	if count > uint64(d.opts.MaxNames)-uint64(d.NameCount()) || count > uint64(len(r.data)) {
 		return info, ErrLimit
 	}
 	info.Names = uint32(count)
@@ -233,15 +246,22 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 		if r.err != nil {
 			return info, ErrFrame
 		}
-		size := nextCapacity(len(d.entries)+1, cap(d.entries))
+		size := nextCapacity(d.NameCount()+1, d.dictionaryCapacity())
 		charge := d.arena.bytes + size*84 + d.arena.extra(len(name))
-		if d.resolve != nil {
-			charge = size*40 + d.nameBytes + len(name) + (len(d.entries)+1)*64
+		if d.resolve != nil || d.binder != nil {
+			charge = size*40 + d.nameBytes + len(name) + (d.NameCount()+1)*64
+		}
+		if d.binder != nil {
+			charge = max(charge, d.bound.projectedBytes()+d.nameBytes+len(name)+(d.NameCount()+1)*64)
 		}
 		if charge > d.opts.DictionaryBytes {
 			return info, ErrLimit
 		}
-		if size > cap(d.entries) {
+		if d.binder != nil {
+			if n := d.bound.projectedBytes(); d.budget != nil && n > d.bound.bytes() && !d.budget(n) {
+				return info, ErrLimit
+			}
+		} else if size > cap(d.entries) {
 			if d.budget != nil && !d.budget(size*40) {
 				return info, ErrLimit
 			}
@@ -252,7 +272,7 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 		e := entry{}
 		d.nameBytes += len(name)
 		d.definitions = append(d.definitions, name)
-		if d.resolve == nil {
+		if d.resolve == nil && d.binder == nil {
 			if size > cap(d.names) {
 				refs := make([]nameRef, len(d.names), size)
 				copy(refs, d.names)
@@ -274,7 +294,12 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 				e.last = point{ts: int64(binary.BigEndian.Uint64(b[:8])), bits: binary.BigEndian.Uint64(b[8:]), valid: true}
 			}
 		}
-		d.entries = append(d.entries, e)
+		if d.binder != nil {
+			d.peerEntries = size
+			d.bound.add(e.last)
+		} else {
+			d.entries = append(d.entries, e)
+		}
 	}
 	if info.Kind == StateFrame {
 		if r.err != nil || len(r.data) != 0 || count == 0 {
@@ -292,18 +317,33 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 	d.rows = d.rows[:0]
 	var id uint64
 	var prevTS int64
+	names := uint64(d.NameCount())
 	for range int(info.Rows) {
 		delta := ids.uint()
-		if delta > uint64(len(d.entries)) || id+delta >= uint64(len(d.entries)) {
+		if delta > names || id+delta >= names {
 			return info, ErrFrame
 		}
 		id += delta
-		want := d.entries[id].last
+		var want point
+		var block *boundBlock
+		var bound *boundEntry
+		if d.binder != nil {
+			block = d.bound.blocks[id>>boundBlockBits]
+			bound = &block.entries[id&(boundBlockSize-1)]
+			want = point{ts: bound.ts, bits: bound.bits, valid: block.valid[(id&(boundBlockSize-1))/64]&(uint64(1)<<(id&63)) != 0}
+		} else {
+			want = d.entries[id].last
+		}
 		if !want.valid {
 			want.ts = prevTS
 		}
 		p := point{ts: want.ts + stamps.sint(), bits: want.bits ^ values.xor(), valid: true}
-		d.entries[id].last = p
+		if bound != nil {
+			bound.ts, bound.bits = p.ts, p.bits
+			block.valid[(id&(boundBlockSize-1))/64] |= uint64(1) << (id & 63)
+		} else {
+			d.entries[id].last = p
+		}
 		d.rows = append(d.rows, row{id: uint32(id), ts: p.ts, bits: p.bits})
 		prevTS = p.ts
 	}
@@ -319,6 +359,12 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 			visit(p.id, d.name(int(p.id)), math.Float64frombits(p.bits), p.ts, &e.slot)
 		}
 	}
+	if boundVisit != nil {
+		for _, p := range d.rows {
+			id := int(p.id)
+			boundVisit(d.bound.at(id).name, d.bound.cached(id), math.Float64frombits(p.bits), p.ts)
+		}
+	}
 	return info, nil
 }
 
@@ -326,43 +372,57 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 // predictors on a fresh decoder without replaying points or caller slots. Use
 // the same options/flags for the successor; append Pending after this snapshot.
 func (d *Decoder) Snapshot(dst []byte) ([]byte, error) {
+	return d.snapshot(dst, nil)
+}
+
+// WriteSnapshot streams the same bytes as Snapshot using bounded frame scratch.
+// A process handoff must not allocate every connection's entire dictionary at
+// once while its successor is rebuilding those same dictionaries.
+func (d *Decoder) WriteSnapshot(w io.Writer) error {
+	_, err := d.snapshot(nil, w)
+	return err
+}
+
+func (d *Decoder) snapshot(dst []byte, w io.Writer) ([]byte, error) {
 	if d.broken {
 		return dst, ErrBroken
 	}
-	if d.opts.Flags&FlagZstd == 0 {
+	if w == nil && d.opts.Flags&FlagZstd == 0 {
 		// Avoid repeatedly growing/copying a multi-megabyte dictionary while
 		// hundreds of handlers snapshot together. Reserve an upper bound for
 		// raw entries and bounded frame headers; compressed state stays lazy.
 		size, packing := 0, 0
-		for i, e := range d.entries {
+		for i := range d.NameCount() {
 			n := len(d.name(i))
 			packing += n + 27
 			size += n + (bits.Len(uint(n)|1)+6)/7 + 1
-			if e.last.valid {
+			if d.last(i).valid {
 				size += 16
 			}
 		}
-		frames := min(len(d.entries), 2*(packing/d.opts.FrameSize+1))
+		frames := min(d.NameCount(), 2*(packing/d.opts.FrameSize+1))
 		dst = slices.Grow(dst, size+frames*(HeaderSize+20)+HeaderSize)
 	}
 	var z *zstd.Encoder
 	if d.opts.Flags&FlagZstd != 0 {
 		var err error
-		z, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderConcurrency(1), zstd.WithWindowSize(1<<20))
+		z, err = frameEncoder()
 		if err != nil {
 			return dst, err
 		}
-		defer func() { _ = z.Close() }()
 	}
 	var err error
 	dst, err = appendFrame(dst, nil, ResetFrame, 0, nil, d.opts.MaxFrameSize)
 	if err != nil {
 		return dst, err
 	}
+	if dst, err = writeSnapshotFrame(dst, w); err != nil {
+		return dst, err
+	}
 	var raw []byte
-	for first := 0; first < len(d.entries); {
+	for first := 0; first < d.NameCount(); {
 		end, size := first, 20
-		for end < len(d.entries) {
+		for end < d.NameCount() {
 			n := len(d.name(end)) + 27
 			if end > first && size+n > d.opts.FrameSize {
 				break
@@ -373,14 +433,14 @@ func (d *Decoder) Snapshot(dst []byte) ([]byte, error) {
 		raw = raw[:0]
 		raw = binary.AppendUvarint(raw, uint64(first))
 		raw = binary.AppendUvarint(raw, uint64(end-first))
-		for i, e := range d.entries[first:end] {
-			name := d.name(first + i)
+		for i := first; i < end; i++ {
+			name, last := d.name(i), d.last(i)
 			raw = binary.AppendUvarint(raw, uint64(len(name)))
 			raw = append(raw, name...)
-			if e.last.valid {
+			if last.valid {
 				raw = append(raw, 1)
-				raw = binary.BigEndian.AppendUint64(raw, uint64(e.last.ts))
-				raw = binary.BigEndian.AppendUint64(raw, e.last.bits)
+				raw = binary.BigEndian.AppendUint64(raw, uint64(last.ts))
+				raw = binary.BigEndian.AppendUint64(raw, last.bits)
 			} else {
 				raw = append(raw, 0)
 			}
@@ -389,16 +449,45 @@ func (d *Decoder) Snapshot(dst []byte) ([]byte, error) {
 		if err != nil {
 			return dst, err
 		}
+		if dst, err = writeSnapshotFrame(dst, w); err != nil {
+			return dst, err
+		}
 		first = end
 	}
 	return dst, nil
 }
 
+func writeSnapshotFrame(frame []byte, w io.Writer) ([]byte, error) {
+	if w == nil {
+		return frame, nil
+	}
+	n, err := w.Write(frame)
+	if err == nil && n != len(frame) {
+		err = io.ErrShortWrite
+	}
+	return frame[:0], err
+}
+
 // NameCount reports names whose ids are currently valid.
-func (d *Decoder) NameCount() int { return len(d.entries) }
+func (d *Decoder) NameCount() int {
+	if d.binder != nil {
+		return d.bound.n
+	}
+	return len(d.entries)
+}
+
+func (d *Decoder) dictionaryCapacity() int {
+	if d.binder != nil {
+		return d.peerEntries
+	}
+	return cap(d.entries)
+}
 
 // RetainedBytes includes dictionary capacities and the reserved caller slots.
 func (d *Decoder) RetainedBytes() int {
+	if d.binder != nil {
+		return d.bound.bytes()
+	}
 	n := cap(d.entries) * 40
 	if d.resolve == nil {
 		n += d.arena.bytes + cap(d.names)*12 + cap(d.entries)*32
@@ -418,7 +507,7 @@ type NameReference interface{ StreamName() []byte }
 // A resolver may return an error to reject admission after validation; no rows
 // are visited, and Close releases any earlier definitions admitted in that frame.
 func (d *Decoder) SetNameResolver(resolve func([]byte) any) {
-	if resolve == nil || d.resolve != nil {
+	if resolve == nil || d.resolve != nil || d.binder != nil {
 		return
 	}
 	for i := range d.entries {
@@ -441,7 +530,7 @@ func (d *Decoder) SetNameResolver(resolve func([]byte) any) {
 func (d *Decoder) SetNameReleaser(release func(any)) { d.release = release }
 
 // SetDictionaryBudget admits external-name decoder slot capacity before growth.
-// Install before decoding, after SetNameResolver. RESET drops capacity and calls
+// Install before decoding, after SetNameResolver or SetNameBinder. RESET drops capacity and calls
 // budget(0); Close leaves final accounting to the owner. The peer's logical
 // DictionaryBytes estimate is unchanged. A failed admission rejects the frame.
 func (d *Decoder) SetDictionaryBudget(budget func(int) bool) { d.budget = budget }
@@ -457,6 +546,19 @@ func (d *Decoder) admitBuffers(wire, raw, rows, definitions, points int) bool {
 }
 
 func (d *Decoder) releaseNames() {
+	if d.binder != nil {
+		for i := range d.bound.n {
+			if name := d.bound.at(i).name; name != nil {
+				d.binder.ReleaseStreamName(name, d.bound.cached(i))
+			}
+		}
+		for _, block := range d.bound.blocks {
+			clear(block.entries[:])
+			clear(block.valid[:])
+			clear(block.cached[:])
+		}
+		d.bound.n = 0
+	}
 	if d.release != nil {
 		for i := range d.entries {
 			if slot := d.entries[i].slot; slot != nil {
@@ -467,12 +569,27 @@ func (d *Decoder) releaseNames() {
 	clear(d.entries)
 }
 func (d *Decoder) name(i int) []byte {
+	if d.binder != nil {
+		return d.bound.at(i).name.Bytes()
+	}
 	if d.resolve != nil {
 		return d.entries[i].slot.(NameReference).StreamName()
 	}
 	return d.arena.name(d.names[i])
 }
 func (d *Decoder) bind(first int) error {
+	if d.binder != nil {
+		for i, name := range d.definitions {
+			ref, cached, err := d.binder.BindStreamName(name)
+			if err != nil {
+				return err
+			}
+			if ref == nil {
+				return ErrLimit
+			}
+			d.bound.bind(first+i, ref, cached)
+		}
+	}
 	if d.resolve != nil {
 		for i, name := range d.definitions {
 			ref := d.resolve(name)

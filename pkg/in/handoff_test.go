@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -36,6 +37,15 @@ func (s *accountingSink) Point(_ uint32, n []byte, v float64, ts int64, _ *any) 
 }
 func (s *accountingSink) Reset() {}
 func (s *accountingSink) Flush() {}
+
+type boundHandoffSink struct {
+	boundAccountingSink
+	collector StreamSink
+}
+
+func (s *boundHandoffSink) BoundPoint(n *codec.BoundName, _ bool, v float64, ts int64) {
+	s.collector.Point(0, n.Bytes(), v, ts, nil)
+}
 
 func handoffPair(t *testing.T) (*net.UnixConn, *net.UnixConn) {
 	t.Helper()
@@ -84,6 +94,7 @@ func TestInputHandoffEveryByte(t *testing.T) {
 		}
 		e.Close()
 		cases[fmt.Sprint("stream-", flags)] = wire
+		cases[fmt.Sprint("bound-stream-", flags)] = wire
 	}
 	for name, wire := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -98,7 +109,13 @@ func TestInputHandoffEveryByte(t *testing.T) {
 					q := make(chan [][]byte, 100)
 					var mu sync.Mutex
 					var rows []string
-					factory := func() StreamSink { return &accountingSink{&mu, &rows} }
+					factory := func() StreamSink {
+						collector := &accountingSink{&mu, &rows}
+						if strings.HasPrefix(name, "bound-") {
+							return &boundHandoffSink{collector: collector}
+						}
+						return collector
+					}
 					stop := make(chan struct{})
 					ms := metrics.New()
 					old := NewTCPInput(q, stop, nil, &cfg, ms, zap.NewNop(), nil, factory)
@@ -366,109 +383,116 @@ func (s *identitySink) Reset() {}
 func (s *identitySink) Flush() {}
 
 func TestInputLargeHandoff(t *testing.T) {
-	for _, flags := range []byte{0, codec.FlagZstd} {
-		t.Run(fmt.Sprint(flags), func(t *testing.T) {
-			names := 50000
-			if raw := os.Getenv("NANOTUBE_HANDOFF_STRESS_NAMES"); raw != "" {
-				var err error
-				names, err = strconv.Atoi(raw)
-				if err != nil || names < 1 || names > 800000 {
-					t.Fatal("invalid stress name count")
+	for _, compact := range []bool{false, true} {
+		for _, flags := range []byte{0, codec.FlagZstd} {
+			t.Run(fmt.Sprintf("flags%d/compact%t", flags, compact), func(t *testing.T) {
+				names := 50000
+				if raw := os.Getenv("NANOTUBE_HANDOFF_STRESS_NAMES"); raw != "" {
+					var err error
+					names, err = strconv.Atoi(raw)
+					if err != nil || names < 1 || names > 800000 {
+						t.Fatal("invalid stress name count")
+					}
 				}
-			}
-			sink := &identitySink{seen: make([]bool, names+1)}
-			cfg := conf.MakeDefault()
-			cfg.IncomingConnIdleTimeoutSec = 30
-			cfg.StreamInputMaxDictionaryBytes = 256 << 20
-			q := make(chan [][]byte, 1)
-			stop := make(chan struct{})
-			oldMS, nextMS := metrics.New(), metrics.New()
-			factory := func() StreamSink { return sink }
-			old := NewTCPInput(q, stop, nil, &cfg, oldMS, zap.NewNop(), nil, factory)
-			l, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			done := make(chan struct{})
-			go func() { old.Serve(l, stop); close(done) }()
-			client, err := net.Dial("tcp", l.Addr().String())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer client.Close()
-			e, _ := codec.NewEncoder(codec.Options{Flags: flags, DictionaryBytes: 256 << 20, PeerDictionaryBytes: 256 << 20})
-			defer e.Close()
-			wire, _ := codec.AppendPreamble(nil, flags)
-			for i := range names {
-				if err = e.Add([]byte(fmt.Sprintf("metric.%0240d", i)), float64(i), int64(100+i)); err != nil {
+				sink := &identitySink{seen: make([]bool, names+1)}
+				cfg := conf.MakeDefault()
+				cfg.IncomingConnIdleTimeoutSec = 30
+				cfg.StreamInputMaxDictionaryBytes = 256 << 20
+				q := make(chan [][]byte, 1)
+				stop := make(chan struct{})
+				oldMS, nextMS := metrics.New(), metrics.New()
+				factory := func() StreamSink {
+					if compact {
+						return &boundHandoffSink{collector: sink}
+					}
+					return sink
+				}
+				old := NewTCPInput(q, stop, nil, &cfg, oldMS, zap.NewNop(), nil, factory)
+				l, err := net.Listen("tcp", "127.0.0.1:0")
+				if err != nil {
 					t.Fatal(err)
 				}
-			}
-			wire, err = e.Flush(wire)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err = client.Write(wire); err != nil {
-				t.Fatal(err)
-			}
-			deadline := time.Now().Add(5 * time.Second)
-			for {
-				sink.mu.Lock()
-				parsed := sink.seen[names-1]
-				sink.mu.Unlock()
-				if parsed {
-					break
+				done := make(chan struct{})
+				go func() { old.Serve(l, stop); close(done) }()
+				client, err := net.Dial("tcp", l.Addr().String())
+				if err != nil {
+					t.Fatal(err)
 				}
-				if time.Now().After(deadline) {
-					t.Fatal("large dictionary was not primed")
+				defer client.Close()
+				e, _ := codec.NewEncoder(codec.Options{Flags: flags, DictionaryBytes: 256 << 20, PeerDictionaryBytes: 256 << 20})
+				defer e.Close()
+				wire, _ := codec.AppendPreamble(nil, flags)
+				for i := range names {
+					if err = e.Add([]byte(fmt.Sprintf("metric.%0240d", i)), float64(i), int64(100+i)); err != nil {
+						t.Fatal(err)
+					}
 				}
-				time.Sleep(time.Millisecond)
-			}
-			_ = e.Add([]byte(fmt.Sprintf("metric.%0240d", 0)), float64(names), int64(100+names))
-			tail, _ := e.Flush(nil)
-			if _, err = client.Write(tail[:len(tail)/2]); err != nil {
-				t.Fatal(err)
-			}
-			next := NewTCPInput(q, make(chan struct{}), nil, &cfg, nextMS, zap.NewNop(), nil, factory)
-			a, b := handoffPair(t)
-			received := make(chan error, 1)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			go func() { received <- next.Receive(ctx, b) }()
-			started := time.Now()
-			retained := testutil.ToFloat64(oldMS.StreamInputDictionaryBytes)
-			old.mu.Lock()
-			var transferred *inputConn
-			for c := range old.conns {
-				transferred = c
-			}
-			old.mu.Unlock()
-			if err = old.Send(ctx, a); err != nil {
-				t.Fatal(err)
-			}
-			if err = <-received; err != nil {
-				t.Fatal(err)
-			}
-			t.Logf("names=%d retained_dictionary_bytes=%.0f state_bytes=%d handoff_seconds=%.6f", names, retained, transferred.stateBytes, time.Since(started).Seconds())
-			close(stop)
-			<-done
-			if _, err = client.Write(tail[len(tail)/2:]); err != nil {
-				t.Fatal(err)
-			}
-			client.Close()
-			next.wg.Wait()
-			if sink.bad {
-				t.Fatal("large dictionary handoff changed or duplicated a point")
-			}
-			for i, seen := range sink.seen {
-				if !seen {
-					t.Fatalf("point %d missing", i)
+				wire, err = e.Flush(wire)
+				if err != nil {
+					t.Fatal(err)
 				}
-			}
-			if testutil.ToFloat64(oldMS.InputHandoffConnections) != 1 || testutil.ToFloat64(nextMS.StreamInputReservedBytes) != 0 {
-				t.Fatal("large handoff accounting/reservations")
-			}
-		})
+				if _, err = client.Write(wire); err != nil {
+					t.Fatal(err)
+				}
+				deadline := time.Now().Add(5 * time.Second)
+				for {
+					sink.mu.Lock()
+					parsed := sink.seen[names-1]
+					sink.mu.Unlock()
+					if parsed {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("large dictionary was not primed")
+					}
+					time.Sleep(time.Millisecond)
+				}
+				_ = e.Add([]byte(fmt.Sprintf("metric.%0240d", 0)), float64(names), int64(100+names))
+				tail, _ := e.Flush(nil)
+				if _, err = client.Write(tail[:len(tail)/2]); err != nil {
+					t.Fatal(err)
+				}
+				next := NewTCPInput(q, make(chan struct{}), nil, &cfg, nextMS, zap.NewNop(), nil, factory)
+				a, b := handoffPair(t)
+				received := make(chan error, 1)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				go func() { received <- next.Receive(ctx, b) }()
+				started := time.Now()
+				retained := testutil.ToFloat64(oldMS.StreamInputDictionaryBytes)
+				old.mu.Lock()
+				var transferred *inputConn
+				for c := range old.conns {
+					transferred = c
+				}
+				old.mu.Unlock()
+				if err = old.Send(ctx, a); err != nil {
+					t.Fatal(err)
+				}
+				if err = <-received; err != nil {
+					t.Fatal(err)
+				}
+				t.Logf("names=%d retained_dictionary_bytes=%.0f state_bytes=%d handoff_seconds=%.6f", names, retained, transferred.stateBytes, time.Since(started).Seconds())
+				close(stop)
+				<-done
+				if _, err = client.Write(tail[len(tail)/2:]); err != nil {
+					t.Fatal(err)
+				}
+				client.Close()
+				next.wg.Wait()
+				if sink.bad {
+					t.Fatal("large dictionary handoff changed or duplicated a point")
+				}
+				for i, seen := range sink.seen {
+					if !seen {
+						t.Fatalf("point %d missing", i)
+					}
+				}
+				if testutil.ToFloat64(oldMS.InputHandoffConnections) != 1 || testutil.ToFloat64(nextMS.StreamInputReservedBytes) != 0 {
+					t.Fatal("large handoff accounting/reservations")
+				}
+			})
+		}
 	}
 }
 

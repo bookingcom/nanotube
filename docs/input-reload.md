@@ -38,9 +38,9 @@ handoff version 1; client wire protocols are unchanged.
   Complete frames retire the previous journal. The existing 16 MiB decoder
   window/memory limits remain in effect; frame length is not newly restricted.
 
-One connection's snapshot is constructed at a time. Stream snapshots temporarily
-require memory proportional to that connection's bounded dictionary; they do not
-retain a fleet-wide snapshot. The successor reserves its fixed connection allowance and admits retained
+One connection's snapshot is constructed at a time. Stream snapshots write
+bounded STATE frames while the predecessor retains its existing decoder; they
+do not build another whole dictionary or retain a fleet-wide snapshot. The successor reserves its fixed connection allowance and admits retained
 decoder, buffer, shared-name and route growth through the normal
 `StreamInputTotalBytes` path. Lower per-connection limits or exhausted growth
 admission can reject inherited input and trigger the logged fallback.
@@ -56,6 +56,10 @@ A reader has one second to reach a handoff boundary. Transfer deadlines are per
 connection: five seconds plus one second per 16 MiB of configured dictionary or
 estimated zstd replay work, whichever is larger. Socket and state-pipe writes
 share that deadline. Normal routing backpressure still applies to parsed points.
+Stream dictionary snapshots write one bounded STATE frame at a time, with the
+same bytes as the buffered snapshot API. The predecessor retains its decoder
+until transfer completes, but does not allocate a second whole dictionary per
+accepted socket while the successor rebuilds its state.
 Temporary storage must have headroom for a long open zstd frame and input arriving
 during replay. Disk failures use the same explicit connection-close fallback;
 no temporary files need to survive a process exit.

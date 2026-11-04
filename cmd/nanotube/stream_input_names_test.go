@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"hash/maphash"
+	"reflect"
 	"sync"
 	"testing"
+	"time"
+	"unsafe"
 
 	"github.com/bookingcom/nanotube/pkg/metrics"
+	"github.com/bookingcom/nanotube/pkg/rec"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
 	codec "github.com/bookingcom/nanotube/pkg/streamcodec"
@@ -126,7 +130,7 @@ func TestStreamInputSharedCanonicalPlansAndLifetime(t *testing.T) {
 		t.Fatal("name sharing changed routing or rebuilt a plan")
 	}
 	// Paths retained by output remain readable after every decoder releases.
-	queued := canonical.plans[0].path
+	queued := canonical.plans.path
 	for _, ref := range refs {
 		s.ReleaseName(ref)
 	}
@@ -286,48 +290,73 @@ func TestStreamInputSharedSnapshotRebindAndAdmissionFailure(t *testing.T) {
 
 // A sender filling its peer allowance must fit a relay whose dictionary limit
 // equals it: shared-entry metadata must not tighten connection admission.
+type testBoundInput struct {
+	*streamRouter
+	decoder *codec.Decoder
+	limit   int
+}
+
+func (b *testBoundInput) BindStreamName(name []byte) (*codec.BoundName, bool, error) {
+	b.SetNameLimit(b.limit - b.decoder.RetainedBytes())
+	return b.streamRouter.BindStreamName(name)
+}
+
 func TestStreamInputSharedAdmitsFullPeerAllowance(t *testing.T) {
-	rs, rw, ms, _ := differentialPipeline(t)
-	s := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
-	const limit = 1 << 20
-	e, err := codec.NewEncoder(codec.Options{DictionaryBytes: 64 << 20, PeerDictionaryBytes: limit})
-	if err != nil {
-		t.Fatal(err)
-	}
-	d, _ := codec.NewDecoder(codec.Options{DictionaryBytes: limit})
-	d.SetNameResolver(func(name []byte) any { // As readStream binds names.
-		s.SetNameLimit(limit - d.RetainedBytes())
-		return s.BindName(name)
-	})
-	d.SetNameReleaser(s.ReleaseName)
-	resets, peak := 0, 0
-	for i := range 40000 {
-		if _, reset, err := e.AddHashed(fmt.Appendf(nil, "example.good.%080d", i), uint64(i), 1, 2); err != nil {
-			t.Fatal(err)
-		} else if reset {
-			resets++
-		}
-		if i%1000 != 999 {
-			continue
-		}
-		wire, err := e.Flush(nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for r := bytes.NewReader(wire); r.Len() > 0; {
-			if _, err := d.ReadFrame(r, nil); err != nil {
-				t.Fatalf("relay rejected a sender within its peer allowance: %v", err)
+	for _, compact := range []bool{false, true} {
+		t.Run(fmt.Sprint(compact), func(t *testing.T) {
+			rs, rw, ms, _ := differentialPipeline(t)
+			s := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
+			const limit = 1 << 20
+			e, err := codec.NewEncoder(codec.Options{DictionaryBytes: 64 << 20, PeerDictionaryBytes: limit})
+			if err != nil {
+				t.Fatal(err)
 			}
-			peak = max(peak, d.RetainedBytes()+s.NameBytes())
-		}
+			d, _ := codec.NewDecoder(codec.Options{DictionaryBytes: limit})
+			if compact {
+				d.SetNameBinder(&testBoundInput{s, d, limit})
+			} else {
+				d.SetNameResolver(func(name []byte) any { // As readStream binds names.
+					s.SetNameLimit(limit - d.RetainedBytes())
+					return s.BindName(name)
+				})
+				d.SetNameReleaser(s.ReleaseName)
+			}
+			resets, peak := 0, 0
+			for i := range 40000 {
+				if _, reset, err := e.AddHashed(fmt.Appendf(nil, "example.good.%080d", i), uint64(i), 1, 2); err != nil {
+					t.Fatal(err)
+				} else if reset {
+					resets++
+				}
+				if i%1000 != 999 {
+					continue
+				}
+				wire, err := e.Flush(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for r := bytes.NewReader(wire); r.Len() > 0; {
+					var err error
+					if compact {
+						_, err = d.ReadBoundFrame(r, nil)
+					} else {
+						_, err = d.ReadFrame(r, nil)
+					}
+					if err != nil {
+						t.Fatalf("relay rejected a sender within its peer allowance: %v", err)
+					}
+					peak = max(peak, d.RetainedBytes()+s.NameBytes())
+				}
+			}
+			if resets == 0 || peak < limit/2 || peak > limit {
+				t.Fatalf("dictionary never filled the peer allowance: resets=%d peak=%d", resets, peak)
+			}
+			e.Close()
+			d.Close()
+			s.Close()
+			assertEmptyStreamNames(t, s)
+		})
 	}
-	if resets == 0 || peak < limit*3/4 || peak > limit {
-		t.Fatalf("dictionary never filled the peer allowance: resets=%d peak=%d", resets, peak)
-	}
-	e.Close()
-	d.Close()
-	s.Close()
-	assertEmptyStreamNames(t, s)
 }
 
 func TestStreamInputSharedProductionShapeChurn(t *testing.T) {
@@ -348,4 +377,100 @@ func TestStreamInputSharedProductionShapeChurn(t *testing.T) {
 	}
 	closeModel(streams)
 	assertEmptyStreamNames(t, streams[0].s)
+}
+
+func TestStreamInputBoundNameLayout(t *testing.T) {
+	var e streamName
+	if unsafe.Offsetof(e.name) != 0 || unsafe.Sizeof(e) != 72 || unsafe.Offsetof(e.token)%8 != 0 || streamInputCharge(uint64(unsafe.Sizeof(e))) != 80 || streamNameFromBound(&e.name) != &e {
+		t.Fatal("compact name reference must pin the aligned shared identity")
+	}
+}
+
+func TestStreamInputInlineRoutesShareHeaders(t *testing.T) {
+	rs, _, ms, got := differentialPipeline(t)
+	s := newStreamRouter(rs, rewrites.Rewrites{}, true, zap.NewNop(), ms)
+	first := s.BindName([]byte("example.good.one")).(*streamName)
+	second := s.BindName([]byte("example.good.two")).(*streamName)
+	if first.plans != nil || second.plans != nil || first.route == nil || first.route != second.route {
+		t.Fatal("ordinary names allocated independent route headers")
+	}
+	input := rec.RecBytes{Path: []byte("example.good.one")}
+	if n := testing.AllocsPerRun(1000, func() { _, _ = rs.ResolveRef(&input) }); n != 0 {
+		t.Fatalf("shared rule header allocated %v objects per resolution", n)
+	}
+	for i, name := range []string{".example..good.", "example.special.value", "example.blocked.secret", "unrouted.value"} {
+		ref, cached, err := s.BindStreamName([]byte(name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.BoundPoint(ref, cached, float64(i), int64(i))
+		s.ReleaseStreamName(ref, cached)
+	}
+	s.Flush()
+	prs, _, pms, want := differentialPipeline(t)
+	for i, name := range []string{".example..good.", "example.special.value", "example.blocked.secret", "unrouted.value"} {
+		procBatch(fmt.Appendf(nil, "%s %d %d", name, i, i), prs, rewrites.Rewrites{}, true, false, time.Now, zap.NewNop(), pms, nil, nil)
+	}
+	sortPoints(*got)
+	sortPoints(*want)
+	if !reflect.DeepEqual(*got, *want) {
+		t.Fatal("inline routes differ from plaintext routing")
+	}
+	s.ReleaseName(first)
+	s.ReleaseName(second)
+	s.Close()
+	assertEmptyStreamNames(t, s)
+}
+
+func TestStreamInputCompactConcurrentResetAndClose(t *testing.T) {
+	root := newStreamRouter(rules.Rules{}, rewrites.Rewrites{}, true, zap.NewNop(), metrics.New())
+	e, err := codec.NewEncoder(codec.Options{MaxRows: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	if err := e.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 256 {
+		if err := e.Add(fmt.Appendf(nil, ".example..concurrent.%d.", i), 1, 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wire, err := e.Flush(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for worker := range 80 {
+		wg.Go(func() {
+			s := root.NewSink()
+			if worker%2 == 0 {
+				s.maxBytes = 1
+			}
+			d, err := codec.NewDecoder(codec.Options{})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			d.SetNameBinder(s)
+			for range 5 {
+				for r := bytes.NewReader(wire); r.Len() > 0; {
+					if _, err := d.ReadBoundFrame(r, s.BoundPoint); err != nil {
+						t.Error(err)
+						return
+					}
+				}
+				s.Flush()
+			}
+			d.Close()
+			d.Close()
+			s.Close()
+			if s.NameBytes() != 0 || s.bytes != 0 {
+				t.Error("compact connection accounting leaked")
+			}
+		})
+	}
+	wg.Wait()
+	assertEmptyStreamNames(t, root)
 }

@@ -16,14 +16,15 @@ import (
 
 // RecBytes represents a single piece of data (a datapoint) that can be sent.
 type RecBytes struct { // nolint:revive
-	streamToken  uint64 // first for atomic alignment on 32-bit platforms
-	Path         []byte
-	Val          []byte
-	Time         []byte
-	typed        bool
-	value        float64
-	timestamp    int64
-	numericBytes int
+	streamToken       uint64 // first for atomic alignment on 32-bit platforms
+	streamTokenSource *uint64
+	Path              []byte
+	Val               []byte
+	Time              []byte
+	typed             bool
+	numericBytes      uint8 // canonical float + int text is at most 44 bytes
+	value             float64
+	timestamp         int64
 
 	Received time.Time
 
@@ -99,6 +100,7 @@ func ParseRecWithPath(s []byte, normalize bool, nowF func() time.Time, resolve f
 // SetPathHash seeds PathHash for the current Path. The caller must supply its
 // exact 64-bit FNV-1a hash. Reassigning Path still invalidates this value.
 func (r *RecBytes) SetPathHash(hash uint64) {
+	r.streamTokenSource = nil
 	atomic.StoreUint64(&r.streamToken, 0)
 	r.pathHash, r.pathHashLen = hash, len(r.Path)
 	r.pathHashFor = nil
@@ -174,7 +176,7 @@ func NewTyped(path []byte, value float64, timestamp int64) *RecBytes {
 	var scratch [64]byte
 	b := strconv.AppendFloat(scratch[:0], value, 'g', -1, 64)
 	b = strconv.AppendInt(b, timestamp, 10)
-	return &RecBytes{Path: path, typed: true, value: value, timestamp: timestamp, numericBytes: len(b)}
+	return &RecBytes{Path: path, typed: true, value: value, timestamp: timestamp, numericBytes: uint8(len(b))}
 }
 
 // TypedValues exposes numeric input without altering legacy textual consumers.
@@ -200,7 +202,7 @@ func (r *RecBytes) Values() (float64, int64, bool) {
 // PlainSize is the equivalent canonical plaintext size, including newline.
 func (r *RecBytes) PlainSize() int {
 	if r.typed {
-		return len(r.Path) + r.numericBytes + 3
+		return len(r.Path) + int(r.numericBytes) + 3
 	}
 	return len(r.Path) + len(r.Val) + len(r.Time) + 3
 }
@@ -422,5 +424,27 @@ func validChar(c byte) bool {
 }
 
 // StreamToken caches a generation-checked name hint across replica outputs.
-func (r *RecBytes) StreamToken() uint64         { return atomic.LoadUint64(&r.streamToken) }
-func (r *RecBytes) SetStreamToken(token uint64) { atomic.StoreUint64(&r.streamToken, token) }
+func (r *RecBytes) StreamToken() uint64 {
+	if token := atomic.LoadUint64(&r.streamToken); token != 0 {
+		return token
+	}
+	if r.streamTokenSource != nil {
+		return atomic.LoadUint64(r.streamTokenSource)
+	}
+	return 0
+}
+func (r *RecBytes) SetStreamToken(token uint64) {
+	// A zero-key hint means the table was full. Keep it on this record only:
+	// persisting it would prevent future records from retrying admission.
+	if r.streamTokenSource != nil && uint32(token) != 0 {
+		atomic.StoreUint64(r.streamTokenSource, token)
+		return
+	}
+	atomic.StoreUint64(&r.streamToken, token)
+}
+
+// ShareStreamToken reuses the output name hint across records of an immutable
+// routing plan. The source must be eight-byte aligned and accessed atomically.
+// Generation checks remain the output table's responsibility. SetPathHash
+// detaches the hint when a path changes; queued records retain its allocation.
+func (r *RecBytes) ShareStreamToken(source *uint64) { r.streamTokenSource = source }
