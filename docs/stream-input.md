@@ -94,8 +94,46 @@ Metrics have the `nanotube_` prefix:
 - `stream_input_{connections,frames,points,errors,resets}_total`
 - `stream_input_route_{hits,misses}_total`
 - `stream_input_active_connections`, `stream_input_reserved_bytes`
-- `stream_input_dictionary_bytes`, `stream_input_route_bytes`
+- `stream_input_dictionary_names`, `stream_input_dictionary_bytes`, `stream_input_route_bytes`
+- `stream_input_names_defined_total{frame_kind="data"|"state"}`
 - `stream_input_shared_names`, `stream_input_shared_bytes`
+
+Dictionary metrics correspond across hops as follows. Names and bytes are gauges;
+definitions and resets are counters. All nanotube metrics below include their
+exported `nanotube_` prefix. Producer metrics refer to each producer lane; sum
+lanes/connections routed to the receiver before comparing.
+
+| Concept (unit) | Producer | Relay input | Relay output | Store input (Graphite / Prometheus) |
+| --- | --- | --- | --- | --- |
+| Live dictionary wire IDs (names) | `graphite_stream_dictionary_names` | `nanotube_stream_input_dictionary_names` | `nanotube_stream_connection_names` | `streamRetainedNames` / `stream_dictionary_retained_names_tcp` |
+| Dictionary storage (bytes; accounting differs) | `graphite_stream_dictionary_bytes` | `nanotube_stream_input_dictionary_bytes` | `nanotube_stream_connection_dictionary_bytes` | `streamRetainedBytes` / `stream_dictionary_retained_bytes_tcp` |
+| Name definitions (definitions) | `graphite_stream_definitions` | `nanotube_stream_input_names_defined_total{frame_kind="data"}` and `{frame_kind="state"}` | `nanotube_stream_names_defined_total` | `streamNamesDefined` / `stream_names_defined_tcp_total` |
+| Dictionary resets (frames) | `graphite_stream_resets` | `nanotube_stream_input_resets_total` | `nanotube_stream_dictionary_resets_total` | `streamResets` / `stream_resets_tcp_total` |
+| Unique cached identities (names; cache lifetimes differ) | `graphite_series_cached_names` | `nanotube_stream_input_shared_names` | `nanotube_stream_name_table_retained_names` | Store cache (separate from wire dictionaries) |
+
+Input dictionary names sum `Decoder.NameCount()` across admitted readers at
+validated frame boundaries: identical names on two connections count twice.
+RESET clears the connection's contribution; close removes it. Handoff removes
+the predecessor's contribution before sending snapshot state, and the successor
+counts restored wire IDs through ordinary decoding. Temporary undercount during
+transfer is possible; overlapping readers do not double-count. Shared names
+remain a distinct count of unique raw and canonical identities.
+
+Input definitions count only fully validated, admitted frames. The `frame_kind`
+label separates DATA definitions (`data`) from STATE definitions (`state`). STATE
+includes handoff snapshot replay, reported separately from producer DATA traffic;
+it can also contain producer-sent state frames. Sum both kinds for all received
+definitions, or select `data` for ordinary producer definition-rate comparisons.
+Resets and connection close never decrement these counters. Existing input reset
+counters include the synthetic RESET that precedes a handoff snapshot.
+Relay output definition counters include encoding retries, while input counters
+count accepted frames. Store definitions and resets include snapshot replay
+without a separate frame-kind series. Store Graphite counters are interval counts;
+the Prometheus equivalents are cumulative. Store retention gauges publish on its
+stats interval. Byte gauges measure each implementation's retained allocations,
+with different sharing/capacity rules; compare trends, not byte-for-byte equality.
+Each relay output connection has an independent dictionary, so fan-out, rewriting
+and filtering also prevent direct equality between a relay's input and output.
 
 Dictionary bytes sum decoder capacities and deduplicated names/entries/index
 capacities. Route bytes count shared plans once. Shared names count unique raw and

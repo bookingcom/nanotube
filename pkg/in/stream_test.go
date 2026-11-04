@@ -65,6 +65,16 @@ func TestStreamInputFrameBounds(t *testing.T) {
 				ms := metrics.New()
 				sink := &testStreamSink{}
 				readStream(bufio.NewReader(bytes.NewReader(input)), make(chan struct{}), nil, &cfg, ms, zap.NewNop(), sink)
+				if testutil.ToFloat64(ms.StreamInputDictionaryNames) != 0 {
+					t.Fatal("closed or rejected input retained dictionary names")
+				}
+				wantDefinitions := 0.0
+				if mode == "valid" {
+					wantDefinitions = 1
+				}
+				if got := testutil.ToFloat64(ms.StreamInputNamesDefined.WithLabelValues("data")); got != wantDefinitions {
+					t.Fatalf("definitions %g != %g", got, wantDefinitions)
+				}
 				if mode == "valid" {
 					if sink.rows != 1 {
 						t.Fatal(sink.rows)
@@ -181,6 +191,9 @@ func TestStreamInputGrowthRejectsWholeFrame(t *testing.T) {
 	ms := metrics.New()
 	sink := &testStreamSink{}
 	readStream(bufio.NewReader(bytes.NewReader(wire)), make(chan struct{}), nil, &cfg, ms, zap.NewNop(), sink)
+	if testutil.ToFloat64(ms.StreamInputDictionaryNames) != 0 || testutil.ToFloat64(ms.StreamInputNamesDefined.WithLabelValues("data")) != 1 {
+		t.Fatal("failed growth leaked names or counted rejected definitions")
+	}
 	if sink.rows != 1 || testutil.ToFloat64(ms.StreamInputErrors) != 1 {
 		t.Fatalf("growth failure emitted part of a frame: rows=%d", sink.rows)
 	}

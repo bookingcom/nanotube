@@ -332,8 +332,13 @@ func TestInputHandoffEveryByte(t *testing.T) {
 							t.Fatalf("cut %d changed %q: %v", cut, r, rows)
 						}
 					}
+					if strings.Contains(name, "stream-") {
+						if got := testutil.ToFloat64(ms.StreamInputNamesDefined.WithLabelValues("data")) + testutil.ToFloat64(nextMS.StreamInputNamesDefined.WithLabelValues("data")); got != 3 {
+							t.Fatalf("cut %d: data definitions %g != 3", cut, got)
+						}
+					}
 					for _, m := range []*metrics.Prom{ms, nextMS} {
-						if testutil.ToFloat64(m.InputHandoffFailures) != 0 || testutil.ToFloat64(m.ErrorRecs) != 0 || testutil.ToFloat64(m.StreamInputReservedBytes) != 0 {
+						if testutil.ToFloat64(m.InputHandoffFailures) != 0 || testutil.ToFloat64(m.ErrorRecs) != 0 || testutil.ToFloat64(m.StreamInputReservedBytes) != 0 || testutil.ToFloat64(m.StreamInputDictionaryNames) != 0 {
 							t.Fatal("handoff leaked/rejected input")
 						}
 					}

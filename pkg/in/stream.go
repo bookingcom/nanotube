@@ -206,15 +206,27 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		defer closer.Close()
 	}
 	defer d.Close() // Release names before closing their sink, including on handoff.
-	retained := 0
-	defer func() { ms.StreamInputDictionaryBytes.Sub(float64(retained)) }()
+	retained, retainedNames := 0, 0
+	defer func() {
+		ms.StreamInputDictionaryBytes.Sub(float64(retained))
+		ms.StreamInputDictionaryNames.Sub(float64(retainedNames))
+	}()
+	dataDefinitions := ms.StreamInputNamesDefined.WithLabelValues("data")
+	stateDefinitions := ms.StreamInputNamesDefined.WithLabelValues("state")
+	detach := func() {
+		// Transfer accounting before the successor can replay any snapshot names.
+		// The old decoder stays alive only to serialize state and release storage.
+		ms.StreamInputDictionaryNames.Sub(float64(retainedNames))
+		retainedNames = 0
+		c.releaseBytes = uint64(reservation)
+		detachStream(c, r, d, flags)
+	}
 	// Stage at most one bounded frame. No point reaches routing before both
 	// codec validation and the aggregate dictionary-byte budget pass.
 
 	for {
 		if c.moving() {
-			c.releaseBytes = uint64(reservation)
-			detachStream(c, r, d, flags)
+			detach()
 			return
 		}
 		pending = pending[:0]
@@ -235,8 +247,7 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		}
 		if err != nil {
 			if c.moving() {
-				c.releaseBytes = uint64(reservation)
-				detachStream(c, r, d, flags)
+				detach()
 				return
 			}
 			select {
@@ -261,6 +272,17 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		}
 		ms.StreamInputDictionaryBytes.Add(float64(current - retained))
 		retained = current
+		if names := d.NameCount(); names != retainedNames {
+			ms.StreamInputDictionaryNames.Add(float64(names - retainedNames))
+			retainedNames = names
+		}
+		if info.Names != 0 {
+			definitions := dataDefinitions
+			if info.Kind == codec.StateFrame {
+				definitions = stateDefinitions
+			}
+			definitions.Add(float64(info.Names))
+		}
 		if info.Kind == codec.ResetFrame {
 			sink.Reset()
 			ms.StreamInputResets.Inc()
