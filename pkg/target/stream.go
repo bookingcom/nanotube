@@ -64,6 +64,9 @@ type streamSender struct {
 // parseStreamPoint preserves strconv.ParseFloat's bits and conversions,
 // including NaN timestamp rejection and truncation after float64 rounding.
 func parseStreamPoint(r *rec.RecBytes) (streamPoint, bool) {
+	if v, ts, ok := r.TypedValues(); ok {
+		return streamPoint{name: r.Path, hash: r.PathHash(), global: r.StreamToken(), value: v, timestamp: ts, plainBytes: r.PlainSize()}, !math.IsNaN(v)
+	}
 	v, err := parseStreamNumber(r.Val)
 	if err != nil || math.IsNaN(v) {
 		return streamPoint{}, false
@@ -179,7 +182,7 @@ func (s *streamSender) sendBatch(c *streamConnection, rs []*rec.RecBytes) {
 		p, ok := parseStreamPoint(r)
 		if !ok {
 			s.ms.Dropped.Inc()
-			s.q.accountStreamDrop(len(r.Path) + len(r.Val) + len(r.Time) + 3)
+			s.q.accountStreamDrop(r.PlainSize())
 			continue
 		}
 		s.ensure(c)

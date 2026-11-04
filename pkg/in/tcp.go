@@ -10,12 +10,13 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/ratelimiter"
+	"github.com/klauspost/compress/zstd"
 	"go.uber.org/zap"
 )
 
 // AcceptAndListenTCPBuf is batched version of AcceptAndListenTCP.
 func AcceptAndListenTCPBuf(l net.Listener, queue chan<- [][]byte, term <-chan struct{},
-	rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger) {
+	rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger, stream ...StreamFactory) {
 	defer connWG.Done()
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -66,7 +67,7 @@ loop:
 				delete(connections, conn)
 				mu.Unlock()
 			}()
-			readFromConnectionTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg)
+			readFromConnectionTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, stream...)
 		}()
 	}
 
@@ -85,7 +86,7 @@ loop:
 	wg.Wait()
 }
 
-func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
+func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, stream ...StreamFactory) {
 	defer func() {
 		err := conn.Close()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
@@ -103,7 +104,7 @@ func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan 
 			zap.String("sender", conn.RemoteAddr().String()))
 	}
 
-	scanForRecordsTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg)
+	scanForRecordsTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, stream...)
 }
 
 // deadlineReader arms the idle deadline before every read from the
@@ -145,12 +146,35 @@ func (a *recArena) copy(b []byte) []byte {
 	return a.chunk[off:len(a.chunk):len(a.chunk)]
 }
 
-func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger) {
-	sc := bufio.NewScanner(&deadlineReader{
+func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, stream ...StreamFactory) {
+	reader := bufio.NewReaderSize(&deadlineReader{
 		conn:    conn,
 		timeout: time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second,
 		lg:      lg,
-	})
+	}, bufio.MaxScanTokenSize)
+	first, _ := reader.Peek(1)
+	if len(first) > 0 && first[0] == 0 {
+		if len(stream) > 0 && stream[0] != nil {
+			readStream(reader, term, rateLimiters, cfg, ms, lg.With(zap.String("peer", conn.RemoteAddr().String())), stream[0]())
+		} else {
+			ms.ErrorRecs.Inc()
+			lg.Error("stream input has no routing sink", zap.String("peer", conn.RemoteAddr().String()))
+		}
+		return
+	}
+	// Standard zstd-compressed plaintext remains a distinct input transport.
+	marker, _ := reader.Peek(4)
+	if len(marker) == 4 && marker[0] == 0x28 && marker[1] == 0xb5 && marker[2] == 0x2f && marker[3] == 0xfd {
+		decoder, err := zstd.NewReader(reader, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(16<<20), zstd.WithDecoderMaxWindow(16<<20))
+		if err != nil {
+			ms.ErrorRecs.Inc()
+			lg.Error("zstd input failed", zap.Error(err))
+			return
+		}
+		defer decoder.Close()
+		reader = bufio.NewReaderSize(decoder, bufio.MaxScanTokenSize)
+	}
+	sc := bufio.NewScanner(reader)
 
 	// The initial size bounds how much is read per syscall; the max token
 	// size stays bufio.MaxScanTokenSize.
@@ -190,6 +214,15 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan stru
 				}
 			}
 		}
+	}
+	if err := sc.Err(); err != nil {
+		select {
+		case <-term:
+			return
+		default:
+		}
+		ms.ErrorRecs.Inc()
+		lg.Error("TCP input scan failed", zap.Error(err))
 	}
 
 }

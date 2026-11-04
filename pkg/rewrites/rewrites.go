@@ -86,6 +86,16 @@ func (rw Rewrites) RewriteMetricBytes(record *rec.RecBytes, ms *metrics.Prom) ([
 // AppendRewrittenMetricBytes is like RewriteMetricBytes, but appends the
 // resulting records to dst.
 func (rw Rewrites) AppendRewrittenMetricBytes(dst []*rec.RecBytes, record *rec.RecBytes, ms *metrics.Prom) ([]*rec.RecBytes, error) {
+	records, matched, err := rw.PlanMetricBytes(dst, record)
+	if matched {
+		ms.RewrittenRecsTotal.Inc()
+	}
+	return records, err
+}
+
+// PlanMetricBytes evaluates immutable name rewrites without counting a point.
+// ID-based inputs reuse this plan, then count matched points on every replay.
+func (rw Rewrites) PlanMetricBytes(dst []*rec.RecBytes, record *rec.RecBytes) ([]*rec.RecBytes, bool, error) {
 	var timer *prometheus.Timer
 
 	result := append(dst, record)
@@ -119,7 +129,7 @@ func (rw Rewrites) AppendRewrittenMetricBytes(dst []*rec.RecBytes, record *rec.R
 				// keep both old and new value
 				copy, err := record.Copy()
 				if err != nil {
-					return nil, errors.Wrapf(err, "could not copy the record: %v", record)
+					return nil, false, errors.Wrapf(err, "could not copy the record: %v", record)
 				}
 				copy.Path = newPath
 
@@ -131,9 +141,5 @@ func (rw Rewrites) AppendRewrittenMetricBytes(dst []*rec.RecBytes, record *rec.R
 		}
 	}
 
-	if wasMatched {
-		ms.RewrittenRecsTotal.Inc()
-	}
-
-	return result, nil
+	return result, wasMatched, nil
 }

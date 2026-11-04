@@ -10,6 +10,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/ratelimiter"
+	"github.com/klauspost/compress/zstd"
 	"go.uber.org/zap"
 )
 
@@ -111,5 +112,43 @@ func TestBatchCloseFlushesWithoutWaitingForPeriod(t *testing.T) {
 		}
 	default:
 		t.Fatal("batch close lost the partially filled batch")
+	}
+}
+
+func TestTCPCompressedPlaintextAutodetection(t *testing.T) {
+	cfg := conf.MakeDefault()
+	cfg.MainQueueBatchSize = 1
+	cfg.BatchFlushPerdiodSec = 0
+	cfg.IncomingConnIdleTimeoutSec = 5
+	ms := metrics.New()
+	queue := make(chan [][]byte, 10)
+	server, client := net.Pipe()
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer encoder.Close()
+	wire := encoder.EncodeAll([]byte("example.one 1 2\nexample.two 3 4\n"), nil)
+	done := make(chan struct{})
+	go func() {
+		scanForRecordsTCPBuf(server, queue, make(chan struct{}), nil, &cfg, ms, zap.NewNop())
+		server.Close()
+		close(done)
+	}()
+	if _, err := client.Write(wire); err != nil {
+		t.Fatal(err)
+	}
+	client.Close()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("compressed input did not finish")
+	}
+	var records [][]byte
+	for len(queue) > 0 {
+		records = append(records, (<-queue)...)
+	}
+	if len(records) != 2 || string(records[0]) != "example.one 1 2" || string(records[1]) != "example.two 3 4" {
+		t.Fatalf("records: %q", records)
 	}
 }

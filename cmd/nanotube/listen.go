@@ -18,7 +18,7 @@ import (
 )
 
 // Listen listens for incoming metric data
-func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom) (chan [][]byte, error) {
+func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, stop <-chan struct{}, lg *zap.Logger, ms *metrics.Prom, stream ...in.StreamFactory) (chan [][]byte, error) {
 	queue := make(chan []byte, cfg.MainQueueSize)
 	queueBuf := make(chan [][]byte, cfg.MainQueueSize)
 
@@ -50,7 +50,7 @@ func Listen(n *gracenet.Net, rateLimiters []*ratelimiter.SlidingWindow, cfg *con
 
 			connWG.Add(1)
 
-			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, rateLimiters, cfg, &connWG, ms, lg)
+			go in.AcceptAndListenTCPBuf(l, queueBuf, stop, rateLimiters, cfg, &connWG, ms, lg, stream...)
 		}
 
 		if cfg.ListenUDP != "" {
