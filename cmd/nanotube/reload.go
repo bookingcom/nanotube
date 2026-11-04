@@ -5,21 +5,25 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/bookingcom/nanotube/pkg/in"
 )
 
 const (
-	reloadReadyEnv = "NANOTUBE_RELOAD_READY"
-	systemdEnv     = "NANOTUBE_SYSTEMD"
+	reloadReadyEnv  = "NANOTUBE_RELOAD_READY"
+	inputHandoffEnv = "NANOTUBE_INPUT_HANDOFF"
+	systemdEnv      = "NANOTUBE_SYSTEMD"
 )
 
 // startReplacement waits for the inherited listener and routing/output pipeline
 // to be initialized before retiring the old process. The private socket also
 // distinguishes the new child from the old process's shared metrics listener.
-func startReplacement(ctx context.Context, start func() (int, error), timeout time.Duration) (int, error) {
+func startReplacement(ctx context.Context, start func() (int, error), timeout time.Duration, input ...*in.TCPInput) (int, error) {
 	if os.Getenv(systemdEnv) == "1" && os.Getenv("NOTIFY_SOCKET") == "" {
 		return 0, fmt.Errorf("systemd reload requires NotifyAccess=main")
 	}
@@ -43,7 +47,18 @@ func startReplacement(ctx context.Context, start func() (int, error), timeout ti
 	if err := os.Setenv(reloadReadyEnv, path); err != nil {
 		return 0, err
 	}
+	oldInput, hadInput := os.LookupEnv(inputHandoffEnv)
+	if len(input) > 0 && input[0] != nil {
+		_ = os.Setenv(inputHandoffEnv, "1")
+	} else {
+		_ = os.Unsetenv(inputHandoffEnv)
+	}
 	pid, err := start()
+	if hadInput {
+		_ = os.Setenv(inputHandoffEnv, oldInput)
+	} else {
+		_ = os.Unsetenv(inputHandoffEnv)
+	}
 	if had {
 		_ = os.Setenv(reloadReadyEnv, old)
 	} else {
@@ -84,13 +99,23 @@ func startReplacement(ctx context.Context, start func() (int, error), timeout ti
 		}
 	}
 	committed = true
+	// From here a child may own accepted input: it must survive transfer errors.
+	// Detach input only after readiness and systemd's MAINPID barrier succeeded.
+	if len(input) > 0 && input[0] != nil {
+		stopRead() // readiness timeout does not bound a fleet of dictionary snapshots
+		if err := input[0].Send(ctx, conn); err != nil {
+			input[0].Fallback(err)
+		}
+	}
 	return pid, nil
 }
 
 // Called only after signal handling, inherited input listeners, routing workers
 // and output senders are initialized. This is pipeline readiness, not a claim
 // that every remote target is reachable or has acknowledged a delivery.
-func announceReplacementReady() error {
+func announceReplacementReady(input ...*in.TCPInput) error {
+	offered := os.Getenv(inputHandoffEnv) == "1"
+	_ = os.Unsetenv(inputHandoffEnv)
 	path := os.Getenv(reloadReadyEnv)
 	_ = os.Unsetenv(reloadReadyEnv)
 	if path == "" {
@@ -103,7 +128,22 @@ func announceReplacementReady() error {
 	defer conn.Close()
 	_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
 	_, err = fmt.Fprintln(conn, os.Getpid())
-	return err
+	if err != nil {
+		return err
+	}
+	if offered && len(input) > 0 && input[0] != nil {
+		_ = conn.SetDeadline(time.Time{})
+		// Each offer has its own payload deadline in the sender. Closing control
+		// unblocks this exchange if the predecessor exits or rejects the reload.
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := input[0].Receive(ctx, conn.(*net.UnixConn)); err != nil {
+			input[0].Fallback(err)
+		}
+	} else if len(input) > 0 && input[0] != nil {
+		input[0].Fallback(fmt.Errorf("predecessor has no input handoff capability"))
+	}
+	return nil
 }
 
 // notifySocket accepts systemd's filesystem and Linux abstract socket forms.

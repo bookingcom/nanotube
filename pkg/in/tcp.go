@@ -2,7 +2,9 @@ package in
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -10,7 +12,6 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/ratelimiter"
-	"github.com/klauspost/compress/zstd"
 	"go.uber.org/zap"
 )
 
@@ -18,111 +19,7 @@ import (
 func AcceptAndListenTCPBuf(l net.Listener, queue chan<- [][]byte, term <-chan struct{},
 	rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, connWG *sync.WaitGroup, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
 	defer connWG.Done()
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	connections := make(map[net.Conn]struct{})
-	acceptDone := make(chan struct{})
-	defer close(acceptDone)
-	go func() {
-		select {
-		case <-term:
-			if err := l.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-				lg.Error("failed to close listening TCP connection", zap.Error(err))
-			}
-		case <-acceptDone:
-		}
-	}()
-
-loop:
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			select {
-			case <-term:
-				break loop
-			default:
-			}
-			if errors.Is(err, net.ErrClosed) {
-				break
-			}
-			lg.Error("accepting connection failed", zap.Error(err))
-			continue
-		}
-		select {
-		case <-term:
-			_ = conn.Close()
-			break loop
-		default:
-		}
-		ms.ActiveTCPConnections.Inc()
-		ms.InConnectionsTotalTCP.Inc()
-		mu.Lock()
-		connections[conn] = struct{}{}
-		mu.Unlock()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() {
-				mu.Lock()
-				delete(connections, conn)
-				mu.Unlock()
-			}()
-			readFromConnectionTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, budget, stream...)
-		}()
-	}
-
-	// An idle or continuously writing producer must not keep the old pipeline
-	// open until its idle timeout. Closing readers interrupts network reads;
-	// scanners still process records already read and flush their final batches.
-	mu.Lock()
-	open := make([]net.Conn, 0, len(connections))
-	for conn := range connections {
-		open = append(open, conn)
-	}
-	mu.Unlock()
-	for _, conn := range open {
-		_ = conn.Close()
-	}
-	wg.Wait()
-}
-
-func readFromConnectionTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
-	defer func() {
-		err := conn.Close()
-		if err != nil && !errors.Is(err, net.ErrClosed) {
-			lg.Error("closing the incoming connection", zap.Error(err))
-		}
-		ms.ActiveTCPConnections.Dec()
-	}()
-
-	// what if client connects and does nothing? protect!
-	err := conn.SetReadDeadline(time.Now().Add(
-		time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second))
-	if err != nil {
-		lg.Error("error setting read deadline",
-			zap.Error(err),
-			zap.String("sender", conn.RemoteAddr().String()))
-	}
-
-	scanForRecordsTCPBuf(conn, queue, term, rateLimiters, cfg, ms, lg, budget, stream...)
-}
-
-// deadlineReader arms the idle deadline before every read from the
-// connection, so a sender that goes silent is dropped after the timeout.
-type deadlineReader struct {
-	conn    net.Conn
-	timeout time.Duration
-	lg      *zap.Logger
-}
-
-func (d *deadlineReader) Read(p []byte) (int, error) {
-	err := d.conn.SetReadDeadline(time.Now().Add(d.timeout))
-	if err != nil {
-		d.lg.Error("error setting read deadline",
-			zap.Error(err),
-			zap.String("sender", d.conn.RemoteAddr().String()))
-	}
-	return d.conn.Read(p)
+	NewTCPInput(queue, term, rateLimiters, cfg, ms, lg, budget, stream...).Serve(l, term)
 }
 
 // recArena hands out copies of records carved from larger chunks, so that
@@ -146,40 +43,60 @@ func (a *recArena) copy(b []byte) []byte {
 	return a.chunk[off:len(a.chunk):len(a.chunk)]
 }
 
-func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
-	reader := bufio.NewReaderSize(&deadlineReader{
-		conn:    conn,
-		timeout: time.Duration(cfg.IncomingConnIdleTimeoutSec) * time.Second,
-		lg:      lg,
-	}, bufio.MaxScanTokenSize)
-	first, _ := reader.Peek(1)
-	if len(first) > 0 && first[0] == 0 {
-		if len(stream) > 0 && stream[0] != nil {
-			readStream(reader, term, rateLimiters, cfg, ms, lg.With(zap.String("peer", conn.RemoteAddr().String())), stream[0]())
-		} else {
-			ms.ErrorRecs.Inc()
-			lg.Error("stream input has no routing sink", zap.String("peer", conn.RemoteAddr().String()))
-		}
-		return
-	}
-	// Standard zstd-compressed plaintext remains a distinct input transport.
-	marker, _ := reader.Peek(4)
-	if len(marker) == 4 && marker[0] == 0x28 && marker[1] == 0xb5 && marker[2] == 0x2f && marker[3] == 0xfd {
-		decoder, err := zstd.NewReader(reader, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(16<<20), zstd.WithDecoderMaxWindow(16<<20))
+func scanInput(c *inputConn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
+	reader := c.reader()
+
+	wire := reader
+	var compressed *zstdInput
+	inheritedMode := byte(0)
+	if c.prefix != nil {
+		var err error
+		inheritedMode, err = reader.ReadByte()
 		if err != nil {
-			ms.ErrorRecs.Inc()
-			lg.Error("zstd input failed", zap.Error(err))
+			lg.Error("Reload: missing input state header", zap.Error(err))
 			return
 		}
-		defer decoder.Close()
-		reader = bufio.NewReaderSize(decoder, bufio.MaxScanTokenSize)
 	}
-	sc := bufio.NewScanner(reader)
+	switch inheritedMode {
+	case 1:
+		var err error
+		reader, compressed, err = inheritedZstd(wire)
+		if err != nil {
+			ms.InputHandoffFailures.Inc()
+			lg.Error("Reload: zstd input state rejected", zap.Error(err))
+			return
+		}
+		defer compressed.Close()
+	case 0:
+		first, _ := reader.Peek(1)
+		if len(first) > 0 && first[0] == 0 {
+			if len(stream) > 0 && stream[0] != nil {
+				readStream(reader, term, rateLimiters, cfg, ms, lg.With(zap.String("peer", c.RemoteAddr().String())), stream[0](), c)
+			} else {
+				ms.ErrorRecs.Inc()
+				lg.Error("stream input has no routing sink", zap.String("peer", c.RemoteAddr().String()))
+			}
+			return
+		}
 
-	// The initial size bounds how much is read per syscall; the max token
-	// size stays bufio.MaxScanTokenSize.
-	buf := make([]byte, bufio.MaxScanTokenSize)
-	sc.Buffer(buf, bufio.MaxScanTokenSize)
+		marker, _ := reader.Peek(4)
+		if bytes.Equal(marker, []byte{0x28, 0xb5, 0x2f, 0xfd}) {
+			var err error
+			compressed, err = newZstdInput(wire)
+			if err != nil {
+				ms.ErrorRecs.Inc()
+				lg.Error("zstd input failed", zap.Error(err))
+				return
+			}
+			defer compressed.Close()
+			reader = bufio.NewReaderSize(compressed, bufio.MaxScanTokenSize)
+		}
+	default:
+		ms.InputHandoffFailures.Inc()
+		lg.Error("Reload: invalid input state mode")
+		return
+	}
+
 	var budgets []*BatchBudget
 	if budget != nil {
 		budgets = append(budgets, budget)
@@ -198,8 +115,30 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan stru
 	recCount := 0
 
 	var arena recArena
-	for sc.Scan() {
-		qb.Push(arena.copy(sc.Bytes()))
+	var readErr error
+	for {
+		if c.moving() {
+			c.detach(func(w io.Writer) error { return writeInputPrefix(w, c, reader, wire, nil, compressed) }, zstdReplayWork(compressed))
+			return
+		}
+		record, err := reader.ReadSlice('\n')
+		if c.moving() && err != nil {
+			c.detach(func(w io.Writer) error { return writeInputPrefix(w, c, reader, wire, record, compressed) }, zstdReplayWork(compressed))
+			return
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			readErr = errors.New("TCP input line exceeds 64 KiB")
+			break
+		}
+		if len(record) > 0 {
+			record = bytes.TrimSuffix(record, []byte{'\n'})
+			record = bytes.TrimSuffix(record, []byte{'\r'})
+			qb.Push(arena.copy(record))
+		}
+		if err != nil {
+			readErr = err
+			break
+		}
 
 		if rateLimiters != nil {
 			recCount++
@@ -219,7 +158,7 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan stru
 			}
 		}
 	}
-	if err := sc.Err(); err != nil {
+	if err := readErr; err != nil && !errors.Is(err, io.EOF) {
 		select {
 		case <-term:
 			return
@@ -228,7 +167,7 @@ func scanForRecordsTCPBuf(conn net.Conn, queue chan<- [][]byte, term <-chan stru
 		// An idle client hitting IncomingConnIdleTimeoutSec is a normal close, not a read error.
 		var ne net.Error
 		if errors.As(err, &ne) && ne.Timeout() {
-			lg.Info("TCP input connection idle, closing", zap.String("peer", conn.RemoteAddr().String()))
+			lg.Info("TCP input connection idle, closing", zap.String("peer", c.RemoteAddr().String()))
 			return
 		}
 		ms.ErrorRecs.Inc()

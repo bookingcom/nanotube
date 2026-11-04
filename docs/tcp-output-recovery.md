@@ -136,10 +136,11 @@ records, input throttles and host drops. Frequent backpressure calls for more
 routing capacity or lower offered load. A Go `GOMEMLIMIT` can provide additional
 GC headroom control, but is a soft limit and cannot bound a live backlog.
 
-Reload still closes old accepted input connections, and TCP provides no
-application acknowledgement. Producers need their existing reconnect/retry
-policy; bytes still unread in sockets and errored output writes retain the
-existing uncertainty. Admission waits are deliberately not cancelled by a stop
+Compatible reloads transfer accepted TCP input and unparsed state to the
+replacement; see [accepted-input reloads](input-reload.md). Older binaries use
+the connection-close fallback. TCP provides no application acknowledgement:
+producers still need reconnect/retry for failures, and errored output writes
+retain their existing uncertainty. Admission waits are deliberately not cancelled by a stop
 signal: records already parsed into batches continue to drain under the normal
 shutdown deadline. This does not add exactly-once guarantees for arbitrary
 concurrent disconnects or crashes.

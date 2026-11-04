@@ -1,6 +1,10 @@
 package main
 
-import "go.uber.org/zap/zapcore"
+import (
+	"strings"
+
+	"go.uber.org/zap/zapcore"
+)
 
 // shutdownCore keeps terminal accounting outside the runtime log sampler.
 // Every target can have pending output; suppressing repeated summaries loses
@@ -15,6 +19,9 @@ func (c shutdownCore) With(fields []zapcore.Field) zapcore.Core {
 }
 
 func (c shutdownCore) Check(entry zapcore.Entry, checked *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if entry.Level >= zapcore.ErrorLevel && strings.HasPrefix(entry.Message, "Reload:") {
+		return c.terminal.Check(entry, checked)
+	}
 	switch entry.Message {
 	case "Shutdown: TCP target summary", "Shutdown: TCP output summary":
 		return c.terminal.Check(entry, checked)

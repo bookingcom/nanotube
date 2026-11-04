@@ -102,18 +102,18 @@ acknowledgements or prove equal crash loss.
 
 ## Restart and delivery limits
 
-USR2 inherits listening sockets, closes old accepted relay inputs, and drains
-already routed output. Relay input dictionaries and unread accepted sockets are
-not handed to the replacement. A partial frame or successfully written kernel
-buffer can therefore be lost at relay restart. Failed writes replay whole logical
-points and can duplicate an ambiguous delivered prefix. These transports have no
-application acknowledgement or exactly-once guarantee. Compression changes the
-number of points in flight; unchanged retry code does not establish equal crash
-loss to plaintext. Gate rollout on a matched loss comparison, including kill -9.
+USR2 transfers accepted plaintext, zstd and stream sockets and their unparsed
+state to a compatible ready replacement. Parsed records drain through the old
+routing/output pipeline. See [accepted-input reloads](input-reload.md) for the
+versioned exchange, memory/admission bounds, temporary-file use and fallback.
 
-The real-process pool oracle reports missing identities and duplicate acceptance
-counts for both input modes. Its store handoff case fences source submission to
-obtain exact old/new receiver counters while keeping accepted relay sockets open.
-The other fault cases interrupt active traffic. Store values and identities are
-checked independently of acceptance counters. Use a drained boundary for a
-controlled initial canary restart; that does not prove arbitrary crash parity.
+A reload involving an older binary uses the existing connection-close drain and
+can lose unread input. These transports have no application acknowledgement or
+crash exactly-once guarantee. Failed output writes can replay an ambiguous prefix.
+Compression still changes the number of points in flight during an ungraceful
+failure.
+
+The original real-process pool oracle and the repeated-input reload oracle check
+identities/values and duplicate acceptance independently at two real stores. The
+store-handoff case fences source submission; relay reload tests interrupt active
+persistent clients. Use the active tests when assessing graceful reload behavior.
