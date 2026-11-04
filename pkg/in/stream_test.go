@@ -124,3 +124,39 @@ func TestStreamInputQueuedNamesSurviveArenaReuse(t *testing.T) {
 		t.Fatalf("reset changed queued names: %s", got)
 	}
 }
+
+type idleTimeout struct{}
+
+func (idleTimeout) Error() string   { return "i/o timeout" }
+func (idleTimeout) Timeout() bool   { return true }
+func (idleTimeout) Temporary() bool { return true }
+
+// idleReader yields its bytes, then fails like a connection whose idle read deadline expired.
+type idleReader struct{ data []byte }
+
+func (r *idleReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, idleTimeout{}
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+func TestStreamInputIdleTimeoutIsNotAnError(t *testing.T) {
+	e, _ := codec.NewEncoder(codec.Options{})
+	wire, _ := codec.AppendPreamble(nil, 0)
+	_ = e.Add([]byte("one"), 1, 2)
+	wire, _ = e.Flush(wire)
+	e.Close()
+	cfg := conf.MakeDefault()
+	ms := metrics.New()
+	sink := &testStreamSink{}
+	readStream(bufio.NewReader(&idleReader{data: wire}), make(chan struct{}), nil, &cfg, ms, zap.NewNop(), sink)
+	if sink.rows != 1 {
+		t.Fatalf("rows before idle close: %d", sink.rows)
+	}
+	if n := testutil.ToFloat64(ms.StreamInputErrors) + testutil.ToFloat64(ms.ErrorRecs); n != 0 {
+		t.Fatalf("idle close counted as %v errors", n)
+	}
+}

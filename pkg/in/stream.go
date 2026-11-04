@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"io"
+	"net"
 	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
@@ -41,6 +42,12 @@ type inputPoint struct {
 
 func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, sink StreamSink) {
 	fail := func(err error) {
+		// An idle producer hitting IncomingConnIdleTimeoutSec is a normal close, not a stream error.
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			lg.Info("stream input connection idle, closing", zap.Error(err))
+			return
+		}
 		ms.ErrorRecs.Inc()
 		ms.StreamInputErrors.Inc()
 		lg.Error("stream input failed", zap.Error(err))
