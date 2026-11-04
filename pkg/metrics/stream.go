@@ -16,6 +16,7 @@ type StreamMetrics struct {
 	nameBudget                             int
 	nameFull                               bool
 	Frames, Names, Resets, Records         *prometheus.CounterVec
+	Unshared                               *prometheus.CounterVec
 	ResetReasons                           *prometheus.CounterVec
 	Dropped                                *prometheus.CounterVec
 	RetainedBytes, RetainedNames, MapBytes *prometheus.GaugeVec
@@ -24,6 +25,7 @@ type StreamMetrics struct {
 // StreamOutput binds counters once per destination, outside the record hot path.
 type StreamOutput struct {
 	Frames, Names, Resets, Records         prometheus.Counter
+	Unshared                               prometheus.Counter
 	PeerResets, LocalResets, NameResets    prometheus.Counter
 	Dropped                                prometheus.Counter
 	RetainedBytes, RetainedNames, MapBytes prometheus.Gauge
@@ -40,6 +42,7 @@ func newStreamMetrics() *StreamMetrics {
 		RetainedBytes: gauge("stream_connection_dictionary_bytes", "Retained connection map and predictor capacity in bytes."), RetainedNames: gauge("stream_connection_names", "Names held by connection dictionaries."), MapBytes: gauge("stream_connection_map_bytes", "Allocated global-to-wire map capacity in bytes."),
 		Frames:       counter("stream_frames_total", "Binary frames encoded, including retry attempts."),
 		Names:        counter("stream_names_defined_total", "Name definitions encoded, including retry attempts."),
+		Unshared:     counter("stream_names_unshared_total", "Definitions encoded without shared retention, including retry attempts; rate gives definitions per second."),
 		Resets:       counter("stream_dictionary_resets_total", "Dictionary resets encoded after reaching the peer byte, local byte or name cap."),
 		ResetReasons: prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_dictionary_resets_by_reason_total", Help: "Dictionary resets by binding limit: peer_bytes, local_bytes or names; peer bytes take precedence when multiple limits bind."}, []string{"cluster", "upstream_host", "reason"}),
 		Records:      counter("stream_records_encoded_total", "Points encoded, including retry attempts."),
@@ -49,11 +52,11 @@ func newStreamMetrics() *StreamMetrics {
 
 func (m *StreamMetrics) For(labels prometheus.Labels) *StreamOutput {
 	reasons := m.ResetReasons.MustCurryWith(labels)
-	return &StreamOutput{Frames: m.Frames.With(labels), Names: m.Names.With(labels), Resets: m.Resets.With(labels), PeerResets: reasons.WithLabelValues(string(codec.ResetPeerBytes)), LocalResets: reasons.WithLabelValues(string(codec.ResetLocalBytes)), NameResets: reasons.WithLabelValues(string(codec.ResetNames)), Records: m.Records.With(labels), Dropped: m.Dropped.With(labels), RetainedBytes: m.RetainedBytes.With(labels), RetainedNames: m.RetainedNames.With(labels), MapBytes: m.MapBytes.With(labels)}
+	return &StreamOutput{Frames: m.Frames.With(labels), Names: m.Names.With(labels), Unshared: m.Unshared.With(labels), Resets: m.Resets.With(labels), PeerResets: reasons.WithLabelValues(string(codec.ResetPeerBytes)), LocalResets: reasons.WithLabelValues(string(codec.ResetLocalBytes)), NameResets: reasons.WithLabelValues(string(codec.ResetNames)), Records: m.Records.With(labels), Dropped: m.Dropped.With(labels), RetainedBytes: m.RetainedBytes.With(labels), RetainedNames: m.RetainedNames.With(labels), MapBytes: m.MapBytes.With(labels)}
 }
 
 func (m *StreamMetrics) register(reg prometheus.Registerer) error {
-	for _, c := range []prometheus.Collector{m.Frames, m.Names, m.Resets, m.ResetReasons, m.Records, m.Dropped, m.RetainedBytes, m.RetainedNames, m.MapBytes} {
+	for _, c := range []prometheus.Collector{m.Frames, m.Names, m.Unshared, m.Resets, m.ResetReasons, m.Records, m.Dropped, m.RetainedBytes, m.RetainedNames, m.MapBytes} {
 		if err := reg.Register(c); err != nil {
 			return err
 		}
@@ -64,8 +67,10 @@ func (m *StreamMetrics) register(reg prometheus.Registerer) error {
 	}{
 		{"stream_name_table_retained_bytes", "Allocated relay-wide name-table capacity in bytes.", func(s codec.NameStats) float64 { return float64(s.Bytes) }},
 		{"stream_name_table_retained_names", "Names in the relay-wide table, including the unused grace period.", func(s codec.NameStats) float64 { return float64(s.Names) }},
+		{"stream_name_table_capacity", "Maximum retained name slots; exact-name storage may reach its byte limit first.", func(s codec.NameStats) float64 { return float64(s.Capacity) }},
 		{"stream_name_table_name_bytes", "Allocated name byte storage; zero in fingerprint mode.", func(s codec.NameStats) float64 { return float64(s.NameBytes) }},
 		{"stream_name_table_evictions_total", "Unreferenced global names reclaimed.", func(s codec.NameStats) float64 { return float64(s.Evictions) }},
+		{"stream_name_table_generation_exhaustions_total", "Insertions refused because token epochs cannot safely be reused; requires a process restart.", func(s codec.NameStats) float64 { return float64(s.GenerationExhaustions) }},
 	} {
 		value := spec.value
 		read := func() float64 {
@@ -76,7 +81,7 @@ func (m *StreamMetrics) register(reg prometheus.Registerer) error {
 			return 0
 		}
 		var collector prometheus.Collector
-		if spec.name == "stream_name_table_evictions_total" {
+		if spec.name == "stream_name_table_evictions_total" || spec.name == "stream_name_table_generation_exhaustions_total" {
 			collector = prometheus.NewCounterFunc(prometheus.CounterOpts{Namespace: "nanotube", Name: spec.name, Help: spec.help}, read)
 		} else {
 			collector = prometheus.NewGaugeFunc(prometheus.GaugeOpts{Namespace: "nanotube", Name: spec.name, Help: spec.help}, read)

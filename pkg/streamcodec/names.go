@@ -7,14 +7,28 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 const nameBlockBits = 4
 const nameBlockSize = 1 << nameBlockBits
-const deadName = ^uint32(0)
+const nameKeyBits = 32
+const nameGenerationLimit = 1 << (63 - nameKeyBits)
 
 // Tokens cached on records must stay distinct across application reloads.
-var nameGeneration atomic.Uint64 //nolint:gochecknoglobals // Process-wide token identity prevents cross-table aliasing.
+var nameGeneration atomic.Uint64 //nolint:gochecknoglobals // Process-wide epochs prevent cross-table aliasing.
+
+func nextNameGeneration() uint64 {
+	for {
+		previous := nameGeneration.Load()
+		if previous >= nameGenerationLimit-1 {
+			return 0 // Never wrap a token onto a previously issued identity.
+		}
+		if nameGeneration.CompareAndSwap(previous, previous+1) {
+			return previous + 1
+		}
+	}
+}
 
 type sharedName struct {
 	route, a, b                    uint64
@@ -29,28 +43,31 @@ type sharedBlock [nameBlockSize]sharedName
 // No names or pointers are retained in that mode. A token is only a hint until
 // acquired by a connection; expiry while queued is safe and re-resolves it.
 type NameTable struct {
-	shards    []nameShard
-	seeds     [2]maphash.Seed
-	full      bool
-	lastSweep atomic.Int64
-	overhead  int
+	shards     []nameShard
+	seeds      [2]maphash.Seed
+	full       bool
+	lastSweep  atomic.Int64
+	overhead   int
+	generation uint64
 }
 type nameShard struct {
-	mu                             sync.Mutex
-	blocks                         []atomic.Pointer[sharedBlock]
-	index                          []uint32
-	limit, used, count, tombstones int
-	free                           []uint32
-	cursor                         uint32
-	quantum                        int
-	budget, bytes                  int
-	pages                          [][]byte
-	cells                          [13]uint32
-	evictions                      uint64
+	mu                                sync.Mutex
+	blocks                            []atomic.Pointer[sharedBlock]
+	index                             []uint32
+	limit, used, count, idle          int
+	free                              []uint32
+	cursor                            uint32
+	quantum                           int
+	budget, bytes                     int
+	pages                             [][]byte
+	cells                             [13]uint32
+	evictions                         uint64
+	generation, generationExhaustions uint64
 }
 type NameStats struct {
-	Bytes, Names, NameBytes int
-	Evictions               uint64
+	Bytes, Names, NameBytes, Capacity int
+	Evictions                         uint64
+	GenerationExhaustions             uint64
 }
 
 // NewNameTable bounds all table/index/arena capacities. Connection maps and
@@ -67,9 +84,14 @@ func NewNameTable(budget int, fullNames bool) (*NameTable, error) {
 		shards *= 2
 	}
 	t := &NameTable{shards: make([]nameShard, shards), seeds: [2]maphash.Seed{maphash.MakeSeed(), maphash.MakeSeed()}, full: fullNames}
-	t.overhead = 128 + shards*256
+	t.generation = nextNameGeneration()
+	if t.generation == 0 {
+		return nil, ErrLimit
+	}
+	t.overhead = int(unsafe.Sizeof(*t)) + shards*int(unsafe.Sizeof(nameShard{}))
 	for i := range t.shards {
 		s := &t.shards[i]
+		s.generation = t.generation
 		s.budget = (budget - t.overhead) / shards
 		// Full-name arenas are lazy and consume the remaining half of the budget.
 		allocation := s.budget
@@ -78,9 +100,7 @@ func NewNameTable(budget int, fullNames bool) (*NameTable, error) {
 			allocation /= 2
 		}
 		capacity := max(16, allocation/72/16*16)
-		if capacity >= 1<<19 {
-			capacity = (1 << 19) - 1
-		}
+		capacity = min(capacity, (1<<(nameKeyBits-5))-1)
 		size := 16
 		for size*3/4 < capacity {
 			size *= 2
@@ -112,18 +132,30 @@ func (s *nameShard) entry(id uint32) *sharedName {
 
 // Valid requires no lock and does not acquire a reference. Only generation is
 // read concurrently; held connection references prevent its slot being reused.
+// Failed-resolution hints are valid for fan-out of that input record only.
 func (t *NameTable) Valid(token uint64, hash uint64) bool {
 	if token == 0 {
 		return false
 	}
 	s := t.shard(hash)
-	id := ((uint32(token) & 0xffffff) - 1) >> 5
+	if uint32(token) == 0 {
+		return token == t.unsharedToken()
+	}
+	if (uint32(token)-1)&31 != uint32(mixHash(hash)&uint64(len(t.shards)-1)) {
+		return false
+	}
+	id := (uint32(token) - 1) >> 5
 	if int(id) >= s.limit {
 		return false
 	}
 	e := s.entry(id)
-	return e != nil && atomic.LoadUint64(&e.generation) == token>>24
+	return e != nil && atomic.LoadUint64(&e.generation) == token>>nameKeyBits
 }
+
+// A zero key is a table-specific failed-resolution hint. Publishers pass it to
+// every replica so a full table is consulted only once for each input record.
+// It never acquires a reference or enters a connection's global-to-wire index.
+func (t *NameTable) unsharedToken() uint64 { return t.generation << nameKeyBits }
 func (t *NameTable) Resolve(name []byte, hash uint64) uint64 {
 	a, b := uint64(0), uint64(0)
 	if !t.full {
@@ -134,40 +166,20 @@ func (t *NameTable) Resolve(name []byte, hash uint64) uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	mask := len(s.index) - 1
-	empty := -1
-	for i := int(mixHash(hash>>5)) & mask; ; i = (i + 1) & mask {
-		id := s.index[i]
-		if id == 0 {
-			if empty < 0 {
-				empty = i
-			}
-			break
-		}
-		if id == deadName {
-			if empty < 0 {
-				empty = i
-			}
-			continue
-		}
-		e := s.entry(id - 1)
+	empty := int(mixHash(hash>>5)) & mask
+	for ; s.index[empty] != 0; empty = (empty + 1) & mask {
+		id := s.index[empty] - 1
+		e := s.entry(id)
 		if e.route == hash && ((!t.full && e.a == a && e.b == b) || (t.full && bytes.Equal(s.name(e), name))) {
 			if e.refs == 0 {
 				e.touched = uint32(time.Now().Unix())
 			}
-			return atomic.LoadUint64(&e.generation)<<24 | uint64(((id-1)<<5)|uint32(mixHash(hash)&uint64(len(t.shards)-1))) + 1
+			return atomic.LoadUint64(&e.generation)<<nameKeyBits | uint64((id<<5)|uint32(mixHash(hash)&uint64(len(t.shards)-1))) + 1
 		}
 	}
 	if len(s.free) == 0 && s.used >= s.limit {
 		s.reclaim(64, true)
 		empty = -1
-	}
-	if empty < 0 {
-		for i := int(mixHash(hash>>5)) & mask; ; i = (i + 1) & mask {
-			if s.index[i] == 0 || s.index[i] == deadName {
-				empty = i
-				break
-			}
-		}
 	}
 	var id uint32
 	if n := len(s.free); n > 0 {
@@ -175,12 +187,12 @@ func (t *NameTable) Resolve(name []byte, hash uint64) uint64 {
 		s.free = s.free[:n-1]
 	} else {
 		if s.used >= s.limit {
-			return 0
+			return t.unsharedToken()
 		}
 		id = uint32(s.used)
 		if s.blocks[id>>nameBlockBits].Load() == nil {
 			if s.bytes+16*48 > s.budget {
-				return 0
+				return t.unsharedToken()
 			}
 			s.blocks[id>>nameBlockBits].Store(new(sharedBlock))
 			s.bytes += 16 * 48
@@ -197,65 +209,68 @@ func (t *NameTable) Resolve(name []byte, hash uint64) uint64 {
 		}
 		if !ok {
 			s.free = append(s.free, id)
-			return 0
+			return t.unsharedToken()
 		}
 		e.address = address
 		e.length = uint32(len(name))
 	}
-	gen := uint64(0)
-	if nameGeneration.Load() < 1<<39 {
-		gen = nameGeneration.Add(1)
-	}
-	if gen == 0 || gen >= 1<<39 {
-		if e.length != 0 {
-			s.releaseBytes(e.address, int(e.length))
-			e.length = 0
+	// Slots in the same epoch have distinct keys. Issue a new process-wide
+	// epoch only when reusing a slot already issued in this shard's epoch.
+	// Keep the previous generation on retired entries, with its high bit set.
+	// Unlike one generation per insertion, this scales with reuse of the
+	// hottest slot, rather than aggregate name churn across the whole table.
+	if atomic.LoadUint64(&e.generation)&^predictorValid >= s.generation {
+		if gen := nextNameGeneration(); gen != 0 {
+			s.generation = gen
+		} else {
+			s.generationExhaustions++
+			if e.length != 0 {
+				s.releaseBytes(e.address, int(e.length))
+				e.length = 0
+			}
+			s.free = append(s.free, id)
+			return t.unsharedToken()
 		}
-		s.free = append(s.free, id)
-		return 0
 	}
-	e.route = hash
-	e.a = a
-	e.b = b
+	e.route, e.a, e.b = hash, a, b
 	e.refs = 0
 	e.touched = uint32(time.Now().Unix())
-	atomic.StoreUint64(&e.generation, gen)
+	atomic.StoreUint64(&e.generation, s.generation)
 	if empty < 0 {
-		for i := int(mixHash(hash>>5)) & mask; ; i = (i + 1) & mask {
-			if s.index[i] == 0 || s.index[i] == deadName {
-				empty = i
-				break
-			}
+		empty = int(mixHash(hash>>5)) & mask
+		for s.index[empty] != 0 {
+			empty = (empty + 1) & mask
 		}
-	}
-	if s.index[empty] == deadName {
-		s.tombstones--
 	}
 	s.index[empty] = id + 1
 	s.count++
-	return gen<<24 | uint64((id<<5)|uint32(mixHash(hash)&uint64(len(t.shards)-1))) + 1
+	s.idle++
+	return s.generation<<nameKeyBits | uint64((id<<5)|uint32(mixHash(hash)&uint64(len(t.shards)-1))) + 1
 }
 func (t *NameTable) Acquire(token uint64, hash uint64) bool {
-	if token == 0 {
+	if uint32(token) == 0 || (uint32(token)-1)&31 != uint32(mixHash(hash)&uint64(len(t.shards)-1)) {
 		return false
 	}
 	s := t.shard(hash)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id := ((uint32(token) & 0xffffff) - 1) >> 5
+	id := (uint32(token) - 1) >> 5
 	if int(id) >= s.limit {
 		return false
 	}
 	e := s.entry(id)
-	if e == nil || atomic.LoadUint64(&e.generation) != token>>24 {
+	if e == nil || atomic.LoadUint64(&e.generation) != token>>nameKeyBits {
 		return false
+	}
+	if e.refs == 0 {
+		s.idle--
 	}
 	e.refs++
 	return true
 }
 func (t *NameTable) Release(token uint64) {
 	if token != 0 {
-		t.ReleaseKey(uint32(token) & 0xffffff)
+		t.ReleaseKey(uint32(token))
 	}
 }
 func (t *NameTable) ReleaseKey(key uint32) {
@@ -272,6 +287,7 @@ func (t *NameTable) ReleaseKey(key uint32) {
 	}
 	e.refs--
 	if e.refs == 0 {
+		s.idle++
 		e.touched = uint32(time.Now().Unix())
 	}
 }
@@ -286,53 +302,69 @@ func (t *NameTable) Sweep() {
 	}
 	for i := range t.shards {
 		s := &t.shards[i]
+		// Release the lock between fixed-size chunks, including for large tables.
 		s.mu.Lock()
-		s.sweep(false)
+		work := s.used
 		s.mu.Unlock()
+		for work > 0 {
+			s.mu.Lock()
+			if s.idle == 0 {
+				s.mu.Unlock()
+				break
+			}
+			n := min(work, 64)
+			s.reclaim(n, false)
+			s.mu.Unlock()
+			work -= n
+		}
 	}
 }
-func (s *nameShard) sweep(pressure bool) { s.reclaim(len(s.index), pressure) }
 func (s *nameShard) reclaim(work int, pressure bool) {
+	if s.idle == 0 {
+		return
+	}
 	now := uint32(time.Now().Unix())
-	for range min(work, len(s.index)) {
-		i := int(s.cursor) & (len(s.index) - 1)
+	for range min(work, s.used) {
+		if int(s.cursor) >= s.used {
+			s.cursor = 0
+		}
+		id := s.cursor
 		s.cursor++
-		id := s.index[i]
-		if id == 0 || id == deadName {
+		e := s.entry(id)
+		gen := atomic.LoadUint64(&e.generation)
+		if gen == 0 || gen&predictorValid != 0 || e.refs != 0 || (!pressure && now-e.touched < 60) {
 			continue
 		}
-		e := s.entry(id - 1)
-		if e.refs == 0 && (pressure || now-e.touched >= 60) {
-			if e.length != 0 {
-				s.releaseBytes(e.address, int(e.length))
-				e.length = 0
-			}
-			atomic.StoreUint64(&e.generation, 0)
-			s.index[i] = deadName
-			s.tombstones++
-			s.count--
-			s.free = append(s.free, id-1)
-			s.evictions++
+		s.remove(id, e.route)
+		if e.length != 0 {
+			s.releaseBytes(e.address, int(e.length))
+			e.length = 0
+		}
+		atomic.StoreUint64(&e.generation, gen|predictorValid)
+		s.count--
+		s.idle--
+		s.free = append(s.free, id)
+		s.evictions++
+	}
+}
+
+// Backshift deletion keeps lookup chains intact without tombstones or a
+// table-sized rebuild. At the bounded index load, expected work is constant.
+func (s *nameShard) remove(id uint32, hash uint64) {
+	mask := len(s.index) - 1
+	hole := int(mixHash(hash>>5)) & mask
+	for s.index[hole] != id+1 {
+		hole = (hole + 1) & mask
+	}
+	for i := (hole + 1) & mask; s.index[i] != 0; i = (i + 1) & mask {
+		next := s.index[i]
+		home := int(mixHash(s.entry(next-1).route>>5)) & mask
+		if (i-home)&mask >= (i-hole)&mask {
+			s.index[hole] = next
+			hole = i
 		}
 	}
-	// Rebuild in place: tombstones cannot accumulate with lifetime churn.
-	if s.tombstones > len(s.index)/4 {
-		clear(s.index)
-		s.tombstones = 0
-		for id := 0; id < s.used; id++ {
-			e := s.entry(uint32(id))
-			if atomic.LoadUint64(&e.generation) == 0 {
-				continue
-			}
-			mask := len(s.index) - 1
-			for i := int(mixHash(e.route>>5)) & mask; ; i = (i + 1) & mask {
-				if s.index[i] == 0 {
-					s.index[i] = uint32(id + 1)
-					break
-				}
-			}
-		}
-	}
+	s.index[hole] = 0
 }
 func (t *NameTable) Stats() NameStats {
 	r := NameStats{Bytes: t.overhead}
@@ -340,6 +372,8 @@ func (t *NameTable) Stats() NameStats {
 		s := &t.shards[i]
 		s.mu.Lock()
 		r.Bytes += s.bytes
+		r.Capacity += s.limit
+		r.GenerationExhaustions += s.generationExhaustions
 		r.Names += s.count
 		r.Evictions += s.evictions
 		for _, p := range s.pages {

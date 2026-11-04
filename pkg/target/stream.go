@@ -278,7 +278,11 @@ func (s *streamSender) flush(c *streamConnection) {
 		}
 		s.observeRetention(c)
 		if stats.unshared > 0 && time.Since(c.lastWarning) > 30*time.Second {
-			s.lg.Warn("shared stream name table budget exhausted; definitions bypass shared retention", zap.Int("unshared_definitions", stats.unshared))
+			table := codec.NameStats{}
+			if s.names != nil {
+				table = s.names.Stats()
+			}
+			s.lg.Warn("shared stream name table cannot retain definitions", zap.Int("unshared_definitions", stats.unshared), zap.Int("capacity", table.Capacity), zap.Int("retained_names", table.Names), zap.Int("retained_bytes", table.Bytes), zap.Uint64("generation_exhaustions", table.GenerationExhaustions))
 			c.lastWarning = time.Now()
 		}
 		if stats.resets > 0 {
@@ -291,6 +295,7 @@ func (s *streamSender) flush(c *streamConnection) {
 		}
 		s.ms.Frames.Add(float64(stats.frames))
 		s.ms.Names.Add(float64(stats.names))
+		s.ms.Unshared.Add(float64(stats.unshared))
 		s.ms.Resets.Add(float64(stats.resets))
 		s.ms.PeerResets.Add(float64(stats.peerResets))
 		s.ms.LocalResets.Add(float64(stats.localResets))

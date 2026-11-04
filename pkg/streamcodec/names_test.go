@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+func (s *nameShard) sweep(pressure bool) { s.reclaim(s.used, pressure) }
 
 func TestSharedNameReferencesAndWire(t *testing.T) {
 	for _, full := range []bool{true, false} {
@@ -76,7 +79,13 @@ func TestSharedTableChurnBudgetAndStaleToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale := table.Resolve([]byte("old.name"), 0)
+	// Start a collision chain near the index end so deletion must wrap.
+	hash := uint64(0)
+	mask := len(table.shards[0].index) - 1
+	for int(mixHash(hash>>5))&mask != mask-3 {
+		hash += 32
+	}
+	stale := table.Resolve([]byte("old.name"), hash)
 	peers := make([]*Encoder, 3)
 	for i := range peers {
 		peers[i], err = NewSharedEncoder(Options{DictionaryBytes: 4096}, table)
@@ -86,9 +95,9 @@ func TestSharedTableChurnBudgetAndStaleToken(t *testing.T) {
 	}
 	for i := range 5000 {
 		name := fmt.Appendf(nil, "metric.%d", i)
-		token := table.Resolve(name, 0)
+		token := table.Resolve(name, hash)
 		for _, peer := range peers {
-			if _, _, err := peer.AddGlobal(name, 0, token, float64(i), int64(i)); err != nil {
+			if _, _, err := peer.AddGlobal(name, hash, token, float64(i), int64(i)); err != nil {
 				t.Fatal(err)
 			}
 			if i%16 == 0 {
@@ -104,7 +113,7 @@ func TestSharedTableChurnBudgetAndStaleToken(t *testing.T) {
 			t.Fatal("global byte budget exceeded")
 		}
 	}
-	if table.Valid(stale, 0) {
+	if table.Valid(stale, hash) {
 		t.Fatal("unused queued hint never expired under pressure")
 	}
 	e := peers[0]
@@ -112,7 +121,7 @@ func TestSharedTableChurnBudgetAndStaleToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = e.Flush(nil)
-	if _, _, err := e.AddGlobal([]byte("old.name"), 0, stale, 42, 7); err != nil {
+	if _, _, err := e.AddGlobal([]byte("old.name"), hash, stale, 42, 7); err != nil {
 		t.Fatal(err)
 	}
 	var got []observation
@@ -289,7 +298,7 @@ func TestWireHashFilterCollision(t *testing.T) {
 	states := wireStates{}
 	index := make(wireIndex, 16)
 	for i, key := range []uint32{a, b} {
-		id := states.add(uint64(i+1)<<24 | uint64(key))
+		id := states.add(uint64(i+1)<<nameKeyBits | uint64(key))
 		index.insert(key, id)
 	}
 	for i, key := range []uint32{a, b} {
@@ -324,5 +333,202 @@ func TestStandaloneEncoderByteBudget(t *testing.T) {
 				t.Fatalf("standalone dictionary retained %d > %d", e.RetainedBytes(), budget)
 			}
 		}
+	}
+}
+
+// Exercise keys above the old 24-bit limit without allocating millions of names.
+func TestSharedNameWideKey(t *testing.T) {
+	table, err := NewNameTable(16<<10, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := uint64(7)
+	s := table.shard(hash)
+	const id = 1<<19 + 17
+	s.used, s.limit = id, id+16
+	s.blocks = make([]atomic.Pointer[sharedBlock], (s.limit+15)/16)
+	token := table.Resolve([]byte("wide.key"), hash)
+	if uint32(token) <= 1<<24 || !table.Valid(token, hash) || !table.Acquire(token, hash) {
+		t.Fatal("wide key was truncated")
+	}
+	states := wireStates{}
+	index := make(wireIndex, 16)
+	index.insert(uint32(token), states.add(token))
+	if _, ok := index.find(uint32(token), &states); !ok {
+		t.Fatal("connection index truncated wide key")
+	}
+	e, err := NewSharedEncoder(Options{DictionaryBytes: 4096}, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	for i := range 3 {
+		if _, _, err := e.AddGlobal([]byte("wide.key"), hash, token, float64(i), int64(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []observation
+	decodeAll(t, decoder(t, Options{}), flush(t, e, nil), observe(&got))
+	if len(got) != 3 || e.NameCount() != 1 {
+		t.Fatal("wide key lost dictionary reuse or rows")
+	}
+	e.Close()
+	table.Release(token)
+	if s.entry(id).refs != 0 {
+		t.Fatal("wide release used a different slot")
+	}
+}
+
+func TestSharedTableFullMissAndRecovery(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		table, err := NewNameTable(16<<10, full)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// All names use the same route, exercising collision-chain deletion too.
+		var held []uint64
+		for i := 0; ; i++ {
+			token := table.Resolve(fmt.Appendf(nil, "held.%d", i), 0)
+			if uint32(token) == 0 {
+				break
+			}
+			if !table.Acquire(token, 0) {
+				t.Fatal("could not pin name")
+			}
+			held = append(held, token)
+		}
+		before := table.Stats()
+		s := table.shard(0)
+		cursor := s.cursor
+		peers := make([]*Encoder, 3)
+		for i := range peers {
+			peers[i], err = NewSharedEncoder(Options{DictionaryBytes: 1 << 20}, table)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer peers[i].Close()
+		}
+		for i := range 100 {
+			name := fmt.Appendf(nil, "unshared.%d", i)
+			token := table.Resolve(name, 0)
+			if token == 0 || uint32(token) != 0 || !table.Valid(token, 0) || table.Acquire(token, 0) {
+				t.Fatal("invalid failed-resolution hint")
+			}
+			for _, e := range peers {
+				if _, _, err = e.AddGlobal(name, 0, token, float64(i), int64(i)); err != nil {
+					t.Fatal(err)
+				}
+				if e.RetainedBytes() > 1<<20 {
+					t.Fatal("connection budget exceeded")
+				}
+			}
+		}
+		if s.cursor != cursor || table.Stats().Names != before.Names {
+			t.Fatal("scanned or evicted an entirely referenced table")
+		}
+		for _, e := range peers {
+			var got []observation
+			decodeAll(t, decoder(t, Options{}), flush(t, e, nil), observe(&got))
+			if len(got) != 100 || e.UnsharedTotal() != 100 {
+				t.Fatal("unshared definition lost")
+			}
+			for i, g := range got {
+				if g.name != fmt.Sprintf("unshared.%d", i) {
+					t.Fatal("unshared name changed")
+				}
+			}
+		}
+		// A publisher's failed hint also prevents a retry after space becomes
+		// available between publishing and encoding on the replicas.
+		hint := table.Resolve([]byte("deferred"), 0)
+		table.Release(held[0])
+		if _, _, err := peers[0].AddGlobal([]byte("deferred"), 0, hint, 1, 1); err != nil {
+			t.Fatal(err)
+		}
+		if table.Stats().Evictions != before.Evictions || !table.Acquire(held[0], 0) {
+			t.Fatal("failed-resolution hint retried shared insertion")
+		}
+		for _, token := range held {
+			if !table.Valid(token, 0) {
+				t.Fatal("live reference evicted")
+			}
+			table.Release(token)
+		}
+		token := table.Resolve([]byte("recovered"), 0)
+		if uint32(token) == 0 || !table.Valid(token, 0) {
+			t.Fatal("did not resume sharing after release")
+		}
+		if table.Stats().Bytes > 16<<10 {
+			t.Fatal("table budget exceeded")
+		}
+	}
+}
+
+func TestSharedNameEpochReuseAndTableIdentity(t *testing.T) {
+	a, err := NewNameTable(2<<20, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := NewNameTable(16<<10, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := a.Resolve([]byte("old"), 0)
+	other := b.Resolve([]byte("other"), 0)
+	if a.Valid(other, 0) || b.Valid(old, 0) {
+		t.Fatal("cross-table token alias")
+	}
+	for hash := uint64(1); ; hash++ {
+		if a.shard(hash) != a.shard(0) {
+			a.Resolve([]byte("other.shard"), hash)
+			if a.Valid(old, hash) || a.Acquire(old, hash) {
+				t.Fatal("same epoch aliased another shard")
+			}
+			break
+		}
+	}
+	epoch := nameGeneration.Load()
+	for i := range 100 {
+		a.Resolve(fmt.Appendf(nil, "distinct.%d", i), 0)
+	}
+	if nameGeneration.Load() != epoch {
+		t.Fatal("distinct slots consumed global epochs")
+	}
+	s := a.shard(0)
+	s.sweep(true)
+	for i := range 1000 {
+		token := a.Resolve(fmt.Appendf(nil, "churn.%d", i), 0)
+		if uint32(token) == 0 {
+			t.Fatal("churn unexpectedly disabled sharing")
+		}
+		if a.Valid(old, 0) || a.Acquire(old, 0) {
+			t.Fatal("stale slot acquired")
+		}
+		s.sweep(true)
+	}
+}
+
+func TestSharedNameEpochExhaustion(t *testing.T) {
+	previous := nameGeneration.Swap(nameGenerationLimit - 2)
+	defer nameGeneration.Store(previous)
+	table, err := NewNameTable(16<<10, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := table.Resolve([]byte("old"), 0)
+	s := table.shard(0)
+	s.sweep(true)
+	token := table.Resolve([]byte("next"), 0)
+	if uint32(token) != 0 || table.Valid(old, 0) || table.Acquire(old, 0) {
+		t.Fatal("generation wrapped")
+	}
+	if table.Stats().GenerationExhaustions != 1 {
+		t.Fatal("epoch exhaustion not reported")
+	}
+	if _, err := NewNameTable(16<<10, false); err == nil {
+		t.Fatal("new table reused exhausted epoch")
+	}
+	if nameGeneration.Load() != nameGenerationLimit-1 {
+		t.Fatal("counter advanced beyond its bound")
 	}
 }
