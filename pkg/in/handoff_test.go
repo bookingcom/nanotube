@@ -469,6 +469,14 @@ func TestInputLargeHandoff(t *testing.T) {
 				if err = old.Send(ctx, a); err != nil {
 					t.Fatal(err)
 				}
+				select {
+				case <-transferred.done:
+				default:
+					t.Fatal("handoff returned before reader storage was released")
+				}
+				if transferred.releaseBytes == 0 || testutil.ToFloat64(oldMS.StreamInputDictionaryBytes) != 0 || testutil.ToFloat64(oldMS.StreamInputReservedBytes) != 0 {
+					t.Fatal("handoff retained predecessor dictionary storage or reservations")
+				}
 				if err = <-received; err != nil {
 					t.Fatal(err)
 				}

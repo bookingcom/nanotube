@@ -47,6 +47,7 @@ type inputConn struct {
 	sending, moved chan struct{}
 	moveErr        error
 	stateBytes     int64
+	releaseBytes   uint64 // Reader-owned storage, reclaimable only after done.
 }
 
 func (c *inputConn) moving() bool {
@@ -204,6 +205,8 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 		conns = append(conns, c)
 	}
 	h.mu.Unlock()
+	memory := newHandoffMemory()
+	defer memory.finish()
 	for _, c := range conns {
 		select {
 		case <-c.done:
@@ -245,6 +248,13 @@ func (h *TCPInput) Send(ctx context.Context, control *net.UnixConn) error {
 		if c.moveErr != nil {
 			return c.moveErr
 		}
+		// moved acknowledges replay; done also fences decoder/sink/buffer
+		// cleanup. Do not move another reader before that cleanup, or collect
+		// while this reader still pins its dictionary.
+		if err := waitHandoffRelease(ctx, c); err != nil {
+			return err
+		}
+		memory.release(c.releaseBytes)
 	}
 	_, err := control.Write([]byte{'E'})
 	return err

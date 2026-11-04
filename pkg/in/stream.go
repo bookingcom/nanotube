@@ -213,6 +213,7 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 
 	for {
 		if c.moving() {
+			c.releaseBytes = uint64(reservation)
 			detachStream(c, r, d, flags)
 			return
 		}
@@ -234,6 +235,7 @@ func readStream(r *bufio.Reader, term <-chan struct{}, limiters []*ratelimiter.S
 		}
 		if err != nil {
 			if c.moving() {
+				c.releaseBytes = uint64(reservation)
 				detachStream(c, r, d, flags)
 				return
 			}

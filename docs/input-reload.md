@@ -64,6 +64,35 @@ Temporary storage must have headroom for a long open zstd frame and input arrivi
 during replay. Disk failures use the same explicit connection-close fallback;
 no temporary files need to survive a process exit.
 
+## Retiring-process memory
+
+Before starting a replacement, the predecessor collects garbage and returns
+unused heap pages to the OS. This also reduces the short-lived RSS of the forked
+child before exec; those pages are initially shared and do not represent a second
+full cgroup charge. Preparation changes no input ownership, so a rejected startup
+still leaves the original serving normally.
+
+After readiness/capability agreement the predecessor collects again, then waits
+for each transferred reader to finish decoder, sink and buffer cleanup before
+moving the next reader. It reclaims released storage in batches. The batch is
+one eighth of the predecessor's allocated heap at handoff start, clamped to
+8–256 MiB, using reader reservation bytes as the release estimate. It also
+collects the final partial batch. Processes with less than 64 MiB of allocated
+heap skip explicit collection. These collections run only during replacement;
+GOGC and GOMEMLIMIT keep their configured values.
+
+This controls garbage/scavenger overlap, not total live memory. Old output
+dictionaries and queued records remain necessary until drain completes, shared
+input names remain pinned until their last old reader releases them, and the
+successor rebuilds output dictionaries as traffic arrives. No dictionary eviction,
+connection reset or queue discard is introduced. Memory headroom is still needed
+for live overlap, new traffic, compression and runtime overhead. Retain an
+RSS-based release guard; this is not a hard process or cgroup memory ceiling.
+
+The predecessor must contain this implementation to obtain its reclamation
+benefit. The first upgrade from a binary without it still uses that binary's
+memory policy, as does a rollback whose predecessor lacks it.
+
 ## Compatibility and failures
 
 | Predecessor | Successor | Behavior |
