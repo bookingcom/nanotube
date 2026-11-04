@@ -326,6 +326,7 @@ SendTimeoutSec = 30
         processes.append(relay)
         groups.append(relay.pid)
         print(f"LOCAL_PROCESS_GROUP {relay.pid}", flush=True)
+        # Metrics starts before the input listener; wait for actual TCP readiness.
         wait_port(prom)
         names_file = root/'producer-names.txt'
         names_file.write_text('\n'.join(names)+'\n')

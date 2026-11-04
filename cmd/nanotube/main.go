@@ -128,7 +128,7 @@ func main() {
 	defer signal.Stop(sgn)
 
 	n := gracenet.Net{}
-	queue, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms, func() in.StreamSink {
+	queue, budget, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms, func() in.StreamSink {
 		s := newStreamRouter(rules, rewrites, cfg.NormalizeRecords, lg, ms)
 		s.maxBytes = cfg.StreamInputRouteLimit()
 		return s
@@ -137,7 +137,7 @@ func main() {
 		log.Fatalf("error launching listener, %v", err)
 	}
 
-	procDone := processBuf(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms, newRouteCache(cfg.RouteCacheBytes, ms))
+	procDone := processBuf(queue, rules, rewrites, cfg.WorkerPoolSize, cfg.NormalizeRecords, cfg.LogSpecialRecords, lg, ms, newRouteCache(cfg.RouteCacheBytes, ms), budget)
 	done := clusters.Send(procDone)
 
 	// SIGTERM gracefully terminates with timeout

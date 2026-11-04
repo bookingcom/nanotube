@@ -12,6 +12,7 @@ import (
 // It also periodically flushes the buffer to prevent losing data when it's not enough to fill the buffer.
 type BatchChan struct {
 	q       chan<- [][]byte
+	budget  *BatchBudget
 	buf     [][]byte
 	bufSize int
 	ms      *metrics.Prom
@@ -23,7 +24,7 @@ type BatchChan struct {
 
 // NewBatchChan makes a new batched chan buffer.
 // It also starts a flushing goroutine in the background if periodSec > 0.
-func NewBatchChan(q chan<- [][]byte, bufSize int, periodSec int, ms *metrics.Prom) *BatchChan {
+func NewBatchChan(q chan<- [][]byte, bufSize int, periodSec int, ms *metrics.Prom, budgets ...*BatchBudget) *BatchChan {
 	qb := &BatchChan{
 		q:       q,
 		bufSize: bufSize,
@@ -31,6 +32,10 @@ func NewBatchChan(q chan<- [][]byte, bufSize int, periodSec int, ms *metrics.Pro
 		period:  time.Second * time.Duration(periodSec),
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
+	}
+
+	if len(budgets) > 0 {
+		qb.budget = budgets[0]
 	}
 
 	if periodSec > 0 {
@@ -81,7 +86,13 @@ func (qb *BatchChan) Flush() {
 	if len(qb.buf) == 0 {
 		return
 	}
-	qb.sendToMainQBuf()
+	if qb.budget != nil {
+		qb.budget.acquire(qb.buf)
+		qb.q <- qb.buf
+		qb.ms.InRecs.Add(float64(len(qb.buf)))
+	} else {
+		qb.sendToMainQBuf()
+	}
 
 	// The sent batch is owned by the receiver now; Push allocates a new one.
 	qb.buf = nil

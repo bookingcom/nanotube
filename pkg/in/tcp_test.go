@@ -61,7 +61,7 @@ func TestTCPShutdownDrainsOpenReaders(t *testing.T) {
 			}
 			var wg sync.WaitGroup
 			wg.Add(1)
-			go AcceptAndListenTCPBuf(listener, queue, stop, limits, cfg, &wg, ms, zap.NewNop())
+			go AcceptAndListenTCPBuf(listener, queue, stop, limits, cfg, &wg, ms, zap.NewNop(), nil)
 			done := make(chan struct{})
 			go func() { wg.Wait(); close(done) }()
 			data := []byte("first 1 100\nsecond 2 101\n")
@@ -132,7 +132,7 @@ func TestTCPCompressedPlaintextAutodetection(t *testing.T) {
 	wire := encoder.EncodeAll([]byte("example.one 1 2\nexample.two 3 4\n"), nil)
 	done := make(chan struct{})
 	go func() {
-		scanForRecordsTCPBuf(server, queue, make(chan struct{}), nil, &cfg, ms, zap.NewNop())
+		scanForRecordsTCPBuf(server, queue, make(chan struct{}), nil, &cfg, ms, zap.NewNop(), nil)
 		server.Close()
 		close(done)
 	}()
@@ -165,7 +165,7 @@ func TestTCPIdleTimeoutIsNotAnError(t *testing.T) {
 	defer client.Close()
 	done := make(chan struct{})
 	go func() {
-		scanForRecordsTCPBuf(server, queue, make(chan struct{}), nil, &cfg, ms, zap.NewNop())
+		scanForRecordsTCPBuf(server, queue, make(chan struct{}), nil, &cfg, ms, zap.NewNop(), nil)
 		server.Close()
 		close(done)
 	}()
@@ -183,5 +183,61 @@ func TestTCPIdleTimeoutIsNotAnError(t *testing.T) {
 	}
 	if len(queue) != 1 {
 		t.Fatalf("records before idle close: %d", len(queue))
+	}
+}
+
+// A reload closes the old input sockets while routing may still hold a budget
+// reservation. Parsed records, including the scanner's unread buffer, must
+// continue through admission instead of being dropped on the stop signal.
+func TestTCPBudgetShutdownDrainsBlockedReader(t *testing.T) {
+	listener := &pipeListener{connections: make(chan net.Conn, 1), closed: make(chan struct{})}
+	server, client := net.Pipe()
+	defer client.Close()
+	defer listener.Close()
+	listener.connections <- server
+	queue := make(chan [][]byte, 1)
+	stop := make(chan struct{})
+	cfg := &conf.Main{MainQueueBatchSize: 0, BatchFlushPerdiodSec: 3600, IncomingConnIdleTimeoutSec: 3600}
+	budget := NewBatchBudget(1)
+	ms := metrics.New()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go AcceptAndListenTCPBuf(listener, queue, stop, nil, cfg, &wg, ms, zap.NewNop(), budget)
+	data := []byte("first 1 100\nsecond 2 101\nthird 3 102\n")
+	if err := client.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	// The entire source write is now in the reader; with one isolated batch
+	// admitted, its remaining records must wait for processing to release it.
+	close(stop)
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(queue); close(done) }()
+	var got []byte
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case batch, ok := <-queue:
+			if !ok {
+				if !bytes.Equal(got, data) {
+					t.Fatalf("shutdown changed points: got %q, want %q", got, data)
+				}
+				if budget.Bytes() != 0 {
+					t.Fatal("shutdown leaked batch reservations")
+				}
+				<-done
+				return
+			}
+			for _, record := range batch {
+				got = append(got, record...)
+				got = append(got, '\n')
+			}
+			budget.Release(batch)
+		case <-timer.C:
+			t.Fatal("shutdown deadlocked with a blocked reader")
+		}
 	}
 }

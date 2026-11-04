@@ -126,7 +126,7 @@ func (c *Cont) StartForwarding() {
 		}
 	}
 
-	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, c.RateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg)
+	go in.AcceptAndListenTCPBuf(listener, c.Q, c.OwnStop, c.RateLimiters, c.Cfg, c.Wg, c.Ms, c.Lg, nil)
 }
 
 // StopForwarding stops the forwarding.

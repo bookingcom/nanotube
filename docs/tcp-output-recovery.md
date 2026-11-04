@@ -97,3 +97,49 @@ Continue using ordinary service restarts until both the new binary and the
 explicit unit mode are installed. An unmarked unit uses the non-systemd reload
 path; it does not acquire ownership notification merely by inheriting
 `INVOCATION_ID` or `NOTIFY_SOCKET` from another service.
+
+
+## Memory during reload
+
+A replacement process starts with empty stream dictionaries and a fresh shared
+name table. The old process retains its own dictionaries and queues until it has
+drained. Size memory for both processes. Dictionaries are only part of the
+budget: raw input waiting for routing can be much larger.
+
+`MainQueueSize` counts **batches**, not records. With `MainQueueBatchSize = 1000`,
+50,000 queue slots can retain about 50 million input records. A temporary routing
+slowdown or catch-up burst can therefore retain gigabytes before a record reaches
+any host queue. Stream definitions and shared-name resolution add work while the
+new process warms. `StreamDictionaryBytes` does not bound that input backlog.
+
+`TCPMainQueueBytes` now defaults to 268435456 (256 MiB). A nonzero value reserves
+memory for each plaintext TCP input batch until routing finishes it. When the
+budget or batch channel is full, the reader waits and TCP backpressure reaches
+the producer. Parsed records are not dropped for lack of input queue capacity.
+Zero explicitly restores the previous nonblocking input policy. UDP, gRPC,
+container inputs and output host queue overflow retain their existing policies.
+The budget is independent of the selected output protocol.
+
+The conservative charge is twice the raw payload, 32 bytes per allocated batch
+slice slot, two 64 KiB input arenas and 128 bytes of reservation overhead. This
+covers arena tails, slice storage and admission bookkeeping. One batch larger
+than the allowance runs in isolation to guarantee progress; the reservation
+bound is therefore `max(TCPMainQueueBytes, largest batch charge)`. Each blocked
+reader can additionally retain one local batch, its scanner and its current
+arena. This bounds queued TCP input, not process RSS, parsed output records,
+compression buffers or memory retained by other input transports.
+
+Keep batches reasonably small (for example, 1000 records). Larger budgets absorb
+more short bursts; they do not improve sustained routing capacity. Monitor
+`nanotube_main_queue_batches`, `nanotube_tcp_main_queue_bytes`, output pending
+records, input throttles and host drops. Frequent backpressure calls for more
+routing capacity or lower offered load. A Go `GOMEMLIMIT` can provide additional
+GC headroom control, but is a soft limit and cannot bound a live backlog.
+
+Reload still closes old accepted input connections, and TCP provides no
+application acknowledgement. Producers need their existing reconnect/retry
+policy; bytes still unread in sockets and errored output writes retain the
+existing uncertainty. Admission waits are deliberately not cancelled by a stop
+signal: records already parsed into batches continue to drain under the normal
+shutdown deadline. This does not add exactly-once guarantees for arbitrary
+concurrent disconnects or crashes.
