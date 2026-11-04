@@ -30,6 +30,9 @@ func assertEmptyStreamNames(t testing.TB, s *streamRouter) {
 	if n := testutil.ToFloat64(s.ms.StreamInputDictionaryBytes); n != float64(s.names.fixed) {
 		t.Fatalf("dictionary gauge leaked: %v", n)
 	}
+	if n := testutil.ToFloat64(s.ms.StreamInputReservedBytes); n != float64(s.names.fixed) {
+		t.Fatalf("admission leaked: %v != %v", n, s.names.fixed)
+	}
 	for i := range s.names.shards {
 		shard := &s.names.shards[i]
 		shard.mu.Lock()
@@ -41,6 +44,60 @@ func assertEmptyStreamNames(t testing.TB, s *streamRouter) {
 		if !empty {
 			t.Fatal("released entries remain reachable from the shared index")
 		}
+	}
+}
+
+func TestStreamInputGlobalGrowthSharesPhysicalStorage(t *testing.T) {
+	rs, rw, ms, _ := differentialPipeline(t)
+	s := newStreamRouter(rs, rw, true, zap.NewNop(), ms, 64<<10)
+	name := []byte("example.good")
+	ref := s.BindName(name)
+	if err, rejected := ref.(error); rejected {
+		t.Fatal(err)
+	}
+	used := testutil.ToFloat64(ms.StreamInputReservedBytes)
+	var refs []any
+	for range 500 {
+		other := s.NewSink()
+		ref := other.BindName(name)
+		if err, rejected := ref.(error); rejected {
+			t.Fatal(err)
+		}
+		refs = append(refs, ref)
+	}
+	if testutil.ToFloat64(ms.StreamInputReservedBytes) != used {
+		t.Fatal("shared physical storage charged per connection")
+	}
+	// Another connection may release a shared ref: the global owner is the
+	// table, so accounting must not depend on who first interned the name.
+	for _, ref := range refs {
+		s.names.release(ref.(*streamName), true, &s.changes)
+	}
+	s.ReleaseName(ref)
+	assertEmptyStreamNames(t, s)
+}
+
+func TestStreamInputGlobalGrowthFailureReleasesAliasesAndIndex(t *testing.T) {
+	for _, allowance := range []int{1, 100, 200, 400, 800, 1600, 3200, 6400} {
+		rs, rw, ms, _ := differentialPipeline(t)
+		s := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
+		s.names.limit = s.names.fixed + int64(allowance)
+		var refs []any
+		for i := range 1000 {
+			ref := s.BindName(fmt.Appendf(nil, ".example..name.%d.", i))
+			if _, rejected := ref.(error); rejected {
+				break
+			}
+			refs = append(refs, ref)
+		}
+		if testutil.ToFloat64(ms.StreamInputReservedBytes) > float64(s.names.limit) {
+			t.Fatal("global growth exceeded total")
+		}
+		for _, ref := range refs {
+			s.ReleaseName(ref)
+		}
+		s.Close()
+		assertEmptyStreamNames(t, s)
 	}
 }
 

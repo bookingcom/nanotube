@@ -6,6 +6,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
 	"github.com/bookingcom/nanotube/pkg/rewrites"
@@ -73,14 +74,20 @@ type streamNames struct {
 	normalize bool
 	ms        *metrics.Prom
 	fixed     int64
+	limit     int64
+	admitted  bool
 }
 
 // Physical deltas are connection-local and published at frame boundaries.
 // Cold names and releases do not each contend on three Prometheus gauges.
 type streamNameChanges struct{ dictionary, routes, names int }
 
-func newStreamNames(rs rules.Rules, rw rewrites.Rewrites, normalize bool, ms *metrics.Prom) *streamNames {
-	t := &streamNames{seed: maphash.MakeSeed(), rules: rs, rewrites: rw, normalize: normalize, ms: ms}
+func newStreamNames(rs rules.Rules, rw rewrites.Rewrites, normalize bool, ms *metrics.Prom, totalLimit ...int) *streamNames {
+	limit := conf.Main{}.StreamInputTotalLimit()
+	if len(totalLimit) > 0 {
+		limit = totalLimit[0]
+	}
+	t := &streamNames{seed: maphash.MakeSeed(), rules: rs, rewrites: rw, normalize: normalize, ms: ms, limit: int64(limit)}
 	t.fixed = int64(allocationCharge(uint64(unsafe.Sizeof(*t))))
 	for i := range t.shards {
 		t.shards[i].index = make([]*streamName, 16)
@@ -88,6 +95,7 @@ func newStreamNames(rs rules.Rules, rw rewrites.Rewrites, normalize bool, ms *me
 	}
 	ms.StreamInputDictionaryBytes.Add(float64(t.fixed))
 	ms.StreamInputSharedBytes.Add(float64(t.fixed))
+	t.admitted = ms.ReserveStreamInput(t.fixed, t.limit)
 	return t
 }
 
@@ -107,7 +115,11 @@ func (*streamNames) positionHash(s *streamNameShard, name []byte, hash uint64) i
 	return i
 }
 
-func (t *streamNames) resize(s *streamNameShard, n int, changes *streamNameChanges) {
+func (t *streamNames) resize(s *streamNameShard, n int, changes *streamNameChanges) bool {
+	delta := int(streamInputCharge(uint64(n*8))) - int(streamInputCharge(uint64(len(s.index)*8)))
+	if delta > 0 && !t.ms.ReserveStreamInput(int64(delta), t.limit) {
+		return false
+	}
 	old := s.index
 	s.index = make([]*streamName, n)
 	for _, e := range old {
@@ -115,8 +127,11 @@ func (t *streamNames) resize(s *streamNameShard, n int, changes *streamNameChang
 			s.index[t.position(s, e.StreamName())] = e
 		}
 	}
-	delta := int(streamInputCharge(uint64(n*8))) - int(streamInputCharge(uint64(len(old)*8)))
+	if delta < 0 {
+		t.ms.ReleaseStreamInput(int64(-delta))
+	}
 	changes.dictionary += delta
+	return true
 }
 
 // get acquires only the immutable raw name. The caller already holds its shard.
@@ -129,14 +144,20 @@ func (t *streamNames) get(s *streamNameShard, name []byte, hash uint64, changes 
 		e.refs++
 		return e
 	}
+	cost := int(streamInputCharge(uint64(unsafe.Sizeof(streamName{})))) + int(streamInputCharge(uint64(len(name))))
+	if !t.ms.ReserveStreamInput(int64(cost), t.limit) {
+		return nil
+	}
 	if (s.count+1)*4 > len(s.index)*3 {
-		t.resize(s, len(s.index)*2, changes)
+		if !t.resize(s, len(s.index)*2, changes) {
+			t.ms.ReleaseStreamInput(int64(cost))
+			return nil
+		}
 		i = t.positionHash(s, name, hash)
 	}
 	e := &streamName{name: string(name), refs: 1, nameClass: uint16(streamInputCharge(uint64(len(name))) / 8)}
 	s.index[i] = e
 	s.count++
-	cost := nameStorage(e)
 	changes.dictionary += cost
 	changes.names++
 	return e
@@ -175,7 +196,7 @@ func (e *streamName) allowance() (int, int) {
 // acquire runs only on dictionary definitions. Plans are built under their
 // canonical name's shard lock; DATA rows never touch a table or a lock.
 func (t *streamNames) acquire(name []byte, routeLimit, dictLimit int, changes *streamNameChanges) (*streamName, bool, int, int, error) {
-	if nameSizeAllowance(len(name)) > dictLimit {
+	if !t.admitted || nameSizeAllowance(len(name)) > dictLimit {
 		return nil, false, 0, 0, codec.ErrLimit
 	}
 	hash := maphash.Bytes(t.seed, name)
@@ -208,6 +229,12 @@ func (t *streamNames) acquire(name []byte, routeLimit, dictLimit int, changes *s
 		cost := e.routeStorage()
 		cached := cost <= routeLimit
 		if cached {
+			if !t.ms.ReserveStreamInput(int64(cost), t.limit) {
+				e.plans = nil
+				s.mu.Unlock()
+				t.release(e, false, changes)
+				return nil, false, 0, 0, codec.ErrLimit
+			}
 			e.routeRefs = 1
 			changes.routes += cost
 		} else {
@@ -262,6 +289,7 @@ func (t *streamNames) release(e *streamName, cached bool, changes *streamNameCha
 			canonical = e.canonical
 			if canonical == nil {
 				changes.routes -= route
+				t.ms.ReleaseStreamInput(int64(route))
 			}
 			e.canonical, e.plans = nil, nil
 		}
@@ -270,6 +298,7 @@ func (t *streamNames) release(e *streamName, cached bool, changes *streamNameCha
 	if e.refs == 0 {
 		t.remove(s, e, hash, changes)
 		changes.dictionary -= nameStorage(e)
+		t.ms.ReleaseStreamInput(int64(nameStorage(e)))
 		changes.names--
 	}
 	s.mu.Unlock()
@@ -292,7 +321,7 @@ func (t *streamNames) remove(s *streamNameShard, e *streamName, hash uint64, cha
 	s.index[hole] = nil
 	s.count--
 	if len(s.index) > 16 && s.count*4 <= len(s.index) {
-		t.resize(s, len(s.index)/2, changes)
+		_ = t.resize(s, len(s.index)/2, changes)
 	}
 }
 

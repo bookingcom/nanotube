@@ -128,9 +128,9 @@ func main() {
 	defer signal.Stop(sgn)
 
 	n := gracenet.Net{}
-	stream := newStreamRouter(rules, rewrites, cfg.NormalizeRecords, lg, ms)
+	stream := newStreamRouter(rules, rewrites, cfg.NormalizeRecords, lg, ms, cfg.StreamInputTotalLimit())
 	stream.maxBytes = cfg.StreamInputRouteLimit()
-	if !ms.ReserveStreamInput(stream.names.fixed, int64(cfg.StreamInputTotalLimit())) {
+	if !stream.names.admitted {
 		log.Fatal("stream input total allowance cannot hold the shared name index")
 	}
 	queue, budget, input, err := Listen(&n, rateLimiters, &cfg, stop, lg, ms, func() in.StreamSink {

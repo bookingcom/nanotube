@@ -33,8 +33,8 @@ type streamRouter struct {
 	changes   streamNameChanges
 }
 
-func newStreamRouter(rs rules.Rules, rw rewrites.Rewrites, normalize bool, lg *zap.Logger, ms *metrics.Prom) *streamRouter {
-	return &streamRouter{names: newStreamNames(rs, rw, normalize, ms), lg: lg, ms: ms, batch: target.NewBatch(), nameLimit: int(^uint(0) >> 1)}
+func newStreamRouter(rs rules.Rules, rw rewrites.Rewrites, normalize bool, lg *zap.Logger, ms *metrics.Prom, totalLimit ...int) *streamRouter {
+	return &streamRouter{names: newStreamNames(rs, rw, normalize, ms, totalLimit...), lg: lg, ms: ms, batch: target.NewBatch(), nameLimit: int(^uint(0) >> 1)}
 }
 
 func (s *streamRouter) NewSink() *streamRouter {

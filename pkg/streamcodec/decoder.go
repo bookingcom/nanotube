@@ -30,10 +30,13 @@ type Decoder struct {
 	definitions [][]byte
 	resolve     func([]byte) any
 	release     func(any)
+	budget      func(int) bool
+	buffers     func(int, int) bool
 	nameBytes   int
 	arena       nameArena
 	rows        []row
 	z           *zstd.Decoder
+	pool        *DecoderPool
 	raw, wire   []byte
 	readN       int
 	broken      bool
@@ -44,11 +47,7 @@ func NewDecoder(o Options) (*Decoder, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Decoder{opts: o, arena: nameArena{quantum: min(64<<10, o.DictionaryBytes/8)}}
-	if o.Flags&FlagZstd != 0 {
-		d.z, err = zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(uint64(o.MaxFrameSize)), zstd.WithDecoderMaxWindow(uint64(max(1<<10, o.MaxFrameSize))), zstd.WithDecodeAllCapLimit(true))
-	}
-	return d, err
+	return &Decoder{opts: o, arena: nameArena{quantum: min(64<<10, o.DictionaryBytes/8)}}, nil
 }
 
 func (d *Decoder) Close() {
@@ -70,7 +69,11 @@ func (d *Decoder) ReadFrame(r io.Reader, visit Visit) (FrameInfo, error) {
 		return FrameInfo{}, ErrBroken
 	}
 	if len(d.wire) < HeaderSize {
-		d.wire = append(d.wire[:0], make([]byte, HeaderSize)...)
+		if !d.admitBuffers(HeaderSize, cap(d.raw), cap(d.rows), cap(d.definitions), 0) {
+			d.broken = true
+			return FrameInfo{}, ErrLimit
+		}
+		d.wire = make([]byte, HeaderSize)
 	}
 	if d.readN < HeaderSize {
 		if err := readMore(r, d.wire[:HeaderSize], &d.readN); err != nil {
@@ -84,6 +87,10 @@ func (d *Decoder) ReadFrame(r io.Reader, visit Visit) (FrameInfo, error) {
 	}
 	size := HeaderSize + int(info.PayloadBytes)
 	if cap(d.wire) < size {
+		if !d.admitBuffers(size, cap(d.raw), cap(d.rows), cap(d.definitions), 0) {
+			d.broken = true
+			return info, ErrLimit
+		}
 		b := make([]byte, size)
 		copy(b, d.wire[:d.readN])
 		d.wire = b
@@ -124,7 +131,7 @@ func (d *Decoder) header(h []byte) (FrameInfo, error) {
 	} else if info.PayloadBytes == 0 || info.RawBytes == 0 || (info.Kind == StateFrame && info.Rows != 0) || (info.Kind == DataFrame && info.Rows == 0) {
 		return info, ErrFrame
 	}
-	if d.z == nil && info.PayloadBytes != info.RawBytes {
+	if d.opts.Flags&FlagZstd == 0 && info.PayloadBytes != info.RawBytes {
 		return info, ErrFrame
 	}
 	return info, nil
@@ -158,17 +165,45 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 		d.arena.reset()
 		d.names = d.names[:0]
 		d.nameBytes = 0
+		if d.budget != nil {
+			// Admission must follow retained capacity, including after RESET.
+			d.entries, d.names = nil, nil
+			d.arena = nameArena{quantum: d.arena.quantum}
+			_ = d.budget(0)
+		}
+		if d.buffers != nil {
+			d.raw, d.rows, d.definitions = nil, nil, nil
+			d.wire = make([]byte, HeaderSize)
+			_ = d.admitBuffers(HeaderSize, 0, 0, 0, 0)
+		}
 		return info, nil
 	}
-	if d.z != nil {
+	if d.buffers != nil {
+		rawSize := cap(d.raw)
+		if d.opts.Flags&FlagZstd != 0 {
+			rawSize = max(rawSize, int(info.RawBytes))
+		}
+		rows := max(cap(d.rows), int(info.Rows))
+		if rawSize > cap(d.raw) || rows > cap(d.rows) {
+			if !d.admitBuffers(cap(d.wire), rawSize, rows, cap(d.definitions), int(info.Rows)) {
+				return info, ErrLimit
+			}
+			if rows > cap(d.rows) {
+				d.rows = make([]row, 0, rows)
+			}
+		}
+	}
+	if d.opts.Flags&FlagZstd != 0 {
 		if cap(d.raw) < int(info.RawBytes) {
 			d.raw = make([]byte, 0, int(info.RawBytes))
 		}
-		raw, err = d.z.DecodeAll(raw, d.raw[:0:int(info.RawBytes)])
+		raw, err = d.decompress(raw, d.raw[:0:int(info.RawBytes)])
 		if err != nil {
 			return info, ErrFrame
 		}
-		d.raw = raw
+		// DecodeAll's cap-limited view must not hide a larger owned allocation
+		// after a small frame; admission continues charging the full capacity.
+		d.raw = d.raw[:len(raw)]
 	}
 	if len(raw) != int(info.RawBytes) {
 		return info, ErrFrame
@@ -182,6 +217,12 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 		return info, ErrLimit
 	}
 	info.Names = uint32(count)
+	if d.buffers != nil && int(count) > cap(d.definitions) {
+		if !d.admitBuffers(cap(d.wire), cap(d.raw), cap(d.rows), int(count), int(info.Rows)) {
+			return info, ErrLimit
+		}
+		d.definitions = make([][]byte, 0, int(count))
+	}
 	d.definitions = d.definitions[:0]
 	for range int(count) {
 		n := r.uint()
@@ -201,6 +242,9 @@ func (d *Decoder) Decode(frame []byte, visit Visit) (info FrameInfo, err error) 
 			return info, ErrLimit
 		}
 		if size > cap(d.entries) {
+			if d.budget != nil && !d.budget(size*40) {
+				return info, ErrLimit
+			}
 			entries := make([]entry, len(d.entries), size)
 			copy(entries, d.entries)
 			d.entries = entries
@@ -395,6 +439,22 @@ func (d *Decoder) SetNameResolver(resolve func([]byte) any) {
 // slots bound by STATE replay. Call before decoding; each non-nil slot is released
 // exactly once. Malformed frames never bind their definitions.
 func (d *Decoder) SetNameReleaser(release func(any)) { d.release = release }
+
+// SetDictionaryBudget admits external-name decoder slot capacity before growth.
+// Install before decoding, after SetNameResolver. RESET drops capacity and calls
+// budget(0); Close leaves final accounting to the owner. The peer's logical
+// DictionaryBytes estimate is unchanged. A failed admission rejects the frame.
+func (d *Decoder) SetDictionaryBudget(budget func(int) bool) { d.budget = budget }
+
+// SetBufferBudget admits retained wire/raw/row/definition buffer capacities
+// before growth. The second argument is the validated header's row count, so
+// callers can admit their own staging buffer before Visit runs. Install before
+// decoding. RESET drops these capacities; Close accounting belongs to the owner.
+func (d *Decoder) SetBufferBudget(budget func(bytes, rows int) bool) { d.buffers = budget }
+
+func (d *Decoder) admitBuffers(wire, raw, rows, definitions, points int) bool {
+	return d.buffers == nil || d.buffers(wire+raw+rows*24+definitions*24, points)
+}
 
 func (d *Decoder) releaseNames() {
 	if d.release != nil {

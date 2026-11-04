@@ -17,9 +17,9 @@ func (c Main) StreamInputRouteLimit() int {
 	return c.StreamInputMaxRouteBytes
 }
 
-// StreamInputTotalLimit bounds the fixed shared index and aggregate connection
-// dictionary/route reservations. It does
-// not allocate eagerly or include queues, frame buffers and compression contexts.
+// StreamInputTotalLimit bounds fixed connection allowances, decoder slots and
+// shared name/index/route storage and frame buffers as they grow. It does not
+// allocate eagerly or include queues, goroutine stacks and pooled zstd contexts.
 func (c Main) StreamInputTotalLimit() int {
 	if c.StreamInputTotalBytes == 0 {
 		return 3 << 30

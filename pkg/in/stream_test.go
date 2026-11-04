@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"net"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
@@ -93,7 +96,7 @@ func TestStreamInputResetAndReservationRelease(t *testing.T) {
 	if testutil.ToFloat64(ms.StreamInputDictionaryBytes) != 0 || testutil.ToFloat64(ms.StreamInputReservedBytes) != 0 || testutil.ToFloat64(ms.StreamInputActive) != 0 {
 		t.Fatal("closed input retained a reservation or dictionary gauge")
 	}
-	cfg.StreamInputTotalBytes = 4096
+	cfg.StreamInputTotalBytes = 4095
 	readStream(bufio.NewReader(bytes.NewReader(wire)), make(chan struct{}), nil, &cfg, ms, zap.NewNop(), sink)
 	if testutil.ToFloat64(ms.StreamInputErrors) != 1 || sink.rows != 3 {
 		t.Fatal("over-budget input was admitted")
@@ -158,5 +161,91 @@ func TestStreamInputIdleTimeoutIsNotAnError(t *testing.T) {
 	}
 	if n := testutil.ToFloat64(ms.StreamInputErrors) + testutil.ToFloat64(ms.ErrorRecs); n != 0 {
 		t.Fatalf("idle close counted as %v errors", n)
+	}
+}
+
+func TestStreamInputGrowthRejectsWholeFrame(t *testing.T) {
+	e, _ := codec.NewEncoder(codec.Options{})
+	wire, _ := codec.AppendPreamble(nil, 0)
+	_ = e.Add([]byte("example.one"), 1, 2)
+	wire, _ = e.Flush(wire)
+	// The first frame fits. The second needs another decoder capacity step.
+	for i := range 20 {
+		_ = e.Add(fmt.Appendf(nil, "example.%d", i), 1, 2)
+	}
+	wire, _ = e.Flush(wire)
+	e.Close()
+	cfg := conf.MakeDefault()
+	cfg.StreamInputTotalBytes = 6000
+	ms := metrics.New()
+	sink := &testStreamSink{}
+	readStream(bufio.NewReader(bytes.NewReader(wire)), make(chan struct{}), nil, &cfg, ms, zap.NewNop(), sink)
+	if sink.rows != 1 || testutil.ToFloat64(ms.StreamInputErrors) != 1 {
+		t.Fatalf("growth failure emitted part of a frame: rows=%d", sink.rows)
+	}
+	if testutil.ToFloat64(ms.StreamInputReservedBytes) != 0 || testutil.ToFloat64(ms.StreamInputDictionaryBytes) != 0 {
+		t.Fatal("failed growth leaked capacity")
+	}
+}
+
+type churnStreamSink struct{ rows, resets *atomic.Int64 }
+
+func (s *churnStreamSink) Point(uint32, []byte, float64, int64, *any) { s.rows.Add(1) }
+func (s *churnStreamSink) Reset()                                     { s.resets.Add(1) }
+func (*churnStreamSink) Flush()                                       {}
+
+func TestStreamInputConnectResetCloseChurn(t *testing.T) {
+	cfg := conf.MakeDefault()
+	cfg.StreamInputTotalBytes = 64 << 10
+	ms := metrics.New()
+	var rows, resets atomic.Int64
+	stop, done := make(chan struct{}), make(chan struct{})
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := NewTCPInput(nil, stop, nil, &cfg, ms, zap.NewNop(), nil, func() StreamSink {
+		return &churnStreamSink{rows: &rows, resets: &resets}
+	})
+	go func() { input.Serve(l, stop); close(done) }()
+	defer func() { close(stop); <-done }()
+	wires := make([][]byte, 2)
+	for flags := range 2 {
+		e, err := codec.NewEncoder(codec.Options{Flags: byte(flags), MaxNames: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wire, _ := codec.AppendPreamble(nil, byte(flags))
+		for _, name := range []string{"example.one", "example.two", "example.three"} {
+			if err := e.Add([]byte(name), 1, 2); err != nil {
+				t.Fatal(err)
+			}
+		}
+		wires[flags], err = e.Flush(wire)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Close()
+	}
+	for i := range 100 {
+		conn, err := net.Dial("tcp", l.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = conn.Write(wires[i%2])
+		_ = conn.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(time.Second)
+		for rows.Load() != int64((i+1)*3) || testutil.ToFloat64(ms.StreamInputReservedBytes) != 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("connection failed to drain or release admission")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if resets.Load() != 200 || testutil.ToFloat64(ms.StreamInputDictionaryBytes) != 0 || testutil.ToFloat64(ms.StreamInputErrors) != 0 {
+		t.Fatal("connect/reset/close churn leaked state or rejected valid frames")
 	}
 }

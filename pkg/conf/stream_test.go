@@ -74,3 +74,12 @@ func TestClusterStreamInheritance(t *testing.T) {
 		t.Fatal("inherited stream must reject grpc")
 	}
 }
+
+func TestStreamInputTotalAllowsPartialDictionaries(t *testing.T) {
+	for _, total := range []int{0, 4095, 65536, 16 << 30} {
+		_, err := ReadMain(strings.NewReader(fmt.Sprintf("ClustersConfig='clusters.toml'\nRulesConfig='rules.toml'\nStreamInputTotalBytes=%d\n", total)))
+		if (err == nil) != (total != 4095) {
+			t.Fatalf("total %d: %v", total, err)
+		}
+	}
+}

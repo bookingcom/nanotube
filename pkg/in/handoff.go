@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/ratelimiter"
+	codec "github.com/bookingcom/nanotube/pkg/streamcodec"
 	"go.uber.org/zap"
 )
 
@@ -31,6 +33,7 @@ type TCPInput struct {
 	cfg         *conf.Main
 	ms          *metrics.Prom
 	lg          *zap.Logger
+	decoders    *codec.DecoderPool
 }
 
 type inputConn struct {
@@ -69,6 +72,7 @@ func (c *inputConn) Read(p []byte) (int, error) {
 
 func NewTCPInput(queue chan<- [][]byte, term <-chan struct{}, limiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) *TCPInput {
 	h := &TCPInput{conns: make(map[*inputConn]struct{}), acceptDone: make(chan struct{}), acceptReady: make(chan struct{}), cfg: cfg, ms: ms, lg: lg}
+	h.decoders = codec.NewDecoderPool(cfg.StreamInputMaxFrameBytes, runtime.GOMAXPROCS(0))
 	h.run = func(c *inputConn) {
 		defer h.wg.Done()
 		defer close(c.done)
@@ -269,10 +273,10 @@ func (c *inputConn) detach(write func(io.Writer) error, workBytes ...uint64) {
 
 // reader places inherited wire before new socket reads. The pipe is drained
 // continuously by parsing; read-ahead bounds memory and spills excess to disk.
-func (c *inputConn) reader() *bufio.Reader {
+func (c *inputConn) reader() (*bufio.Reader, io.Reader) {
 	var r io.Reader = c
 	if c.prefix != nil {
 		r = io.MultiReader(c.prefix, c)
 	}
-	return bufio.NewReaderSize(r, bufio.MaxScanTokenSize)
+	return bufio.NewReaderSize(r, 4096), r
 }

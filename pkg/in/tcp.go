@@ -44,7 +44,7 @@ func (a *recArena) copy(b []byte) []byte {
 }
 
 func scanInput(c *inputConn, queue chan<- [][]byte, term <-chan struct{}, rateLimiters []*ratelimiter.SlidingWindow, cfg *conf.Main, ms *metrics.Prom, lg *zap.Logger, budget *BatchBudget, stream ...StreamFactory) {
-	reader := c.reader()
+	reader, source := c.reader()
 
 	wire := reader
 	var compressed *zstdInput
@@ -79,6 +79,10 @@ func scanInput(c *inputConn, queue chan<- [][]byte, term <-chan struct{}, rateLi
 			return
 		}
 
+		// Stream framing reads exact lengths and needs only a small read buffer.
+		// Plaintext retains its established 64 KiB line ceiling.
+		reader = plaintextReader(reader, source)
+		wire = reader
 		marker, _ := reader.Peek(4)
 		if bytes.Equal(marker, []byte{0x28, 0xb5, 0x2f, 0xfd}) {
 			var err error
@@ -174,6 +178,13 @@ func scanInput(c *inputConn, queue chan<- [][]byte, term <-chan struct{}, rateLi
 		lg.Error("TCP input scan failed", zap.Error(err))
 	}
 
+}
+
+// Upgrade protocol detection without nesting buffered readers: otherwise a
+// near-64KiB line can leave bytes hidden in the inner buffer during handoff.
+func plaintextReader(r *bufio.Reader, source io.Reader) *bufio.Reader {
+	buffered, _ := r.Peek(r.Buffered())
+	return bufio.NewReaderSize(io.MultiReader(bytes.NewReader(bytes.Clone(buffered)), source), bufio.MaxScanTokenSize)
 }
 
 func sendToMainQ(rec []byte, q chan<- []byte, ms *metrics.Prom) {
