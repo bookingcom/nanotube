@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"time"
 	"unsafe"
 
@@ -14,117 +13,120 @@ import (
 )
 
 type streamPlan struct {
-	path  []byte
+	path  string
 	hash  uint64
 	route rules.Route
 }
-type streamRoute struct {
-	plans     []streamPlan
-	rewritten bool
-	invalid   bool
-}
+
+// Only the batch, clock and logical allowances belong to a connection. Names,
+// normalization and immutable plans belong to the relay's configuration.
 type streamRouter struct {
-	rules     rules.Rules
-	rewrites  rewrites.Rewrites
-	normalize bool
+	names     *streamNames
 	lg        *zap.Logger
 	ms        *metrics.Prom
 	batch     *target.Batch
 	now       time.Time
 	bytes     int
+	nameBytes int
 	maxBytes  int
+	nameLimit int
+	changes   streamNameChanges
 }
 
 func newStreamRouter(rs rules.Rules, rw rewrites.Rewrites, normalize bool, lg *zap.Logger, ms *metrics.Prom) *streamRouter {
-	return &streamRouter{rules: rs, rewrites: rw, normalize: normalize, lg: lg, ms: ms, batch: target.NewBatch()}
+	return &streamRouter{names: newStreamNames(rs, rw, normalize, ms), lg: lg, ms: ms, batch: target.NewBatch(), nameLimit: int(^uint(0) >> 1)}
 }
-func (s *streamRouter) Reset() {
-	s.ms.StreamInputRouteBytes.Sub(float64(s.retainedBytes()))
-	s.bytes = 0
+
+func (s *streamRouter) NewSink() *streamRouter {
+	return &streamRouter{names: s.names, lg: s.lg, ms: s.ms, batch: target.NewBatch(), maxBytes: s.maxBytes, nameLimit: int(^uint(0) >> 1)}
 }
-func (s *streamRouter) Close() { s.Reset() }
-func (s *streamRouter) retainedBytes() int {
-	return s.bytes
-}
-func (s *streamRouter) Flush() { s.batch.Flush(); s.now = time.Time{} }
-func (s *streamRouter) Point(_ uint32, name []byte, value float64, ts int64, slot *any) {
-	var cached *streamRoute
-	if slot != nil {
-		cached, _ = (*slot).(*streamRoute)
+
+func (s *streamRouter) Reset()             { s.publishNames() } // Decoder slots have been released.
+func (s *streamRouter) Close()             { s.publishNames() } // Includes STATE-only definitions.
+func (s *streamRouter) NameBytes() int     { return s.nameBytes }
+func (s *streamRouter) SetNameLimit(n int) { s.nameLimit = n }
+func (s *streamRouter) Flush()             { s.publishNames(); s.batch.Flush(); s.now = time.Time{} }
+
+func (s *streamRouter) publishNames() {
+	c := s.changes
+	if c.dictionary != 0 {
+		s.ms.StreamInputDictionaryBytes.Add(float64(c.dictionary))
+		s.ms.StreamInputSharedBytes.Add(float64(c.dictionary))
 	}
-	if cached == nil {
-		cached = &streamRoute{}
-		s.ms.StreamInputRouteMisses.Inc()
-		path, err := rec.NormalizedPath(name, s.normalize)
-		if err != nil {
-			cached.invalid = true
-			s.retain(slot, cached, int(allocationCharge(uint64(unsafe.Sizeof(streamRoute{})))))
-			s.ms.ErrorRecs.Inc()
-			return
-		}
-		// Decoder names are immutable allocations; unchanged normalized paths
-		// can share them safely, including after reset while output is queued.
-		shared := false
-		if bytes.Equal(path, name) {
-			path = name
-			shared = true
-		} else if trimmed := bytes.Trim(name, "."); bytes.Equal(path, trimmed) {
-			path = trimmed
-			shared = true
-		}
-		r := rec.NewTyped(path, value, ts)
-		// Build immutable rewrite and routing plans once per dictionary ID.
-		// The regular rewrite matcher may produce multiple copies or blackholes.
-		recs, matched, err := s.rewrites.PlanMetricBytes(nil, r)
-		cached.rewritten = matched
-		if err != nil {
-			cached.invalid = true
-			s.retain(slot, cached, int(allocationCharge(uint64(unsafe.Sizeof(streamRoute{})))))
-			s.ms.ErrorRecs.Inc()
-			return
-		}
-		cost := int(allocationCharge(uint64(unsafe.Sizeof(streamRoute{}))))
-		for _, r := range recs {
-			cached.plans = append(cached.plans, streamPlan{r.Path, r.PathHash(), s.rules.Resolve(r)})
-			cost += int(allocationCharge(uint64(cap(cached.plans[len(cached.plans)-1].route)) * uint64(unsafe.Sizeof(cached.plans[len(cached.plans)-1].route[0]))))
-			if len(r.Path) > 0 && (!shared || &r.Path[0] != &path[0]) {
-				cost += int(allocationCharge(uint64(cap(r.Path))))
-			}
-		}
-		cost += int(allocationCharge(uint64(cap(cached.plans)) * uint64(unsafe.Sizeof(streamPlan{}))))
-		s.retain(slot, cached, cost)
+	if c.routes != 0 {
+		s.ms.StreamInputRouteBytes.Add(float64(c.routes))
+	}
+	if c.names != 0 {
+		s.ms.StreamInputSharedNames.Add(float64(c.names))
+	}
+	s.changes = streamNameChanges{}
+}
+
+func (s *streamRouter) BindName(name []byte) any {
+	limit := s.maxBytes
+	if limit == 0 {
+		limit = 128 << 20
+	}
+	e, cached, dict, route, err := s.names.acquire(name, limit-s.bytes, s.nameLimit-s.nameBytes, &s.changes)
+	if err != nil {
+		return err
+	}
+	s.nameBytes += dict
+	s.bytes += route
+	if cached {
+		return e
+	}
+	// The interface type records whether this slot owns a plan reference,
+	// without another allocation or a connection-sized side array.
+	return (*uncachedStreamName)(e)
+}
+
+func (s *streamRouter) ReleaseName(ref any) {
+	var e *streamName
+	cached := false
+	switch v := ref.(type) {
+	case *streamName:
+		e, cached = v, true
+	case *uncachedStreamName:
+		e = (*streamName)(v)
+	default:
+		panic("invalid stream input name reference")
+	}
+	dict, route := s.names.release(e, cached, &s.changes)
+	s.nameBytes -= dict
+	s.bytes -= route
+}
+
+func (s *streamRouter) Point(_ uint32, name []byte, value float64, ts int64, slot *any) {
+	var plan *streamName
+	if slot != nil {
+		plan, _ = (*slot).(*streamName)
+	}
+	if plan == nil {
+		// Cache exhaustion preserves delivery. This temporary plan owns no
+		// shared state and does not read a concurrently retired cached plan.
+		plan = &streamName{}
+		s.names.build(plan, name)
 	} else {
 		s.ms.StreamInputRouteHits.Inc()
+		if plan.canonical != nil {
+			plan = plan.canonical
+		}
 	}
-	if cached.invalid {
+	if plan.invalid {
 		s.ms.ErrorRecs.Inc()
 		return
 	}
-	if cached.rewritten {
+	if plan.rewritten {
 		s.ms.RewrittenRecsTotal.Inc()
 	}
 	if s.now.IsZero() {
 		s.now = time.Now()
 	}
-	for _, plan := range cached.plans {
-		r := rec.NewTyped(plan.path, value, ts)
+	for _, p := range plan.plans {
+		r := rec.NewTyped(unsafe.Slice(unsafe.StringData(p.path), len(p.path)), value, ts)
 		r.Received = s.now
-		r.SetPathHash(plan.hash)
-		s.rules.PushRoute(plan.route, r, s.lg, s.batch)
+		r.SetPathHash(p.hash)
+		s.names.rules.PushRoute(p.route, r, s.lg, s.batch)
 	}
-}
-
-// A full cache stops retaining new plans; policy and queue admission still run.
-// The next protocol reset drops the oldest generation, preferring recent names.
-func (s *streamRouter) retain(slot *any, plan *streamRoute, cost int) {
-	limit := s.maxBytes
-	if limit == 0 {
-		limit = 128 << 20
-	}
-	if slot == nil || cost > limit-s.bytes {
-		return
-	}
-	*slot = plan
-	s.bytes += cost
-	s.ms.StreamInputRouteBytes.Add(float64(cost))
 }

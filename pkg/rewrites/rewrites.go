@@ -19,6 +19,9 @@ type Rewrites struct {
 	metrics      *metrics.Prom
 }
 
+// Empty reports whether names can go directly to rule resolution.
+func (rw Rewrites) Empty() bool { return len(rw.rewrites) == 0 }
+
 // Rewrite is a routing rewrite.
 type Rewrite struct {
 	From string

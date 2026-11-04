@@ -24,6 +24,7 @@ type Prom struct {
 	InRecsBySource                                    *prometheus.CounterVec
 	ThrottledRecs                                     prometheus.Counter
 	StreamInputDictionaryBytes, StreamInputRouteBytes prometheus.Gauge
+	StreamInputSharedNames, StreamInputSharedBytes    prometheus.Gauge
 
 	StreamInputConnections, StreamInputFrames, StreamInputPoints, StreamInputErrors prometheus.Counter
 	StreamInputRouteHits, StreamInputRouteMisses                                    prometheus.Counter
@@ -73,19 +74,21 @@ func New() *Prom {
 		InputHandoffConnections:    prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "input_handoff_connections_total", Help: "Accepted input sockets successfully moved to a successor."}),
 		InputHandoffFailures:       prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "input_handoff_failures_total", Help: "Rejected input handoffs or legacy reload fallbacks; see error logs for connections at risk."}),
 		StreamInputActive:          prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_active_connections", Help: "Admitted stream readers."}),
-		StreamInputReservedBytes:   prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_reserved_bytes", Help: "Dictionary and route allowances reserved by active stream readers."}),
+		StreamInputReservedBytes:   prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_reserved_bytes", Help: "Fixed shared index plus dictionary and route allowances reserved by active stream readers."}),
 		StreamInputResets:          prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_resets_total", Help: "Dictionary reset frames received."}),
 		StickyRecords:              prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "sticky_records_total", Help: "Records admitted to sticky relay queues."}, []string{"cluster", "upstream_host"}),
 		StickyFailovers:            prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "sticky_failover_records_total", Help: "Records admitted to a relay other than their preferred sticky relay."}, []string{"cluster", "upstream_host"}),
 		StickyUnhealthy:            prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: "nanotube", Name: "sticky_unhealthy_relays", Help: "Sticky relays withheld due to connection failure, queue pressure, or recovery hysteresis."}, []string{"cluster"}),
-		StreamInputDictionaryBytes: prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_dictionary_bytes", Help: "Retained name and entry capacity bytes across stream input connections."}),
-		StreamInputRouteBytes:      prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_route_bytes", Help: "Retained stream routing plan storage bytes."}),
+		StreamInputDictionaryBytes: prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_dictionary_bytes", Help: "Decoder capacities plus deduplicated input names, entries and index storage, conservatively charged."}),
+		StreamInputRouteBytes:      prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_route_bytes", Help: "Deduplicated stream routing plan arrays and paths, conservatively charged."}),
 		StreamInputConnections:     prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_connections_total", Help: "Autodetected stream input connections."}),
 		StreamInputFrames:          prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_frames_total", Help: "Validated input frames."}),
 		StreamInputPoints:          prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_points_total", Help: "Validated input rows before routing policy."}),
 		StreamInputErrors:          prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_errors_total", Help: "Rejected stream input connections or frames."}),
-		StreamInputRouteHits:       prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_route_hits_total", Help: "Points with a cached connection ID routing plan."}),
-		StreamInputRouteMisses:     prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_route_misses_total", Help: "New connection ID routing plans."}),
+		StreamInputRouteHits:       prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_route_hits_total", Help: "Points using a shared immutable routing plan."}),
+		StreamInputRouteMisses:     prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_input_route_misses_total", Help: "Routing plans built, including uncached fallback plans."}),
+		StreamInputSharedNames:     prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_shared_names", Help: "Unique raw and canonical names retained by stream input slots."}),
+		StreamInputSharedBytes:     prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_shared_bytes", Help: "Deduplicated stream input names, entries and index capacity bytes; excludes route arrays and decoder slots."}),
 
 		RouteCacheHits:      prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_hits_total", Help: "Raw path route cache hits."}),
 		RouteCacheMisses:    prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "route_cache_misses_total", Help: "Raw path route cache misses."}),
@@ -240,7 +243,7 @@ func New() *Prom {
 // Meant to be called from main and fail completely if something goes wrong.
 func Register(m *Prom, cfg *conf.Main) {
 	prometheus.MustRegister(m.StickyRecords, m.StickyFailovers, m.StickyUnhealthy)
-	for _, c := range []prometheus.Collector{m.InputHandoffConnections, m.InputHandoffFailures, m.RouteCacheHits, m.RouteCacheMisses, m.RouteCacheEvictions, m.RouteCacheBytes, m.StreamInputActive, m.StreamInputReservedBytes, m.StreamInputResets, m.StreamInputDictionaryBytes, m.StreamInputRouteBytes, m.StreamInputConnections, m.StreamInputFrames, m.StreamInputPoints, m.StreamInputErrors, m.StreamInputRouteHits, m.StreamInputRouteMisses} {
+	for _, c := range []prometheus.Collector{m.InputHandoffConnections, m.InputHandoffFailures, m.RouteCacheHits, m.RouteCacheMisses, m.RouteCacheEvictions, m.RouteCacheBytes, m.StreamInputActive, m.StreamInputReservedBytes, m.StreamInputResets, m.StreamInputDictionaryBytes, m.StreamInputRouteBytes, m.StreamInputSharedNames, m.StreamInputSharedBytes, m.StreamInputConnections, m.StreamInputFrames, m.StreamInputPoints, m.StreamInputErrors, m.StreamInputRouteHits, m.StreamInputRouteMisses} {
 		if err := prometheus.Register(c); err != nil {
 			log.Fatalf("error registering route cache metric: %v", err)
 		}

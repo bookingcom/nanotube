@@ -1,7 +1,8 @@
 package metrics
 
-// ReserveStreamInput admits a connection only if both of its full dictionary
-// and route allowances fit. Reservation happens before constructing a decoder.
+// ReserveStreamInput reserves the fixed shared index at startup, and admits a
+// connection only if both of its full logical dictionary and route allowances
+// fit. Connection reservation happens before constructing a decoder.
 func (m *Prom) ReserveStreamInput(n, limit int64) bool {
 	for {
 		used := m.streamInputReserved.Load()

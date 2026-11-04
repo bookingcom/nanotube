@@ -105,6 +105,8 @@ func TestStreamInputRoutingMatchesPlaintext(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		d.SetNameResolver(sink.BindName)
+		d.SetNameReleaser(sink.ReleaseName)
 		for rest := wire[codec.PreambleSize:]; len(rest) > 0; {
 			n := codec.HeaderSize + int(uint32(rest[4])<<24|uint32(rest[5])<<16|uint32(rest[6])<<8|uint32(rest[7]))
 			frame := rest[:n]
@@ -137,43 +139,51 @@ func sortPoints(p []routedPoint) {
 func TestStreamInputKnownIDReusesRouteAndResetRebinds(t *testing.T) {
 	rs, rw, ms, points := differentialPipeline(t)
 	s := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
-	var slot any
+	slot := s.BindName([]byte("example.good"))
 	for i := range 100 {
 		s.Point(0, []byte("example.good"), float64(i), int64(i), &slot)
 	}
 	s.Flush()
-	if testutil.ToFloat64(ms.StreamInputRouteHits) != 99 || testutil.ToFloat64(ms.StreamInputRouteMisses) != 1 {
+	if testutil.ToFloat64(ms.StreamInputRouteHits) != 100 || testutil.ToFloat64(ms.StreamInputRouteMisses) != 1 {
 		t.Fatal("expected one normalization/rule resolution")
 	}
+	s.ReleaseName(slot)
 	s.Reset()
-	slot = nil
+	slot = s.BindName([]byte("example.special.other"))
 	s.Point(0, []byte("example.special.other"), 4, 101, &slot)
 	s.Flush()
 	if (*points)[100].name != "example.special.other" {
 		t.Fatal("reset retained stale plan")
 	}
+	s.ReleaseName(slot)
 }
 
 func TestStreamInputRouteBudgetPreservesDelivery(t *testing.T) {
 	rs, rw, ms, points := differentialPipeline(t)
 	s := newStreamRouter(rs, rw, true, zap.NewNop(), ms)
 	s.maxBytes = 4096
+	var refs []any
 	for i := range 1000 {
-		var slot any
-		s.Point(uint32(i), []byte(fmt.Sprintf("example.good.%d", i)), float64(i), int64(i), &slot)
-		if s.retainedBytes() > s.maxBytes {
-			t.Fatalf("route cache retained %d > %d", s.retainedBytes(), s.maxBytes)
+		name := []byte(fmt.Sprintf("example.good.%d", i))
+		slot := s.BindName(name)
+		refs = append(refs, slot)
+		s.Point(uint32(i), name, float64(i), int64(i), &slot)
+		if s.bytes > s.maxBytes {
+			t.Fatalf("route cache retained %d > %d", s.bytes, s.maxBytes)
 		}
 	}
 	s.Flush()
 	if len(*points) != 1000 {
 		t.Fatalf("budget changed delivery: %d", len(*points))
 	}
-	if testutil.ToFloat64(ms.StreamInputRouteBytes) != float64(s.retainedBytes()) {
+	if testutil.ToFloat64(ms.StreamInputRouteBytes) != float64(s.bytes) {
 		t.Fatal("route bytes gauge differs")
 	}
+	for _, ref := range refs {
+		s.ReleaseName(ref)
+	}
 	s.Reset()
-	if s.retainedBytes() != 0 || testutil.ToFloat64(ms.StreamInputRouteBytes) != 0 {
+	if s.bytes != 0 || testutil.ToFloat64(ms.StreamInputRouteBytes) != 0 {
 		t.Fatal("reset retained old plans")
 	}
 }

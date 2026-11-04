@@ -4,8 +4,11 @@ The existing TCP listener recognizes a leading-NUL go-carbon v1 preamble,
 plaintext, and standard zstd-compressed plaintext. Stream uses its own zstd flag
 for independent compressed frames. UDP and gRPC keep their existing input paths.
 
-Each stream connection owns a decoder and normalization/rewrite/routing plans
-cached in its name-ID slots. A warm ID bypasses name parsing and rule matching;
+Each stream connection owns a decoder, predictors and name-ID slots. The relay
+interns immutable input names in a 64-shard exact-match table; a slot holds a
+reference, not another name allocation. Cached normalization/rewrite/routing plans
+are shared by normalized name for the lifetime of the process configuration.
+A warm ID reads its pinned plan without a table lookup, lock or name allocation;
 regular cluster selection, health/failover, bounded queues, blackholes and rewrite
 accounting still run for every point. Plans store cluster routes, never a frozen
 host selection, so lb and sticky respond to health changes normally.
@@ -14,10 +17,20 @@ Decoded records carry typed numbers through stream output. Plaintext and gRPC
 outputs adapt typed records at their established boundaries. Stream output
 re-encodes into each destination's independent dictionary; input IDs never cross
 connections. No name is copied on a warm cached point. Validated names are bound
-to immutable connection references through the unchanged codec's name resolver.
+to shared references through the codec's name resolver.
 Queued records keep those bytes alive across reset and disconnect, independently
 of the decoder's reusable arena. Normalization shares unchanged immutable bytes;
-rewrites own changed paths.
+rewrites own changed paths. Distinct raw spellings keep their original bytes for
+snapshots and share the same canonical routing plan. Invalid names are cached as
+invalid; blackholes and rewrites producing multiple records retain their usual
+per-point behavior. No input or output wire format changes.
+
+The decoder releases every bound reference on RESET and close, including STATE
+definitions restored during accepted-connection handoff. The last name reference
+removes the table entry; the last cached-plan reference releases its plan arrays.
+The table shrinks its index under churn and retains only its small fixed empty
+index after all connections close. Names and paths are ordinary immutable Go
+allocations, never reused arena cells, so output queues can safely outlive reset.
 
 ## Limits and metrics
 
@@ -27,20 +40,34 @@ Main settings, with zero selecting defaults:
 | --- | ---: | --- |
 | `StreamInputMaxFrameBytes` | 8388608 | Wire and expanded frame ceiling |
 | `StreamInputMaxNames` | 1000000 | Dictionary names per connection |
-| `StreamInputMaxDictionaryBytes` | 67108864 | Codec dictionary allowance, including its external-name estimate |
-| `StreamInputMaxRouteBytes` | 134217728 | Conservatively charged cached plans per connection |
-| `StreamInputTotalBytes` | 3221225472 | Global dictionary plus route admission reservations |
+| `StreamInputMaxDictionaryBytes` | 67108864 | Decoder capacity plus each slot's codec name estimate (name bytes + 64) |
+| `StreamInputMaxRouteBytes` | 134217728 | Logical cached-plan allowance per connection |
+| `StreamInputTotalBytes` | 3221225472 | Global fixed shared index plus connection admission reservations |
 
 The dictionary limit accepts 4096–1073741824 bytes. The route limit accepts a
 positive value up to 1073741824. Global admission reserves the entire dictionary
-and route allowance before constructing each decoder, without eager allocation.
-A full route cache stops caching new plans; those points still route normally.
-Dictionary overflow rejects the frame and closes the connection with an error.
+and route allowance before constructing each decoder, without eager allocation,
+and reserves the fixed shared index once at startup. Each slot is charged the
+codec's external-name estimate (name bytes plus 64), the same estimate senders
+budget `peer_dictionary_bytes` against, so a sender that fits its peer allowance
+is never rejected for sharing metadata. Physical shared storage is counted only
+once; a name held by a single connection can exceed its charge by its entry and
+index share (about 80 bytes), a name shared by two or more cannot. Each cached
+slot is also charged its full plan, and a cached normalized alias its canonical
+entry, to the route allowance; cache eligibility is stored in the reference's
+type without another per-slot allocation.
+
+A full route allowance stops retaining new plans; those points still route
+normally. Uncached slots hold name references only and cannot keep another
+producer's plans alive after that producer leaves. Dictionary overflow rejects
+the whole frame and closes the connection with an error, releasing any definitions
+already admitted from that frame. Admission also applies to STATE replay.
 The sender's `peer_dictionary_bytes` must not exceed the receiver dictionary
 allowance, and its name cap must fit the receiver name cap. There is no negotiation.
 
-Size total reservations for all simultaneous streams: at defaults, 3GiB admits
-16 connections at 192MiB each. A single small client can use smaller explicit
+Size total reservations for all simultaneous streams, plus the fixed empty index:
+at defaults, 3GiB admits 15 connections at 192MiB each (the old exact 16-connection
+boundary also needs the small index reservation). A single small client can use smaller explicit
 limits; large producer pools require a larger total. This conservative policy
 needs deliberate fleet sizing before enabling all clients. Frame/row buffers,
 zstd contexts, queued records and overlapping processes need additional memory;
@@ -52,8 +79,18 @@ Metrics have the `nanotube_` prefix:
 - `stream_input_route_{hits,misses}_total`
 - `stream_input_active_connections`, `stream_input_reserved_bytes`
 - `stream_input_dictionary_bytes`, `stream_input_route_bytes`
+- `stream_input_shared_names`, `stream_input_shared_bytes`
 
-Dictionary and route gauges sum live retained state and release on disconnect.
+Dictionary bytes sum decoder capacities and deduplicated names/entries/index
+capacities. Route bytes count shared plans once. Shared names count unique raw and
+canonical entries; shared bytes are the names/entries/index subset of dictionary
+bytes, excluding decoder slots and route arrays. Byte gauges conservatively charge
+allocation rounding and route vector capacity, rather than measuring RSS. Unlike
+the old per-ID caches, plan headers reside inside the shared name entries.
+Gauges publish deltas at frame boundaries and close; after all clients disconnect,
+only the fixed index remains. Route hits count points using cached plans; misses
+count plan builds (including uncached fallback), so they are not complementary
+point counts.
 Decode, truncation and budget failures log errors with peer addresses. Decoded
 rows also contribute to normal input counters and rate limiting. Malformed
 frames emit no rows. Definitions bind only after complete frame validation.
