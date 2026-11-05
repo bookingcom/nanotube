@@ -12,6 +12,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
 	codec "github.com/bookingcom/nanotube/pkg/streamcodec"
+	"github.com/bookingcom/nanotube/pkg/target"
 )
 
 const streamNameShards = 64
@@ -43,6 +44,7 @@ type streamName struct {
 	plans      *streamPlan     // Rewritten paths only; points to the first array element.
 	hash       uint64          // Routing hash, or rewritten plan count when plans != nil.
 	route      *rules.Route
+	typed      *target.TypedRoute
 	canonical  *streamName
 	refs       uint32
 	routeRefs  uint32
@@ -70,15 +72,16 @@ type streamNameShard struct {
 }
 
 type streamNames struct {
-	shards    [streamNameShards]streamNameShard
-	seed      maphash.Seed
-	rules     rules.Rules
-	rewrites  rewrites.Rewrites
-	normalize bool
-	ms        *metrics.Prom
-	fixed     int64
-	limit     int64
-	admitted  bool
+	typedRoutes target.TypedRoutes
+	shards      [streamNameShards]streamNameShard
+	seed        maphash.Seed
+	rules       rules.Rules
+	rewrites    rewrites.Rewrites
+	normalize   bool
+	ms          *metrics.Prom
+	fixed       int64
+	limit       int64
+	admitted    bool
 }
 
 // Physical deltas are connection-local and published at frame boundaries.
@@ -295,6 +298,7 @@ func (t *streamNames) release(e *streamName, cached bool, changes *streamNameCha
 				t.ms.ReleaseStreamInput(int64(route))
 			}
 			e.canonical, e.plans, e.route, e.hash = nil, nil, nil, 0
+			e.typed = nil
 		}
 	}
 	e.refs--
@@ -336,6 +340,7 @@ func (t *streamNames) build(e *streamName, name []byte) {
 func (t *streamNames) buildNormalized(e *streamName, path []byte, invalid bool) {
 	t.ms.StreamInputRouteMisses.Inc()
 	e.invalid, e.rewritten, e.routeBytes = invalid, false, 0
+	e.typed = nil
 	if invalid {
 		return
 	}
@@ -346,6 +351,9 @@ func (t *streamNames) buildNormalized(e *streamName, path []byte, invalid bool) 
 		var owned bool
 		e.hash = input.PathHash()
 		e.route, owned = t.rules.ResolveRef(&input)
+		if e.route != nil && e.refs > 0 {
+			e.typed = t.typedRoutes.Resolve(*e.route, e.hash)
+		}
 		if e.name.Text == "" { // Temporary uncached plan owns the normalized path.
 			e.name.Text = unsafe.String(unsafe.SliceData(path), len(path))
 		}

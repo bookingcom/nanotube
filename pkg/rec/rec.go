@@ -173,10 +173,7 @@ func isWhitespace(c byte) bool {
 // NewTyped borrows an immutable, owned routing-plan path. That path must remain
 // alive while records are queued; a Go slice retains it across dictionary resets.
 func NewTyped(path []byte, value float64, timestamp int64) *RecBytes {
-	var scratch [64]byte
-	b := strconv.AppendFloat(scratch[:0], value, 'g', -1, 64)
-	b = strconv.AppendInt(b, timestamp, 10)
-	return &RecBytes{Path: path, typed: true, value: value, timestamp: timestamp, numericBytes: uint8(len(b))}
+	return &RecBytes{Path: path, typed: true, value: value, timestamp: timestamp, numericBytes: uint8(TypedPlainSize(path, value, timestamp) - len(path) - 3)}
 }
 
 // TypedValues exposes numeric input without altering legacy textual consumers.
@@ -448,3 +445,11 @@ func (r *RecBytes) SetStreamToken(token uint64) {
 // Generation checks remain the output table's responsibility. SetPathHash
 // detaches the hint when a path changes; queued records retain its allocation.
 func (r *RecBytes) ShareStreamToken(source *uint64) { r.streamTokenSource = source }
+
+// TypedPlainSize matches the canonical legacy serialization without allocating a record.
+func TypedPlainSize(path []byte, value float64, timestamp int64) int {
+	var scratch [64]byte
+	b := strconv.AppendFloat(scratch[:0], value, 'g', -1, 64)
+	b = strconv.AppendInt(b, timestamp, 10)
+	return len(path) + len(b) + 3
+}

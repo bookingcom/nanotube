@@ -31,15 +31,11 @@ func (q *recQueue) accountAccepted(rs []*rec.RecBytes) {
 	if q.output == nil || len(rs) == 0 {
 		return
 	}
-	s := q.output
-	s.pendingRecords += int64(len(rs))
-	s.ms.PendingRecords.Add(float64(len(rs)))
 	var bytes int
 	for _, r := range rs {
 		bytes += r.PlainSize()
 	}
-	s.pendingBytes += int64(bytes)
-	s.ms.PendingBytes.Add(float64(bytes))
+	q.accountAcceptedBytes(len(rs), bytes)
 }
 
 func (q *recQueue) accountTCPWrite(r tcpWriteResult) {
@@ -125,4 +121,16 @@ func (cls Clusters) ReportTCPShutdown(lg *zap.Logger, abandoning bool) bool {
 	}
 	lg.Info("Shutdown: TCP output summary", zap.Bool("abandoning", abandoning), zap.Int64("pending_records", records), zap.Int64("pending_bytes", bytes))
 	return records == 0 && bytes == 0
+}
+
+// Requires q.mu. Typed and textual records share identical pending accounting.
+func (q *recQueue) accountAcceptedBytes(n, bytes int) {
+	if q.output == nil || n == 0 {
+		return
+	}
+	s := q.output
+	s.pendingRecords += int64(n)
+	s.ms.PendingRecords.Add(float64(n))
+	s.pendingBytes += int64(bytes)
+	s.ms.PendingBytes.Add(float64(bytes))
 }

@@ -50,6 +50,7 @@ type streamConnection struct {
 
 type streamSender struct {
 	batches                              [][]*rec.RecBytes
+	pointBatches                         [][]streamPoint
 	options                              conf.StreamOptions
 	names                                *codec.NameTable
 	main                                 *conf.Main
@@ -101,7 +102,11 @@ func (s *streamSender) run() {
 		}
 	}()
 	for chunk := s.q.pop(); chunk != nil; chunk = s.q.pop() {
-		s.dispatch(chunk.recs[:chunk.n])
+		if chunk.points != nil {
+			s.dispatchTyped(chunk.points[:chunk.n])
+		} else {
+			s.dispatch(chunk.recs[:chunk.n])
+		}
 		s.q.recycle(chunk)
 	}
 	close(s.stop)
@@ -185,27 +190,7 @@ func (s *streamSender) sendBatch(c *streamConnection, rs []*rec.RecBytes) {
 			s.q.accountStreamDrop(r.PlainSize())
 			continue
 		}
-		s.ensure(c)
-		if i == 0 && s.main.TCPOutConnectionRefreshPeriodSec > 0 && time.Since(*c.lastUse) > time.Duration(s.main.TCPOutConnectionRefreshPeriodSec)*time.Second {
-			s.refresh.Inc()
-			s.refreshTotal.Inc()
-			old := c.conn
-			s.flush(c)
-			if c.conn == old {
-				s.disconnect(c)
-				s.ensure(c)
-			}
-		}
-		// This bound also limits retained replay memory. The codec applies the
-		// exact encoded payload bound when splitting these points into frames.
-		if len(c.points) > 0 && c.plainBytes+p.plainBytes > s.options.MaxBytes {
-			s.flush(c)
-		}
-		c.points = append(c.points, p)
-		c.plainBytes += p.plainBytes
-		if len(c.points) >= s.options.MaxRows || c.plainBytes >= s.options.MaxBytes {
-			s.flush(c)
-		}
+		s.sendPoint(c, p, i == 0)
 	}
 	*c.lastUse = time.Now()
 	s.out.Add(float64(len(rs)))
@@ -390,4 +375,28 @@ func (s *streamSender) releaseRetention(c *streamConnection) {
 	c.retainedNames = 0
 	c.retainedBytes = 0
 	c.mapBytes = 0
+}
+
+func (s *streamSender) sendPoint(c *streamConnection, p streamPoint, first bool) {
+	s.ensure(c)
+	if first && s.main.TCPOutConnectionRefreshPeriodSec > 0 && time.Since(*c.lastUse) > time.Duration(s.main.TCPOutConnectionRefreshPeriodSec)*time.Second {
+		s.refresh.Inc()
+		s.refreshTotal.Inc()
+		old := c.conn
+		s.flush(c)
+		if c.conn == old {
+			s.disconnect(c)
+			s.ensure(c)
+		}
+	}
+	// This bound also limits retained replay memory. The codec applies the
+	// exact encoded payload bound when splitting these points into frames.
+	if len(c.points) > 0 && c.plainBytes+p.plainBytes > s.options.MaxBytes {
+		s.flush(c)
+	}
+	c.points = append(c.points, p)
+	c.plainBytes += p.plainBytes
+	if len(c.points) >= s.options.MaxRows || c.plainBytes >= s.options.MaxBytes {
+		s.flush(c)
+	}
 }
