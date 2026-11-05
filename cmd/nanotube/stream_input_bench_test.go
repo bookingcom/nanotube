@@ -286,7 +286,6 @@ func TestStreamInputMemoryModel(t *testing.T) {
 		for i, m := range streams {
 			m.decode(t, wires[i%len(wires)])
 		}
-		wires = nil
 		runtime.GC()
 		var mem runtime.MemStats
 		runtime.ReadMemStats(&mem)

@@ -3,6 +3,7 @@ package target
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net"
@@ -11,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"compress/gzip"
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"

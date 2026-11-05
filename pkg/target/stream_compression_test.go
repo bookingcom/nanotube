@@ -1,8 +1,9 @@
 package target
 
 import (
-	"github.com/bookingcom/nanotube/pkg/conf"
 	"testing"
+
+	"github.com/bookingcom/nanotube/pkg/conf"
 )
 
 func TestStreamIgnoresPlaintextCompression(t *testing.T) {

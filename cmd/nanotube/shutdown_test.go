@@ -67,7 +67,7 @@ func TestShutdownSignalsDrainPipeline(t *testing.T) {
 				t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL) })
 				wait := make(chan error, 1)
 				go func() { wait <- command.Wait() }()
-				waitForShutdownMetric(t, metricsAddr, "nanotube_in_records_total", 0, logPath)
+				waitForShutdownMetric(t, metricsAddr, 0, logPath)
 				producer, err := net.DialTimeout("tcp", input, time.Second)
 				if err != nil {
 					t.Fatal(err)
@@ -79,7 +79,7 @@ func TestShutdownSignalsDrainPipeline(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				waitForShutdownMetric(t, metricsAddr, "nanotube_in_records_total", len(samples), logPath)
+				waitForShutdownMetric(t, metricsAddr, len(samples), logPath)
 				if err := command.Process.Signal(signal); err != nil {
 					t.Fatal(err)
 				}
@@ -124,7 +124,7 @@ func TestShutdownSignalsDrainPipeline(t *testing.T) {
 						t.Fatal(err)
 					}
 					t.Cleanup(func() { _ = child.Kill() })
-					waitForShutdownMetric(t, metricsAddr, "nanotube_in_records_total", 0, logPath)
+					waitForShutdownMetric(t, metricsAddr, 0, logPath)
 					nextProducer, err := net.DialTimeout("tcp", input, time.Second)
 					if err != nil {
 						t.Fatal(err)
@@ -133,7 +133,7 @@ func TestShutdownSignalsDrainPipeline(t *testing.T) {
 					if _, err := fmt.Fprintln(nextProducer, "replacement.metric 4 103"); err != nil {
 						t.Fatal(err)
 					}
-					waitForShutdownMetric(t, metricsAddr, "nanotube_in_records_total", 1, logPath)
+					waitForShutdownMetric(t, metricsAddr, 1, logPath)
 					if err := child.Signal(syscall.SIGTERM); err != nil {
 						t.Fatal(err)
 					}
@@ -171,7 +171,7 @@ func TestShutdownSignalsDrainPipeline(t *testing.T) {
 		t.Cleanup(func() { _ = command.Process.Kill() })
 		wait := make(chan error, 1)
 		go func() { wait <- command.Wait() }()
-		waitForShutdownMetric(t, metricsAddr, "nanotube_in_records_total", 0, logPath)
+		waitForShutdownMetric(t, metricsAddr, 0, logPath)
 		producer, err := net.DialTimeout("tcp", input, time.Second)
 		if err != nil {
 			t.Fatal(err)
@@ -180,7 +180,7 @@ func TestShutdownSignalsDrainPipeline(t *testing.T) {
 		if _, err := fmt.Fprintln(producer, "pending.metric 1 100"); err != nil {
 			t.Fatal(err)
 		}
-		waitForShutdownMetric(t, metricsAddr, "nanotube_in_records_total", 1, logPath)
+		waitForShutdownMetric(t, metricsAddr, 1, logPath)
 		if err := command.Process.Signal(syscall.SIGTERM); err != nil {
 			t.Fatal(err)
 		}
@@ -247,7 +247,8 @@ func shutdownConfig(t *testing.T, target string, buffer int) (string, string, st
 	return input, metricsAddr, config
 }
 
-func waitForShutdownMetric(t *testing.T, address, name string, value int, logPath string) {
+func waitForShutdownMetric(t *testing.T, address string, value int, logPath string) {
+	const name = "nanotube_in_records_total"
 	t.Helper()
 	client := &http.Client{Timeout: 200 * time.Millisecond}
 	defer client.CloseIdleConnections()

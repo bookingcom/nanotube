@@ -11,7 +11,7 @@ import (
 
 // Regexps shaped like production routing rules plus shapes that exercise every
 // branch of the matcher.
-var matcherCorpusRegexs = []string{
+var matcherCorpusRegexs = []string{ //nolint:gochecknoglobals // Read-only corpus shared by differential tests and benchmarks.
 	`^carbon.probe.(availability|latency.cache).secondly.containers.`,
 	`^carbon.probe.(availability|latency.cache).secondly.aggr.`,
 	`^aggregations\.(minutely|hourly)\.capacity\.platform\.secondly\..+\.pods\.per_service\.`,
@@ -44,7 +44,7 @@ func randomInput(rnd *rand.Rand) []byte {
 	return b
 }
 
-var matcherPieces = []string{
+var matcherPieces = []string{ //nolint:gochecknoglobals // Read-only pieces shared by seeded matcher tests.
 	"a", "b", "ab", "aa", ".", `\.`, ".*", ".+", ".*?", ".+?", "(a|b)", "[^.]+", "x",
 	"(", ")", "é", "_", "^", "$", "(?i)", "(?s:.)+", "a?", "b+", "\n",
 }

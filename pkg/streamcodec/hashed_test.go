@@ -51,9 +51,10 @@ func checkHashedParity(t *testing.T, opts Options, data []byte, hash func([]byte
 			// Recreate each byte slice so pointer identity cannot stand in for
 			// name equality. Include rejected empty and over-limit definitions.
 			name := fmt.Appendf(nil, "example.shared.component.metric.%d", token%32)
-			if token == 254 {
+			switch token {
+			case 254:
 				name = nil
-			} else if token == 255 {
+			case 255:
 				name = bytes.Repeat([]byte{'x'}, opts.MaxFrameSize)
 			}
 			value := math.Float64frombits(uint64(token)<<56 | uint64(i+repeat))

@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +22,7 @@ import (
 	"github.com/bookingcom/nanotube/pkg/rewrites"
 	"github.com/bookingcom/nanotube/pkg/rules"
 	"github.com/bookingcom/nanotube/pkg/target"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/zap"
 )
 
