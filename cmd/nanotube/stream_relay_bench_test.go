@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -575,6 +576,62 @@ func TestStreamRelayModel(t *testing.T) {
 		old.Close()
 		query(nil)
 	}
+	// A fresh relay has empty input and output dictionaries. RESET timing below
+	// retains output names, so measure initial name admission separately.
+	if os.Getenv("RELAY_MODEL_COLD_ONLY") == "1" {
+		expected = f0.InitialExpected
+		var frames [33][][]byte
+		rounds := 0
+		for i, wire := range f0.Initial {
+			for len(wire) > 0 {
+				n := codec.HeaderSize + int(binary.BigEndian.Uint32(wire[4:8]))
+				frames[i] = append(frames[i], wire[:n:n])
+				wire = wire[n:]
+			}
+			rounds = max(rounds, len(frames[i]))
+		}
+		offsets := make([]time.Duration, rounds)
+		rows := 0
+		for round := range rounds {
+			offsets[round] = time.Duration(float64(rows) / 1e6 * 1e9)
+			for _, source := range frames {
+				if round < len(source) {
+					rows += int(binary.BigEndian.Uint32(source[round][12:16]))
+				}
+			}
+		}
+		if rows != names {
+			t.Fatal("cold fixture row count")
+		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		cpu := modelCPU()
+		start := time.Now()
+		var workers sync.WaitGroup
+		workers.Add(8)
+		for worker := range 8 {
+			go func() {
+				defer workers.Done()
+				for round := range rounds {
+					if delay := time.Until(start.Add(offsets[round])); delay > 0 {
+						time.Sleep(delay)
+					}
+					for i := worker; i < len(streams); i += 8 {
+						if round < len(frames[i]) {
+							streams[i].decode(t, frames[i][round])
+						}
+					}
+				}
+			}()
+		}
+		workers.Wait()
+		query(nil)
+		used := modelCPU() - cpu
+		runtime.ReadMemStats(&after)
+		fmt.Printf("BenchmarkRelayStream/cold-8 1 %.6f core-sec/Mrec %.6f allocs/record %.3f B/record\n", float64(used)/float64(names)/1000, float64(after.Mallocs-before.Mallocs)/float64(names), float64(after.TotalAlloc-before.TotalAlloc)/float64(names))
+		reportRelayModelMemory(t)
+		return
+	}
 	// Warm complete dictionaries, then measure each independently drained phase.
 	run(f0, true, 0, 0, nil)
 	add(f0, true, 0)
@@ -645,6 +702,11 @@ func TestStreamRelayModel(t *testing.T) {
 			_ = profile.Close()
 		}
 	}
+	reportRelayModelMemory(t)
+}
+
+func reportRelayModelMemory(t *testing.T) {
+	t.Helper()
 	runtime.GC()
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
