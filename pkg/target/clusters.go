@@ -2,6 +2,7 @@ package target
 
 import (
 	"fmt"
+	"math/bits"
 	"sync"
 
 	"github.com/bookingcom/nanotube/pkg/conf"
@@ -39,13 +40,18 @@ func (cls Clusters) Send(finish chan struct{}) chan struct{} {
 
 // NewClusters builds new set of clusters from config.
 func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *metrics.Prom) (Clusters, error) {
-	// Reserve an equal share even for disconnected sockets. No connection
-	// can consume another's allowance, and reconnects release their old state.
-	connections := 0
+	// Reserve a share even for disconnected sockets. No connection can consume
+	// another's allowance, and reconnects release their old state. Shares follow
+	// each host's dictionary_bytes, so a host with a large name set (long names
+	// over several sockets) can be given more without raising every socket's
+	// allowance; equal requests still get equal shares.
+	connections, requested := 0, uint64(0)
 	for _, cc := range cfg.Cluster {
 		for _, h := range cc.Hosts {
 			if h.Stream {
-				connections += max(1, h.MTCP)
+				n := max(1, h.MTCP)
+				connections += n
+				requested += uint64(n) * uint64(h.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec).DictionaryBytes)
 			}
 		}
 	}
@@ -61,9 +67,17 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 			return nil, err
 		}
 	}
-	limit := total
+	sockets := uint64(total - total/2)
+	share := func(want int) int {
+		if requested <= sockets {
+			return want
+		}
+		hi, lo := bits.Mul64(uint64(want), sockets)
+		q, _ := bits.Div64(hi, lo, requested) // hi < requested: want ≤ requested and sockets < requested
+		return int(q)
+	}
 	if connections > 0 {
-		limit = (total - total/2) / connections
+		lg.Info("stream dictionary budget", zap.Int("connections", connections), zap.Uint64("socket_bytes", sockets), zap.Uint64("requested_bytes", requested))
 	}
 	cls := make(map[string]*Cluster)
 	var err error
@@ -83,7 +97,10 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 					h.StreamOptions.MaxBytes = min(bytes, 4<<20)
 				}
 				h.StreamOptions = h.StreamOptions.WithDefaults(mainCfg.TCPOutBufFlushPeriodSec)
-				h.StreamOptions.DictionaryBytes = min(h.StreamOptions.DictionaryBytes, limit)
+				h.StreamOptions.DictionaryBytes = share(h.StreamOptions.DictionaryBytes)
+				if h.StreamOptions.DictionaryBytes < 4096 {
+					return nil, fmt.Errorf("StreamDictionaryBytes is too small: host %s gets %d dictionary bytes per connection", h.Name, h.StreamOptions.DictionaryBytes)
+				}
 			}
 		}
 		clusterCfg := *mainCfg
