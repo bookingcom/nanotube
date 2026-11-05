@@ -49,8 +49,10 @@ There is no cluster-level transport default, matching the existing `grpc` and
 
 Numeric fields use go-carbon's plaintext parsing: both are parsed as float64,
 timestamps are truncated to int64, and invalid numbers or NaN values/timestamps
-are dropped and counted in `nanotube_stream_records_dropped_total`. Codec size
-rejects use the same counter. A single record may exceed the byte target, as with
+are refused and counted in `nanotube_stream_records_rejected_total` with
+`reason="nan"` or `reason="invalid"`. go-carbon's plaintext parser rejects the
+same lines, so these are producer content, not delivery loss. Points dropped by
+codec size limits count in `nanotube_stream_records_dropped_total`. A single record may exceed the byte target, as with
 plaintext output buffering; the codec's hard frame and name limits still apply.
 `max_rows` cannot exceed the receiver's 65536-row limit. A non-default name cap
 must fit the receiver's `stream-max-names` setting. `max_bytes` is at most 4 MiB;

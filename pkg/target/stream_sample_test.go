@@ -130,7 +130,7 @@ func TestStreamSampleReport(t *testing.T) {
 					}
 				}
 				m := ms.Stream.For(map[string]string{"cluster": "example", "upstream_host": "localhost"})
-				if testutil.ToFloat64(m.Records) != float64(r.Records) || testutil.ToFloat64(m.Dropped) != 0 {
+				if testutil.ToFloat64(m.Records) != float64(r.Records) || testutil.ToFloat64(m.Dropped) != 0 || testutil.ToFloat64(m.RejectedNaN)+testutil.ToFloat64(m.RejectedInvalid) != 0 {
 					t.Fatal("sample records were rejected or duplicated by encoder")
 				}
 				r.Names = int64(testutil.ToFloat64(m.Names))

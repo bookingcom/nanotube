@@ -19,6 +19,7 @@ type StreamMetrics struct {
 	Unshared                               *prometheus.CounterVec
 	ResetReasons                           *prometheus.CounterVec
 	Dropped                                *prometheus.CounterVec
+	Rejected                               *prometheus.CounterVec
 	RetainedBytes, RetainedNames, MapBytes *prometheus.GaugeVec
 }
 
@@ -28,6 +29,7 @@ type StreamOutput struct {
 	Unshared                               prometheus.Counter
 	PeerResets, LocalResets, NameResets    prometheus.Counter
 	Dropped                                prometheus.Counter
+	RejectedNaN, RejectedInvalid           prometheus.Counter
 	RetainedBytes, RetainedNames, MapBytes prometheus.Gauge
 }
 
@@ -46,17 +48,19 @@ func newStreamMetrics() *StreamMetrics {
 		Resets:       counter("stream_dictionary_resets_total", "Dictionary resets encoded after reaching the peer byte, local byte or name cap."),
 		ResetReasons: prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_dictionary_resets_by_reason_total", Help: "Dictionary resets by binding limit: peer_bytes, local_bytes or names; peer bytes take precedence when multiple limits bind."}, []string{"cluster", "upstream_host", "reason"}),
 		Records:      counter("stream_records_encoded_total", "Points encoded, including retry attempts."),
-		Dropped:      counter("stream_records_dropped_total", "Points rejected by numeric parsing (including NaN) or codec size limits."),
+		Dropped:      counter("stream_records_dropped_total", "Points dropped because a single point exceeds the codec size limits; they never reach the store."),
+		Rejected:     prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "nanotube", Name: "stream_records_rejected_total", Help: "Points refused before encoding because the value or timestamp is NaN (reason=nan) or not a number (reason=invalid). go-carbon's plaintext parser rejects the same lines, so this is producer content, not delivery loss."}, []string{"cluster", "upstream_host", "reason"}),
 	}
 }
 
 func (m *StreamMetrics) For(labels prometheus.Labels) *StreamOutput {
 	reasons := m.ResetReasons.MustCurryWith(labels)
-	return &StreamOutput{Frames: m.Frames.With(labels), Names: m.Names.With(labels), Unshared: m.Unshared.With(labels), Resets: m.Resets.With(labels), PeerResets: reasons.WithLabelValues(string(codec.ResetPeerBytes)), LocalResets: reasons.WithLabelValues(string(codec.ResetLocalBytes)), NameResets: reasons.WithLabelValues(string(codec.ResetNames)), Records: m.Records.With(labels), Dropped: m.Dropped.With(labels), RetainedBytes: m.RetainedBytes.With(labels), RetainedNames: m.RetainedNames.With(labels), MapBytes: m.MapBytes.With(labels)}
+	rejected := m.Rejected.MustCurryWith(labels)
+	return &StreamOutput{Frames: m.Frames.With(labels), Names: m.Names.With(labels), Unshared: m.Unshared.With(labels), Resets: m.Resets.With(labels), PeerResets: reasons.WithLabelValues(string(codec.ResetPeerBytes)), LocalResets: reasons.WithLabelValues(string(codec.ResetLocalBytes)), NameResets: reasons.WithLabelValues(string(codec.ResetNames)), Records: m.Records.With(labels), Dropped: m.Dropped.With(labels), RejectedNaN: rejected.WithLabelValues("nan"), RejectedInvalid: rejected.WithLabelValues("invalid"), RetainedBytes: m.RetainedBytes.With(labels), RetainedNames: m.RetainedNames.With(labels), MapBytes: m.MapBytes.With(labels)}
 }
 
 func (m *StreamMetrics) register(reg prometheus.Registerer) error {
-	for _, c := range []prometheus.Collector{m.Frames, m.Names, m.Unshared, m.Resets, m.ResetReasons, m.Records, m.Dropped, m.RetainedBytes, m.RetainedNames, m.MapBytes} {
+	for _, c := range []prometheus.Collector{m.Frames, m.Names, m.Unshared, m.Resets, m.ResetReasons, m.Records, m.Dropped, m.Rejected, m.RetainedBytes, m.RetainedNames, m.MapBytes} {
 		if err := reg.Register(c); err != nil {
 			return err
 		}

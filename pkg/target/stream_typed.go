@@ -161,7 +161,7 @@ func (s *streamSender) dispatchTyped(points []streamPoint) {
 		c.lock()
 		for j, p := range points {
 			if math.IsNaN(p.value) {
-				s.ms.Dropped.Inc()
+				s.ms.RejectedNaN.Inc()
 				s.q.accountStreamDrop(p.plainBytes)
 				continue
 			}
