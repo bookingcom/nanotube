@@ -62,7 +62,7 @@ func readRelayFixture(t testing.TB, path string) (relayFixtureArchive, func()) {
 		t.Fatal(err)
 	}
 	for _, fixture := range []*relayFixture{&result.Zero, &result.One} {
-		for connection := range 80 {
+		for connection := range 33 {
 			fixture.Initial[connection] = read()
 			fixture.Frames[connection] = make([][]byte, len(fixture.CycleExpected))
 			for cycle := range fixture.Frames[connection] {
@@ -102,15 +102,15 @@ func writeRelayFixture(t testing.TB, path string, input relayFixtureArchive) {
 		}
 	}
 	metadata := input
-	metadata.Zero.Initial, metadata.One.Initial = [80][]byte{}, [80][]byte{}
-	metadata.Zero.Frames, metadata.One.Frames = [80][][]byte{}, [80][][]byte{}
+	metadata.Zero.Initial, metadata.One.Initial = [33][]byte{}, [33][]byte{}
+	metadata.Zero.Frames, metadata.One.Frames = [33][][]byte{}, [33][][]byte{}
 	var header bytes.Buffer
 	if err := gob.NewEncoder(&header).Encode(metadata); err != nil {
 		t.Fatal(err)
 	}
 	write(header.Bytes())
 	for _, fixture := range []*relayFixture{&input.Zero, &input.One} {
-		for connection := range 80 {
+		for connection := range 33 {
 			write(fixture.Initial[connection])
 			for _, frame := range fixture.Frames[connection] {
 				write(frame)
