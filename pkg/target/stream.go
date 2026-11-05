@@ -79,6 +79,23 @@ func parseStreamPoint(r *rec.RecBytes) (streamPoint, bool) {
 	return streamPoint{name: r.Path, hash: r.PathHash(), global: r.StreamToken(), value: v, timestamp: int64(t), plainBytes: len(r.Path) + len(r.Val) + len(r.Time) + 3}, true
 }
 
+// streamRejectIsNaN tells a NaN value or timestamp apart from an unparseable number
+// for a record parseStreamPoint refused. Only the reject path pays for the reparse.
+func streamRejectIsNaN(r *rec.RecBytes) bool {
+	if v, _, ok := r.TypedValues(); ok {
+		return math.IsNaN(v)
+	}
+	v, err := parseStreamNumber(r.Val)
+	if err != nil {
+		return false
+	}
+	if math.IsNaN(v) {
+		return true
+	}
+	t, err := parseStreamNumber(r.Time)
+	return err == nil && math.IsNaN(t)
+}
+
 func (s *streamSender) run() {
 	flushed := make(chan struct{})
 	go func() {
@@ -186,7 +203,12 @@ func (s *streamSender) sendBatch(c *streamConnection, rs []*rec.RecBytes) {
 	for i, r := range rs {
 		p, ok := parseStreamPoint(r)
 		if !ok {
-			s.ms.Dropped.Inc()
+			// Content go-carbon's plaintext parser rejects too: not a delivery drop.
+			if streamRejectIsNaN(r) {
+				s.ms.RejectedNaN.Inc()
+			} else {
+				s.ms.RejectedInvalid.Inc()
+			}
 			s.q.accountStreamDrop(r.PlainSize())
 			continue
 		}

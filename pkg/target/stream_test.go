@@ -227,8 +227,9 @@ func TestStreamNumericDropsDrainAndPeriodicFlush(t *testing.T) {
 			if len(points) != 1 {
 				t.Fatal("numeric rejects reached peer")
 			}
-			if testutil.ToFloat64(ms.Stream.For(map[string]string{"cluster": "example", "upstream_host": "127.0.0.1"}).Dropped) != 4 {
-				t.Fatal("numeric rejects not counted")
+			so := ms.Stream.For(map[string]string{"cluster": "example", "upstream_host": "127.0.0.1"})
+			if nan, invalid, dropped := testutil.ToFloat64(so.RejectedNaN), testutil.ToFloat64(so.RejectedInvalid), testutil.ToFloat64(so.Dropped); nan != 3 || invalid != 1 || dropped != 0 {
+				t.Fatalf("numeric rejects counted nan=%v invalid=%v dropped=%v, want 3, 1, 0", nan, invalid, dropped)
 			}
 			checkStreamAccounting(t, ms, 1, old.wire.Len())
 		})
