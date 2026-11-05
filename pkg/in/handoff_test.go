@@ -693,7 +693,9 @@ func TestInheritedStreamRespectsSuccessorReservation(t *testing.T) {
 		t.Fatal("over-budget inherited stream accepted")
 	}
 	a.Close()
-	<-received
+	if receiveErr := <-received; receiveErr == nil {
+		t.Fatal("rejected stream handoff completed without a receive error")
+	}
 	close(stop)
 	<-done
 	next.wg.Wait()

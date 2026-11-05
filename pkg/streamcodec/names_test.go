@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func (s *nameShard) sweep(pressure bool) { s.reclaim(s.used, pressure) }
+func (s *nameShard) sweep() { s.reclaim(s.used, true) }
 
 func TestSharedTableAllocatesIndexForRetainedNames(t *testing.T) {
 	const budget = 256 << 20
@@ -40,7 +40,7 @@ func TestSharedTableAllocatesIndexForRetainedNames(t *testing.T) {
 	}
 	for i := range table.shards {
 		s := &table.shards[i]
-		s.sweep(true)
+		s.sweep()
 	}
 	final := table.Stats()
 	if final.Names != 0 || final.Capacity != initial.Capacity || final.Bytes > budget/25 {
@@ -170,7 +170,7 @@ func TestSharedTableChurnBudgetAndStaleToken(t *testing.T) {
 	for i := range table.shards {
 		s := &table.shards[i]
 		s.mu.Lock()
-		s.sweep(true)
+		s.sweep()
 		s.mu.Unlock()
 	}
 	if table.Stats().Names != 0 {
@@ -217,7 +217,7 @@ func TestSharedTableConcurrentConnections(t *testing.T) {
 	for i := range table.shards {
 		s := &table.shards[i]
 		s.mu.Lock()
-		s.sweep(true)
+		s.sweep()
 		s.mu.Unlock()
 	}
 	if table.Stats().Names != 0 {
@@ -617,7 +617,7 @@ func TestSharedNameEpochReuseAndTableIdentity(t *testing.T) {
 		t.Fatal("distinct slots consumed global epochs")
 	}
 	s := a.shard(0)
-	s.sweep(true)
+	s.sweep()
 	for i := range 1000 {
 		token := a.Resolve(fmt.Appendf(nil, "churn.%d", i), 0)
 		if uint32(token) == 0 {
@@ -626,7 +626,7 @@ func TestSharedNameEpochReuseAndTableIdentity(t *testing.T) {
 		if a.Valid(old, 0) || a.Acquire(old, 0) {
 			t.Fatal("stale slot acquired")
 		}
-		s.sweep(true)
+		s.sweep()
 	}
 }
 
@@ -639,7 +639,7 @@ func TestSharedNameEpochExhaustion(t *testing.T) {
 	}
 	old := table.Resolve([]byte("old"), 0)
 	s := table.shard(0)
-	s.sweep(true)
+	s.sweep()
 	token := table.Resolve([]byte("next"), 0)
 	if uint32(token) != 0 || table.Valid(old, 0) || table.Acquire(old, 0) {
 		t.Fatal("generation wrapped")

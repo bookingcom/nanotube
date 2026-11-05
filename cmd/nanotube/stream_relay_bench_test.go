@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -68,7 +69,7 @@ func relayModelName(i, epoch int) string {
 }
 
 func relayModelValue(i int, ts int64, producer int) float64 {
-	return float64((i%10000)*32+producer) + float64(ts%97)/128
+	return float64((i%10000)*64+producer) + float64(ts%97)/128
 }
 
 func relayModelHash(name []byte) uint64 { h := fnv.New64a(); _, _ = h.Write(name); return h.Sum64() }
@@ -130,6 +131,9 @@ func TestStreamRelayReceiver(t *testing.T) {
 					r := bufio.NewReaderSize(&relayCountReader{c, &wireBytes}, 65536)
 					p := make([]byte, codec.PreambleSize)
 					if _, err := io.ReadFull(r, p); err != nil {
+						if err == io.EOF {
+							return
+						}
 						panic(err)
 					}
 					flags, err := codec.ParsePreamble(p)
@@ -152,22 +156,22 @@ func TestStreamRelayReceiver(t *testing.T) {
 									panic(err)
 								}
 								hash := relayModelHash(name)
-								if int(host)%11 != int(jump.Hash(hash, 11)) {
+								if int(host)%6 != int(jump.Hash(hash, 6)) {
 									panic("changed route")
 								}
 								// Decoder names are immutable until RESET, which clears this ID slot.
 								state = &relayReceiveName{hash, index}
 								*slot = state
 							}
-							producer := int(v) % 32
-							if producer >= 20 || v != relayModelValue(state.index, ts, producer) {
+							producer := int(v) % 64
+							if producer >= 33 || v != relayModelValue(state.index, ts, producer) {
 								panic("changed record")
 							}
 							hash := state.hash
 							digest.Count++
 							digest.Sum += relayModelSum(hash, v, ts)
-							if ts > relayModelBase && (len(stamps) == 0 || stamps[len(stamps)-1] != (ts-relayModelBase)*20+int64(producer)) {
-								stamps = append(stamps, (ts-relayModelBase)*20+int64(producer))
+							if ts > relayModelBase && (len(stamps) == 0 || stamps[len(stamps)-1] != (ts-relayModelBase)*33+int64(producer)) {
+								stamps = append(stamps, (ts-relayModelBase)*33+int64(producer))
 							}
 						})
 						if err == io.EOF {
@@ -236,8 +240,8 @@ func TestStreamRelayReceiver(t *testing.T) {
 }
 
 type relayFixture struct {
-	Initial         [80][]byte
-	Frames          [80][][]byte
+	Initial         [33][]byte
+	Frames          [33][][]byte
 	InitialExpected [33]relayDigest
 	CycleExpected   [][33]relayDigest
 	Start           int
@@ -250,9 +254,9 @@ func relayModelFixture(t testing.TB, names, cycles, epoch, start int) relayFixtu
 	producer := 0
 	addExpected := func(i int, name []byte, ts int64, count uint64) {
 		hash := relayModelHash(name)
-		host := int(jump.Hash(hash, 11))
+		host := int(jump.Hash(hash, 6))
 		for replica := range 3 {
-			d := &current[replica*11+host]
+			d := &current[replica*6+host]
 			d.Count += count
 			d.Sum += count * relayModelSum(hash, relayModelValue(i, ts, producer), ts)
 		}
@@ -261,20 +265,20 @@ func relayModelFixture(t testing.TB, names, cycles, epoch, start int) relayFixtu
 	if value := os.Getenv("RELAY_MODEL_INPUT_DICTIONARY"); value != "" {
 		budget, _ = strconv.Atoi(value)
 	}
-	for connection := range 80 {
-		stripe := connection % 4
-		producer = connection / 4
+	for connection := range 33 {
+		stripe := connection
+		producer = connection
 		current = &f.InitialExpected
-		e, err := codec.NewEncoder(codec.Options{Flags: codec.FlagZstd, DictionaryBytes: budget, PeerDictionaryBytes: 256 << 20, MaxRows: 1024})
+		e, err := codec.NewEncoder(codec.Options{Flags: codec.FlagZstd, DictionaryBytes: budget, PeerDictionaryBytes: 1 << 30, MaxRows: 1024})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if err := e.Reset(); err != nil {
 			t.Fatal(err)
 		}
-		order := rand.New(rand.NewPCG(uint64(connection+1), uint64(epoch+7919))).Perm(names / 4)
+		order := rand.New(rand.NewPCG(uint64(connection+1), uint64(epoch+7919))).Perm(names / 33)
 		for _, position := range order {
-			i := stripe + position*4
+			i := stripe + position*33
 			name := []byte(relayModelName(i, epoch))
 			ts := int64(relayModelBase + start)
 			if err := e.Add(name, relayModelValue(i, ts, producer), ts); err != nil {
@@ -288,11 +292,11 @@ func relayModelFixture(t testing.TB, names, cycles, epoch, start int) relayFixtu
 		}
 		for cycle := range cycles {
 			current = &f.CycleExpected[cycle]
-			ts := int64(relayModelBase + start + 1 + cycle*4 + stripe)
+			ts := int64(relayModelBase + start + 1 + cycle)
 			for j := range 1024 {
 				// Producers visit different windows; sharing a dictionary does not mean
 				// all twenty producers update the same names in the same DATA frame.
-				i := stripe + (((cycle*1024+j)*37+producer*104729)%(names/4))*4
+				i := stripe + (((cycle*1024+j)*37)%(names/33))*33
 				name := []byte(relayModelName(i, epoch))
 				if err := e.Add(name, relayModelValue(i, ts, producer), ts); err != nil {
 					t.Fatal(err)
@@ -316,7 +320,7 @@ func TestStreamRelayModel(t *testing.T) {
 	if os.Getenv("NANOTUBE_RELAY_MODEL") != "1" {
 		t.Skip("opt-in CPU model")
 	}
-	names := 130000
+	names := 270336
 	if v := os.Getenv("RELAY_MODEL_NAMES"); v != "" {
 		names, _ = strconv.Atoi(v)
 	}
@@ -384,14 +388,18 @@ func TestStreamRelayModel(t *testing.T) {
 	cfg.TCPInitialConnCheck = false
 	cfg.TCPOutConnectionRefreshPeriodSec = 55
 	cfg.HostQueueSize = 800000
-	cfg.StreamDictionaryBytes = 8 << 30
+	cfg.StreamDictionaryBytes = 16 << 30
 	cls := target.Clusters{}
 	var hosts []*target.HostMTCP
-	for replica := range 3 {
+	for replica := range 6 {
 		cl := &target.Cluster{Name: fmt.Sprint(replica), Type: conf.JumpCluster}
 		cls[cl.Name] = cl
-		for host := range 11 {
-			id := replica*11 + host
+		slots, connections, offset := 6, 5, replica*6
+		if replica >= 3 {
+			slots, connections, offset = 5, 10, 18+(replica-3)*5
+		}
+		for host := range slots {
+			id := offset + host
 			_, portText, err := net.SplitHostPort(reply.Addresses[id])
 			if err != nil {
 				t.Fatal(err)
@@ -402,7 +410,7 @@ func TestStreamRelayModel(t *testing.T) {
 			}
 			// Distinct metric labels retain the production per-host counters while
 			// every actual connection (and reconnect) stays on loopback.
-			h := target.ConstructHostMTCP(fmt.Sprintf("%d/%d", replica, host), cfg, conf.Host{Name: "127.0.0.1", Port: uint16(port), MTCP: 10, Stream: true, StreamOptions: conf.StreamOptions{Zstd: true, DictionaryBytes: 16 << 20, PeerDictionaryBytes: 256 << 20, FlushPeriodMS: 1000}}, zap.NewNop(), ms)
+			h := target.ConstructHostMTCP(fmt.Sprintf("%d/%d", replica, host), cfg, conf.Host{Name: "127.0.0.1", Port: uint16(port), MTCP: connections, Stream: true, StreamOptions: conf.StreamOptions{Zstd: true, DictionaryBytes: 32 << 20, PeerDictionaryBytes: 256 << 20, FlushPeriodMS: 1000}}, zap.NewNop(), ms)
 			for j := range h.MTCPs {
 				c, err := net.Dial("tcp", reply.Addresses[id])
 				if err != nil {
@@ -421,12 +429,12 @@ func TestStreamRelayModel(t *testing.T) {
 	var streams []*modelStream
 	factory := newStreamRouter(rs, rewrites.Rewrites{}, true, zap.NewNop(), ms)
 	decoders := codec.NewDecoderPool(codec.DefaultMaxFrameSize, runtime.GOMAXPROCS(0))
-	for range 80 {
+	for range 33 {
 		s := factory.NewSink()
 		if os.Getenv("RELAY_MODEL_SCALED_ROUTES") == "1" {
 			s.maxBytes = (128 << 20) * names / 13000000
 		}
-		d, err := codec.NewDecoder(codec.Options{Flags: codec.FlagZstd, DictionaryBytes: 256 << 20})
+		d, err := codec.NewDecoder(codec.Options{Flags: codec.FlagZstd, DictionaryBytes: 1 << 30})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -478,12 +486,12 @@ func TestStreamRelayModel(t *testing.T) {
 			sum(f.CycleExpected[cycle])
 		}
 	}
-	// Queue all 80 independent dictionaries with eight input workers. A worker
-	// owns ten decoder states; no concurrent access to a decoder is permitted.
+	// Queue all 33 independent dictionaries with eight input workers. A worker
+	// owns disjoint decoder states; no concurrent access to a decoder is permitted.
 	run := func(f relayFixture, initial bool, first int, rate float64, admissions []atomic.Int64) {
 		start := time.Now()
 		admit := func(i, cycle int) {
-			stripe := i % 4
+			stripe := 0
 			wire := f.Initial[i]
 			if cycle >= 0 {
 				wire = f.Frames[i][first+cycle]
@@ -491,10 +499,10 @@ func TestStreamRelayModel(t *testing.T) {
 			if admissions != nil {
 				id := f.Start
 				if cycle >= 0 {
-					id += 1 + (first+cycle)*4 + stripe
+					id += 1 + (first + cycle) + stripe
 				}
 				now := time.Now().UnixNano()
-				admissions[id*20+i/4].CompareAndSwap(0, now)
+				admissions[id*33+i].CompareAndSwap(0, now)
 			}
 			streams[i].decode(t, wire)
 		}
@@ -506,7 +514,7 @@ func TestStreamRelayModel(t *testing.T) {
 					continue
 				}
 				if rate > 0 && cycle >= 0 {
-					due := start.Add(time.Duration(float64(cycle*80*1024) / rate * 1e9))
+					due := start.Add(time.Duration(float64(cycle*33*1024) / rate * 1e9))
 					if delay := time.Until(due); delay > 0 {
 						time.Sleep(delay)
 					}
@@ -527,12 +535,12 @@ func TestStreamRelayModel(t *testing.T) {
 						continue
 					}
 					if rate > 0 && cycle >= 0 {
-						due := start.Add(time.Duration(float64(cycle*80*1024) / rate * 1e9))
+						due := start.Add(time.Duration(float64(cycle*33*1024) / rate * 1e9))
 						if delay := time.Until(due); delay > 0 {
 							time.Sleep(delay)
 						}
 					}
-					for i := worker * 10; i < (worker+1)*10; i++ {
+					for i := worker; i < len(streams); i += 8 {
 						admit(i, cycle)
 					}
 				}
@@ -556,7 +564,7 @@ func TestStreamRelayModel(t *testing.T) {
 			old.ReleaseName(ref)
 			hash := relayModelHash(name)
 			for replica := range 3 {
-				d := &expected[replica*11+int(jump.Hash(hash, 11))]
+				d := &expected[replica*6+int(jump.Hash(hash, 6))]
 				d.Count++
 				d.Sum += relayModelSum(hash, value, relayModelBase)
 			}
@@ -567,6 +575,62 @@ func TestStreamRelayModel(t *testing.T) {
 		old.Flush()
 		old.Close()
 		query(nil)
+	}
+	// A fresh relay has empty input and output dictionaries. RESET timing below
+	// retains output names, so measure initial name admission separately.
+	if os.Getenv("RELAY_MODEL_COLD_ONLY") == "1" {
+		expected = f0.InitialExpected
+		var frames [33][][]byte
+		rounds := 0
+		for i, wire := range f0.Initial {
+			for len(wire) > 0 {
+				n := codec.HeaderSize + int(binary.BigEndian.Uint32(wire[4:8]))
+				frames[i] = append(frames[i], wire[:n:n])
+				wire = wire[n:]
+			}
+			rounds = max(rounds, len(frames[i]))
+		}
+		offsets := make([]time.Duration, rounds)
+		rows := 0
+		for round := range rounds {
+			offsets[round] = time.Duration(float64(rows) / 1e6 * 1e9)
+			for _, source := range frames {
+				if round < len(source) {
+					rows += int(binary.BigEndian.Uint32(source[round][12:16]))
+				}
+			}
+		}
+		if rows != names {
+			t.Fatal("cold fixture row count")
+		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		cpu := modelCPU()
+		start := time.Now()
+		var workers sync.WaitGroup
+		workers.Add(8)
+		for worker := range 8 {
+			go func() {
+				defer workers.Done()
+				for round := range rounds {
+					if delay := time.Until(start.Add(offsets[round])); delay > 0 {
+						time.Sleep(delay)
+					}
+					for i := worker; i < len(streams); i += 8 {
+						if round < len(frames[i]) {
+							streams[i].decode(t, frames[i][round])
+						}
+					}
+				}
+			}()
+		}
+		workers.Wait()
+		query(nil)
+		used := modelCPU() - cpu
+		runtime.ReadMemStats(&after)
+		fmt.Printf("BenchmarkRelayStream/cold-8 1 %.6f core-sec/Mrec %.6f allocs/record %.3f B/record\n", float64(used)/float64(names)/1000, float64(after.Mallocs-before.Mallocs)/float64(names), float64(after.TotalAlloc-before.TotalAlloc)/float64(names))
+		reportRelayModelMemory(t)
+		return
 	}
 	// Warm complete dictionaries, then measure each independently drained phase.
 	run(f0, true, 0, 0, nil)
@@ -589,7 +653,7 @@ func TestStreamRelayModel(t *testing.T) {
 	fmt.Printf("MODEL_OUTPUT shared_names=%d connection_names=%.0f map_bytes=%.0f\n", retainedNames, totals["nanotube_stream_connection_names"], totals["nanotube_stream_connection_map_bytes"])
 	runtime.GC()
 	wireBefore := query(nil).Wire
-	for phase, rate := range []float64{1300000, 2600000, 1300000} {
+	for phase, rate := range []float64{1000000, 2000000, 1000000} {
 		f, initial, label, first := f0, false, "steady", cycles
 		if phase == 1 {
 			label = "burst"
@@ -613,7 +677,7 @@ func TestStreamRelayModel(t *testing.T) {
 			}
 		}
 		add(f, initial, first)
-		admissions := make([]atomic.Int64, (cycles*16+8)*20)
+		admissions := make([]atomic.Int64, (cycles*16+8)*33)
 
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
@@ -626,9 +690,9 @@ func TestStreamRelayModel(t *testing.T) {
 		r := query(times)
 		used := modelCPU() - cpu
 		runtime.ReadMemStats(&after)
-		n := cycles * 80 * 1024
+		n := cycles * 33 * 1024
 		if initial {
-			n += names * 20
+			n += names
 		}
 		fmt.Printf("BenchmarkRelayStream/%s-8 1 %.6f core-sec/Mrec %.6f allocs/record %.3f B/record %.3f p99-frame-ms\n", label, float64(used)/float64(n)/1000, float64(after.Mallocs-before.Mallocs)/float64(n), float64(after.TotalAlloc-before.TotalAlloc)/float64(n), r.P99)
 		fmt.Printf("MODEL_WIRE phase=%s bytes=%d records=%d bytes_per_record=%.9f\n", label, r.Wire-wireBefore, n, float64(r.Wire-wireBefore)/float64(n))
@@ -638,6 +702,11 @@ func TestStreamRelayModel(t *testing.T) {
 			_ = profile.Close()
 		}
 	}
+	reportRelayModelMemory(t)
+}
+
+func reportRelayModelMemory(t *testing.T) {
+	t.Helper()
 	runtime.GC()
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)

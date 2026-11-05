@@ -178,6 +178,10 @@ func (s *streamRouter) point(plan *streamName, tokenSource *uint64, name []byte,
 		if !s.names.rewrites.Empty() {
 			return
 		} // A rewrite that emits no paths.
+		if plan.typed != nil {
+			plan.typed.Push(plan.StreamName(), plan.hash, value, ts, tokenSource, s.batch)
+			return
+		}
 		var route rules.Route
 		if plan.route != nil {
 			route = *plan.route

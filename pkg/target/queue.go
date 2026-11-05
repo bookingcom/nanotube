@@ -15,9 +15,10 @@ const queueChunkLen = 256
 const maxFreeChunks = 4
 
 type recChunk struct {
-	recs [queueChunkLen]*rec.RecBytes
-	n    int
-	next *recChunk
+	recs   [queueChunkLen]*rec.RecBytes
+	n      int
+	next   *recChunk
+	points *pointChunk
 }
 
 // recQueue is a bounded FIFO of records with many producers and one consumer.
@@ -26,14 +27,15 @@ type recChunk struct {
 // channel buffer, its memory grows and shrinks with the number of queued
 // records.
 type recQueue struct {
-	mu      sync.Mutex
-	head    *recChunk
-	tail    *recChunk
-	n       int
-	limit   int
-	closed  bool
-	waiting bool
-	free    []*recChunk
+	mu         sync.Mutex
+	head       *recChunk
+	tail       *recChunk
+	n          int
+	limit      int
+	closed     bool
+	waiting    bool
+	free       []*recChunk
+	freePoints []*pointChunk
 
 	wake   chan struct{}
 	output *tcpAccounting
@@ -56,7 +58,7 @@ func (q *recQueue) push(rs []*rec.RecBytes) (dropped int) {
 	}
 	for start := 0; start < accepted; {
 		t := q.tail
-		if t == nil || t.n == queueChunkLen {
+		if t == nil || t.n == queueChunkLen || t.points != nil {
 			t = q.newChunk()
 		}
 		n := copy(t.recs[t.n:], rs[start:accepted])
@@ -71,12 +73,7 @@ func (q *recQueue) push(rs []*rec.RecBytes) (dropped int) {
 	}
 	q.mu.Unlock()
 
-	if wake {
-		select {
-		case q.wake <- struct{}{}:
-		default:
-		}
-	}
+	q.wakeConsumer(wake)
 
 	return len(rs) - accepted
 }
@@ -138,9 +135,18 @@ func (q *recQueue) pop() *recChunk {
 // recycle releases the records of a popped chunk and keeps it for reuse.
 func (q *recQueue) recycle(c *recChunk) {
 	clear(c.recs[:c.n])
+	if c.points != nil {
+		clear(c.points[:c.n])
+	}
 	c.n = 0
 
 	q.mu.Lock()
+	if c.points != nil {
+		if len(q.freePoints) < maxFreeChunks {
+			q.freePoints = append(q.freePoints, c.points)
+		}
+		c.points = nil
+	}
 	if len(q.free) < maxFreeChunks {
 		q.free = append(q.free, c)
 	}
@@ -193,10 +199,19 @@ func targetQueue(t Target) *recQueue {
 // Batch stages records per target host so that each host queue is locked once
 // per batch instead of once per record. A Batch belongs to one goroutine.
 // Records reach the hosts only on Flush; the order per host is preserved.
+type batchRun struct {
+	typed bool
+	stop  int
+}
+
 type Batch struct {
-	targets []queuedTarget
-	recs    [][]*rec.RecBytes
-	used    []int
+	targets   []queuedTarget
+	recs      [][]*rec.RecBytes
+	points    [][]*streamPoint
+	used      []int
+	typed     []streamPoint
+	runs      [][]batchRun
+	lastTyped []bool
 }
 
 // NewBatch makes an empty Batch.
@@ -212,23 +227,91 @@ func (b *Batch) add(t Target, r *rec.RecBytes) {
 	}
 
 	id := qt.queueID()
-	if id >= len(b.recs) {
-		b.recs = append(b.recs, make([][]*rec.RecBytes, id+1-len(b.recs))...)
-		b.targets = append(b.targets, make([]queuedTarget, id+1-len(b.targets))...)
-	}
-	if len(b.recs[id]) == 0 {
+	b.grow(id)
+	if len(b.recs[id]) == 0 && len(b.points[id]) == 0 {
 		b.used = append(b.used, id)
 		b.targets[id] = qt
 	}
+	b.note(id, false)
 	b.recs[id] = append(b.recs[id], r)
 }
 
 // Flush hands all staged records to their hosts.
 func (b *Batch) Flush() {
 	for _, id := range b.used {
-		b.targets[id].pushBulk(b.recs[id])
+		if len(b.recs[id]) > 0 && len(b.points[id]) > 0 {
+			// Mixed kinds preserve the original single atomic host-queue admission.
+			// Only this uncommon case materializes legacy records before queueing.
+			merged := make([]*rec.RecBytes, 0, len(b.recs[id])+len(b.points[id]))
+			plain, typed := 0, 0
+			appendRun := func(run batchRun) {
+				if run.typed {
+					for _, p := range b.points[id][typed:run.stop] {
+						r := rec.NewTyped(p.name, p.value, p.timestamp)
+						r.SetPathHash(p.hash)
+						r.SetStreamToken(p.global)
+						merged = append(merged, r)
+					}
+					typed = run.stop
+				} else {
+					merged = append(merged, b.recs[id][plain:run.stop]...)
+					plain = run.stop
+				}
+			}
+			for _, run := range b.runs[id] {
+				appendRun(run)
+			}
+			end := len(b.recs[id])
+			if b.lastTyped[id] {
+				end = len(b.points[id])
+			}
+			appendRun(batchRun{b.lastTyped[id], end})
+			b.targets[id].pushBulk(merged)
+		} else if len(b.recs[id]) > 0 {
+			b.targets[id].pushBulk(b.recs[id])
+		} else if len(b.points[id]) > 0 {
+			b.targets[id].(*HostMTCP).pushTypedBulk(b.points[id])
+		}
+		clear(b.points[id])
+		b.points[id] = b.points[id][:0]
+		b.runs[id] = b.runs[id][:0]
+		b.lastTyped[id] = false
 		clear(b.recs[id])
 		b.recs[id] = b.recs[id][:0]
 	}
+	clear(b.typed)
+	b.typed = b.typed[:0]
 	b.used = b.used[:0]
+}
+
+func (q *recQueue) wakeConsumer(wake bool) {
+	if wake {
+		select {
+		case q.wake <- struct{}{}:
+		default:
+		}
+	}
+}
+func (b *Batch) grow(id int) {
+	if id >= len(b.recs) {
+		b.recs = append(b.recs, make([][]*rec.RecBytes, id+1-len(b.recs))...)
+		b.points = append(b.points, make([][]*streamPoint, id+1-len(b.points))...)
+		b.targets = append(b.targets, make([]queuedTarget, id+1-len(b.targets))...)
+		b.runs = append(b.runs, make([][]batchRun, id+1-len(b.runs))...)
+		b.lastTyped = append(b.lastTyped, make([]bool, id+1-len(b.lastTyped))...)
+	}
+}
+
+func (b *Batch) note(id int, typed bool) {
+	if b.lastTyped[id] == typed {
+		return
+	}
+	n := len(b.recs[id])
+	if b.lastTyped[id] {
+		n = len(b.points[id])
+	}
+	if n > 0 {
+		b.runs[id] = append(b.runs[id], batchRun{b.lastTyped[id], n})
+	}
+	b.lastTyped[id] = typed
 }

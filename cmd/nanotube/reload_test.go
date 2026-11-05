@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestReloadChild(t *testing.T) {
+func TestReloadChild(_ *testing.T) {
 	mode := os.Getenv("NANOTUBE_TEST_RELOAD_MODE")
 	if mode == "" {
 		return
