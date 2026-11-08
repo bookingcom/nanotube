@@ -1,0 +1,61 @@
+package target
+
+import (
+ "encoding/json"
+ "fmt"
+ "math"
+ "math/rand"
+ "testing"
+
+ "github.com/bookingcom/nanotube/pkg/conf"
+ "github.com/bookingcom/nanotube/pkg/metrics"
+ "github.com/bookingcom/nanotube/pkg/rec"
+ "github.com/prometheus/client_golang/prometheus/testutil"
+ "go.uber.org/zap"
+)
+
+// Injected only into test builds, identically on the baseline and candidate.
+// Consumers are paused by construction, so overflow admission is deterministic.
+func TestQueueDifferentialOracle(t *testing.T) {
+ type row struct { Host int; Name string; Bits uint64; Timestamp int64 }
+ type result struct { Seed int64; Capacity int; Mixed bool; Rows []row; Drops []float64; PendingPoints, PendingBytes []int64 }
+ var results []result
+ for _, seed := range []int64{1,7,42} {
+  for _, capacity := range []int{2,17,257} {
+   for _, mixed := range []bool{false,true} {
+    cfg:=conf.MakeDefault();cfg.TCPInitialConnCheck=false;cfg.HostQueueSize=uint64(capacity);cfg.StreamDictionaryBytes=16<<20
+    ms:=metrics.New();var clusters []*Cluster;var hosts []*HostMTCP
+    for replica:=0;replica<3;replica++ {
+     cl:=&Cluster{Name:fmt.Sprint(replica),Type:conf.JumpCluster};clusters=append(clusters,cl)
+     for i:=0;i<6;i++ {
+      h:=ConstructHostMTCP(cl.Name,cfg,conf.Host{Name:fmt.Sprintf("127.%d.0.%d",replica,i+1),MTCP:5,Stream:true},zap.NewNop(),ms)
+      cl.Hosts=append(cl.Hosts,h);hosts=append(hosts,h)
+     }
+    }
+    batch:=NewBatch();random:=rand.New(rand.NewSource(seed))
+    // ORACLE_SETUP
+    for i:=0;i<1000;i++ {
+     name:=[]byte(fmt.Sprintf("synthetic.secondly.oracle.%d.%d",i%31,i))
+     value:=math.Float64frombits(random.Uint64());stamp:=int64(random.Uint64())
+     r:=rec.NewTyped(name,value,stamp)
+     // ORACLE_PUBLISH
+     if i%73==72 {batch.Flush()}
+    }
+    batch.Flush();out:=result{Seed:seed,Capacity:capacity,Mixed:mixed}
+    for id,h:=range hosts {
+     out.Drops=append(out.Drops,testutil.ToFloat64(h.throttledTotal))
+     out.PendingPoints=append(out.PendingPoints,h.q.output.pendingRecords)
+     out.PendingBytes=append(out.PendingBytes,h.q.output.pendingBytes)
+     h.q.close()
+     for c:=h.q.pop();c!=nil;c=h.q.pop() {
+      // ORACLE_SNAPSHOT
+      h.q.recycle(c)
+     }
+    }
+    results=append(results,out)
+   }
+  }
+ }
+ wire,err:=json.Marshal(results);if err!=nil {t.Fatal(err)}
+ fmt.Printf("QUEUE_ORACLE %s\n",wire)
+}
