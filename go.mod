@@ -10,7 +10,7 @@ require (
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
 	github.com/facebookgo/pidfile v0.0.0-20150612191647-f242e2999868
 	github.com/google/go-cmp v0.7.0
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.20.2
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/moby/moby/client v0.5.0
 	github.com/pkg/errors v0.9.1
