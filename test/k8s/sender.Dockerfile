@@ -1,11 +1,11 @@
-FROM golang:1.26.5-alpine3.21 as builder
+FROM golang:1.26.5-alpine3.23 as builder
 
 RUN apk add git
 WORKDIR /nt
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./test/sender
 
-FROM alpine:3.21
+FROM alpine:3.23.3
 WORKDIR /nt
 
 RUN set -x \
