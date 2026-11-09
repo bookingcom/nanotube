@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -87,21 +88,33 @@ func TestReplacementStartFailureRestoresEnvironment(t *testing.T) {
 }
 
 func TestTerminationDoesNotWaitForRejectedChildDrain(t *testing.T) {
-	marker := t.TempDir() + "/ready"
-	command := exec.Command("/bin/sh", "-c", `trap '' TERM; echo ready > "$1"; exec sleep 30`, "--", marker)
+	command := exec.Command("/bin/sh", "-c", `trap '' TERM; echo ready; exec sleep 30`)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = command.Process.Kill() })
-	deadline := time.Now().Add(time.Second)
-	for {
-		if _, err := os.Stat(marker); err == nil {
-			break
+	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
+	ready := make(chan error, 1)
+	go func() {
+		var marker [6]byte
+		_, err := io.ReadFull(stdout, marker[:])
+		if err == nil && string(marker[:]) != "ready\n" {
+			err = errors.New("unexpected child readiness marker")
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("stubborn child did not initialize")
+		ready <- err
+	}()
+	// Process startup is setup, not part of the bounded-termination assertion.
+	// A pipe establishes readiness without polling the filesystem on busy runners.
+	select {
+	case err := <-ready:
+		if err != nil {
+			t.Fatalf("stubborn child readiness: %v", err)
 		}
-		time.Sleep(time.Millisecond)
+	case <-time.After(10 * time.Second):
+		t.Fatal("stubborn child did not initialize")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
