@@ -1,6 +1,7 @@
 package placement
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -25,12 +26,14 @@ import (
 
 // DurableConfig bounds the entire relay spool, including held and unacknowledged
 // records. Root must be on a local filesystem honoring file/directory fsync.
-// This reference implementation syncs a bounded snapshot per mutation. It is
-// intentionally not a line-rate WAL implementation.
+// Admissions wait for a shared WAL sync before returning or reaching the wire.
 type DurableConfig struct {
-	Root       string
-	MaxRecords int
-	MaxBytes   int64
+	Root           string
+	MaxRecords     int
+	MaxBytes       int64
+	CommitInterval time.Duration
+	CommitBytes    int
+	SegmentBytes   int64
 }
 type diskGroup struct {
 	Sent, Acked       uint64
@@ -43,6 +46,7 @@ type diskEnvelope struct {
 }
 type diskState struct {
 	Version  int
+	WAL      uint64
 	Document v2placement.Document
 	Replica  string
 	Lane     v2placement.Lane
@@ -51,19 +55,27 @@ type diskState struct {
 	Queue    []v2wire.Frame
 }
 
-// Durable owns a process-exclusive snapshot and all asynchronous ACK handling.
+// Durable owns a process-exclusive WAL/checkpoint and asynchronous ACK handling.
 // Do not call Close until Run returns. A persistence failure is sticky: dispatch
 // stops until reopen, so uncertain writes can never be mistaken for a drain.
 type Durable struct {
-	mu      sync.Mutex
-	cfg     DurableConfig
-	router  *Router
-	queue   []v2wire.Frame
-	failed  error
-	lock    *os.File
-	wake    chan struct{}
-	running bool
-	failure chan struct{}
+	mu                      sync.Mutex
+	cfg                     DurableConfig
+	router                  *Router
+	queue                   []v2wire.Frame
+	failed                  error
+	lock                    *os.File
+	wake                    chan struct{}
+	running                 bool
+	failure                 chan struct{}
+	wal                     *os.File
+	walID, synced           uint64
+	walBytes, snapshotBytes int64
+	buffer                  []byte
+	cond                    *sync.Cond
+	timer                   *time.Timer
+	committed               map[v2wire.Stream]uint64
+	syncs                   uint64
 }
 
 func (d *Durable) Epochs() bool { return true }
@@ -78,11 +90,15 @@ func recordFor(f v2wire.Frame) *rec.RecBytes {
 	return rec.NewTyped([]byte(f.Name), math.Float64frombits(f.Bits), f.Timestamp)
 }
 
-// Enqueue runs under the durable mutation lock. Acceptance is published to Run
-// only after the router state and entire queue have been fsynced together.
+// Enqueue runs under the durable mutation lock. Run sees this delivery only
+// after its WAL group has been synced.
 func (d *Durable) Enqueue(x Delivery) bool {
 	f, e := frameFor(x)
 	if e != nil || f.Validate() != nil || len(d.queue) >= d.cfg.MaxRecords {
+		return false
+	}
+	encoded, err := json.Marshal(f)
+	if err != nil || len(encoded) > v2wire.MaxFrame {
 		return false
 	}
 	d.queue = append(d.queue, f)
@@ -112,7 +128,21 @@ func OpenDurable(doc v2placement.Document, replica string, lane v2placement.Lane
 		lock.Close()
 		return nil, nil, fmt.Errorf("placement spool already owned: %w", e)
 	}
-	d = &Durable{cfg: cfg, lock: lock, wake: make(chan struct{}, 1), failure: make(chan struct{})}
+	if cfg.CommitInterval == 0 {
+		cfg.CommitInterval = 2 * time.Millisecond
+	}
+	if cfg.CommitBytes == 0 {
+		cfg.CommitBytes = 256 << 10
+	}
+	if cfg.SegmentBytes == 0 {
+		cfg.SegmentBytes = 4 << 20
+	}
+	if cfg.CommitInterval < 0 || cfg.CommitBytes < 1 || cfg.SegmentBytes < 1 {
+		lock.Close()
+		return nil, nil, errors.New("invalid WAL group bounds")
+	}
+	d = &Durable{cfg: cfg, lock: lock, wake: make(chan struct{}, 1), failure: make(chan struct{}), committed: make(map[v2wire.Stream]uint64)}
+	d.cond = sync.NewCond(&d.mu)
 	defer func() {
 		if err != nil {
 			d.Close()
@@ -162,7 +192,10 @@ func OpenDurable(doc v2placement.Document, replica string, lane v2placement.Lane
 		if dec.Decode(new(any)) != io.EOF {
 			return nil, d, errors.New("trailing spool state")
 		}
-		if state.Version != 1 || state.Document.Digest() != doc.Digest() || state.Replica != replica || state.Lane != lane || state.Limit != holdLimit {
+		if e = d.replay(&state); e != nil {
+			return nil, d, e
+		}
+		if (state.Version != 1 && state.Version != 2) || state.Document.Digest() != doc.Digest() || state.Replica != replica || state.Lane != lane || state.Limit != holdLimit {
 			return nil, d, errors.New("placement spool identity/map differs; reconcile before restart")
 		}
 		s, e := compile(doc, replica, lane, nil)
@@ -225,6 +258,10 @@ func OpenDurable(doc v2placement.Document, replica string, lane v2placement.Lane
 			}
 		}
 	}
+	if err = d.checkpoint(); err != nil {
+		return nil, d, err
+	}
+	d.markCommitted()
 	r.Stats.Queued.Store(int64(len(d.queue)))
 	r.durable = d
 	return r, d, nil
@@ -232,7 +269,7 @@ func OpenDurable(doc v2placement.Document, replica string, lane v2placement.Lane
 func (d *Durable) snapshot() diskState {
 	r := d.router
 	s := r.current.Load()
-	out := diskState{Version: 1, Document: s.document, Replica: r.replica, Lane: r.lane, Limit: r.limit, Groups: make(map[string]diskGroup, len(s.groups)), Queue: d.queue}
+	out := diskState{Version: 2, WAL: d.walID, Document: s.document, Replica: r.replica, Lane: r.lane, Limit: r.limit, Groups: make(map[string]diskGroup, len(s.groups)), Queue: d.queue}
 	for id, i := range s.groups {
 		g := s.routes[i].state
 		st := diskGroup{Sent: g.sent, Acked: g.acked, Moving: g.moving, Releasing: g.releasing}
@@ -259,6 +296,7 @@ func (d *Durable) save() error {
 	if int64(len(b)) > d.cfg.MaxBytes {
 		return errors.New("placement spool byte bound reached")
 	}
+	d.snapshotBytes = int64(len(b))
 	path := filepath.Join(d.cfg.Root, "state.json")
 	f, e := os.OpenFile(path+".new", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if e != nil {
@@ -282,26 +320,54 @@ func (d *Durable) save() error {
 	e = dir.Sync()
 	return errors.Join(e, dir.Close())
 }
+func (d *Durable) fail(e error) error {
+	if e != nil && d.failed == nil {
+		d.failed = e
+		close(d.failure)
+		d.router.Stats.PersistenceErrors.Add(1)
+		d.cond.Broadcast()
+	}
+	return e
+}
 func (d *Durable) commit(e error) error {
 	if e != nil {
 		return e
 	}
-	if e = d.save(); e != nil {
-		d.failed = e
-		close(d.failure)
-		d.router.Stats.PersistenceErrors.Add(1)
-		return e
-	}
-	d.router.Stats.Queued.Store(int64(len(d.queue)))
-	select {
-	case d.wake <- struct{}{}:
-	default:
-	}
-	return nil
+	return d.fail(d.checkpoint())
 }
 func (d *Durable) push(p *rec.RecBytes) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.pushLocked(p, true)
+}
+
+// PushBatch commits an input batch with one WAL sync. On an admission error the
+// valid prefix is still synced before returning; callers must not retry it as a
+// fresh input batch. Network retries use their original durable positions.
+func (r *Router) PushBatch(records []*rec.RecBytes) error {
+	if r.durable == nil {
+		for _, p := range records {
+			if e := r.Push(p); e != nil {
+				return e
+			}
+		}
+		return nil
+	}
+	d := r.durable
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.failed != nil {
+		return d.failed
+	}
+	var result error
+	for _, p := range records {
+		if result = d.pushLocked(p, false); result != nil {
+			break
+		}
+	}
+	return errors.Join(result, d.flush())
+}
+func (d *Durable) pushLocked(p *rec.RecBytes, wait bool) error {
 	if d.failed != nil {
 		return d.failed
 	}
@@ -322,7 +388,19 @@ func (d *Durable) push(p *rec.RecBytes) error {
 	}
 	v, ts, _ := p.Values()
 	owned := rec.NewTyped(bytes.Clone(p.Path), v, ts)
-	return d.commit(d.router.push(owned))
+	before := len(d.queue)
+	if e := d.router.push(owned); e != nil {
+		return e
+	}
+	var event walEvent
+	if len(d.queue) > before {
+		event = walEvent{Kind: "append", Frame: d.queue[len(d.queue)-1]}
+	} else {
+		rt, v := s.selectRoute(owned)
+		value, ts, _ := owned.Values()
+		event = walEvent{Kind: "hold", Group: rt.group, Frame: v2wire.Frame{Name: string(owned.Path), VShard: v, Bits: math.Float64bits(value), Timestamp: ts}}
+	}
+	return d.appendEvent(event, wait)
 }
 func (d *Durable) beginMove(group string) (Barrier, error) {
 	d.mu.Lock()
@@ -359,25 +437,36 @@ func (d *Durable) retryHeld(group string) error {
 	}
 	return d.commit(d.router.retryHeld(group))
 }
-func (d *Durable) acceptAck(f v2wire.Frame) error {
+func (d *Durable) acceptAck(f v2wire.Frame) error { return d.acceptAcks([]v2wire.Frame{f}) }
+func (d *Durable) acceptAcks(frames []v2wire.Frame) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.failed != nil {
 		return d.failed
 	}
-	for i, q := range d.queue {
-		if q == f {
-			if e := d.router.acknowledge(q.Stream.Group, q.Stream.Epoch, q.Sequence); e != nil {
-				return e
+	for _, f := range frames {
+		found := false
+		for i, q := range d.queue {
+			if q == f {
+				if e := d.router.acknowledge(q.Stream.Group, q.Stream.Epoch, q.Sequence); e != nil {
+					return d.fail(e)
+				}
+				copy(d.queue[i:], d.queue[i+1:])
+				d.queue[len(d.queue)-1] = v2wire.Frame{}
+				d.queue = d.queue[:len(d.queue)-1]
+				d.router.Stats.Acknowledged.Add(1)
+				if e := d.appendEvent(walEvent{Kind: "ack", Frame: q}, false); e != nil {
+					return e
+				}
+				found = true
+				break
 			}
-			copy(d.queue[i:], d.queue[i+1:])
-			d.queue[len(d.queue)-1] = v2wire.Frame{}
-			d.queue = d.queue[:len(d.queue)-1]
-			d.router.Stats.Acknowledged.Add(1)
-			return d.commit(nil)
+		}
+		if !found {
+			return d.fail(errors.New("ACK has no pending delivery"))
 		}
 	}
-	return errors.New("ACK has no pending delivery")
+	return d.flush()
 }
 
 // Run sends independent store streams. A failed store cannot block another
@@ -416,9 +505,21 @@ func (d *Durable) Run(ctx context.Context, key []byte, dial func(context.Context
 		go func() {
 			defer wg.Done()
 			var c net.Conn
+			var writer *bufio.Writer
+			type received struct {
+				f   v2wire.Frame
+				err error
+			}
+			var acks chan received
+			var readerStop context.CancelFunc
+			var readerDone chan struct{}
+			frames := make([]v2wire.Frame, 0, 256)
 			defer func() {
 				if c != nil {
+					readerStop()
 					c.Close()
+					<-readerDone
+
 				}
 			}()
 			tick := time.NewTicker(100 * time.Millisecond)
@@ -428,43 +529,82 @@ func (d *Durable) Run(ctx context.Context, key []byte, dial func(context.Context
 					return
 				}
 				d.mu.Lock()
-				var f v2wire.Frame
-				found := false
+				frames = frames[:0]
 				if d.failed == nil {
 					for _, q := range d.queue {
-						if q.Stream.Store == store.ID {
-							f = q
-							found = true
-							break
+						if q.Stream.Store == store.ID && q.Sequence <= d.committed[q.Stream] {
+							frames = append(frames, q)
+							if len(frames) == 256 {
+								break
+							}
 						}
 					}
 				}
 				d.mu.Unlock()
-				if found {
+				if len(frames) > 0 {
 					var e error
 					if c == nil {
 						c, e = dial(ctx, store.Write)
+						if e == nil {
+							writer = bufio.NewWriterSize(c, 256<<10)
+							acks = make(chan received, 257)
+							readerCtx, stop := context.WithCancel(ctx)
+							readerStop = stop
+							readerDone = make(chan struct{})
+							go func(conn net.Conn, out chan received, done chan struct{}) {
+								defer close(done)
+								reader := bufio.NewReaderSize(conn, 256<<10)
+								for {
+									f, err := v2wire.Read(reader, key)
+									select {
+									case out <- received{f, err}:
+									case <-readerCtx.Done():
+										return
+									}
+									if err != nil {
+										return
+									}
+								}
+							}(c, acks, readerDone)
+						}
 					}
 					if e == nil {
 						_ = c.SetDeadline(time.Now().Add(time.Second))
-						e = v2wire.Write(c, f, key)
-					}
-					if e == nil {
-						var ack v2wire.Frame
-						ack, e = v2wire.Read(c, key)
-						if e == nil && ack != f.Acknowledgement() {
-							e = errors.New("placement ACK identity mismatch")
+						for _, f := range frames {
+							if e = v2wire.Write(writer, f, key); e != nil {
+								break
+							}
 						}
 						if e == nil {
-							e = d.acceptAck(f)
+							e = writer.Flush()
 						}
 					}
 					if e == nil {
+						for _, f := range frames {
+							ack := <-acks
+							if ack.err != nil {
+								e = ack.err
+								break
+							}
+							if ack.f != f.Acknowledgement() {
+								e = errors.New("placement ACK identity mismatch")
+								break
+							}
+						}
+						if e == nil {
+							e = d.acceptAcks(frames)
+						}
+					}
+					if e == nil {
+						_ = c.SetDeadline(time.Time{})
 						continue
 					}
 					d.router.Stats.OutputErrors.Add(1)
 					if c != nil {
+						readerStop()
 						c.Close()
+						<-readerDone
+
 						c = nil
 					}
 				}
@@ -494,7 +634,18 @@ func (d *Durable) Close() error {
 	if d.lock == nil {
 		return nil
 	}
-	e := syscall.Flock(int(d.lock.Fd()), syscall.LOCK_UN)
+	if d.timer != nil {
+		d.timer.Stop()
+	}
+	e := error(nil)
+	if d.wal != nil {
+		if d.failed == nil {
+			e = d.flush()
+		}
+		e = errors.Join(e, d.wal.Close())
+		d.wal = nil
+	}
+	e = errors.Join(e, syscall.Flock(int(d.lock.Fd()), syscall.LOCK_UN))
 	e = errors.Join(e, d.lock.Close())
 	d.lock = nil
 	d.failed = errors.New("placement spool closed")

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/bookingcom/nanotube/internal/placement"
 	"github.com/bookingcom/nanotube/internal/v2placement"
@@ -149,7 +150,7 @@ func getDurablePlacementCluster(cl *Cluster, cc conf.Cluster, lg *zap.Logger, ms
 	if len(key) < 32 || len(key) > 4096 {
 		return reject(fmt.Errorf("placement key file must contain 32..4096 bytes"))
 	}
-	r, out, e := placement.OpenDurable(doc, cc.PlacementReplica, v2placement.Lane{Producer: cc.PlacementProducer, Stream: cc.PlacementStream}, cc.PlacementHoldLimit, placement.DurableConfig{Root: cc.PlacementSpool, MaxRecords: cc.PlacementMaxRecords, MaxBytes: cc.PlacementMaxBytes})
+	r, out, e := placement.OpenDurable(doc, cc.PlacementReplica, v2placement.Lane{Producer: cc.PlacementProducer, Stream: cc.PlacementStream}, cc.PlacementHoldLimit, placement.DurableConfig{Root: cc.PlacementSpool, MaxRecords: cc.PlacementMaxRecords, MaxBytes: cc.PlacementMaxBytes, CommitInterval: time.Duration(cc.PlacementCommitMS) * time.Millisecond, CommitBytes: cc.PlacementCommitBytes, SegmentBytes: cc.PlacementSegmentBytes})
 	if e != nil {
 		return reject(e)
 	}
@@ -158,7 +159,7 @@ func getDurablePlacementCluster(cl *Cluster, cc conf.Cluster, lg *zap.Logger, ms
 	cl.placementMetrics = ms.Placement
 	cl.placementRuntime = &placementRuntime{out, key, lg}
 	ms.Placement.Attach(cl.Name, &r.Stats)
-	lg.Warn("experimental durable placement output enabled; synchronous spool requires throughput qualification", zap.String("cluster", cl.Name))
+	lg.Warn("experimental durable placement WAL enabled; throughput qualification required", zap.String("cluster", cl.Name))
 	return cl, nil
 }
 func (cl *Cluster) sendPlacement(wg *sync.WaitGroup, finish chan struct{}) {

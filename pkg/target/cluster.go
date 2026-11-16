@@ -105,6 +105,10 @@ func (cl *Cluster) PushBytesBatch(r *rec.RecBytes, metrics *metrics.Prom, b *Bat
 	// Keep the established switch intact: extending it can change the Go
 	// compiler's string-switch dispatch on the legacy hot paths.
 	if cl.Type == conf.PlacementCluster {
+		if cl.placementRuntime != nil {
+			b.addPlacement(cl.placement, r)
+			return nil
+		}
 		return cl.placement.Push(r)
 	}
 

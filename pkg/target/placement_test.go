@@ -222,7 +222,11 @@ func TestPlacementDurableConfiguredScalarBatchAndRestart(t *testing.T) {
 	if _, drained, e := cl.PlacementDrainStatus(selector.GroupID()); e != nil || drained {
 		t.Fatal("unacknowledged queue appears drained", e)
 	}
-	if e = cl.PushBytesBatch(p, ms, NewBatch()); e != nil {
+	batch := NewBatch()
+	if e = cl.PushBytesBatch(p, ms, batch); e != nil {
+		t.Fatal(e)
+	}
+	if e = batch.Flush(); e != nil {
 		t.Fatal(e)
 	}
 	if e = cl.PushBytes(p, ms); e != placement.ErrHeldFull {

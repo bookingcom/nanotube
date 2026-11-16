@@ -43,7 +43,9 @@ func TestDurableSIGKILLReopensHoldAndUnacked(t *testing.T) {
 			t.Fatal(e)
 		}
 		fmt.Println("SPOOL_READY")
-		select {}
+		for {
+			time.Sleep(time.Hour)
+		}
 	}
 	root := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestDurableSIGKILLReopensHoldAndUnacked$")
@@ -207,7 +209,7 @@ func TestDurableBoundsAndStickySyncFailure(t *testing.T) {
 	root := t.TempDir()
 	r2, d2 := openSpool(t, root, 8)
 	defer d2.Close()
-	if e := os.Mkdir(filepath.Join(root, "state.json.new"), 0700); e != nil {
+	if e := d2.wal.Close(); e != nil {
 		t.Fatal(e)
 	}
 	if e := r2.Push(durableRecord()); e == nil {
@@ -215,9 +217,6 @@ func TestDurableBoundsAndStickySyncFailure(t *testing.T) {
 	}
 	if _, e := r2.BeginMove("anything"); e == nil {
 		t.Fatal("failed spool kept accepting")
-	}
-	if e := os.Remove(filepath.Join(root, "state.json.new")); e != nil {
-		t.Fatal(e)
 	}
 	d2.Close()
 	_, d3 := openSpool(t, root, 8)
