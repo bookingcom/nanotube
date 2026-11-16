@@ -132,7 +132,7 @@ func TestPlacementReloadRetainsGoodMapAndMetersFailures(t *testing.T) {
 	if !found {
 		t.Fatal("missing rejection metric")
 	}
-	if n := testutil.CollectAndCount(ms.Placement); n != 4 {
+	if n := testutil.CollectAndCount(ms.Placement); n != 8 {
 		t.Fatalf("metric count %d", n)
 	}
 }
@@ -177,5 +177,67 @@ func TestPlacementCannotUseStaticTypedHostPlan(t *testing.T) {
 	plans := &TypedRoutes{}
 	if plans.Resolve([]ClusterTarget{cl}, 1) != nil {
 		t.Fatal("placement pinned a static host plan across map reload")
+	}
+}
+
+func TestPlacementDurableConfiguredScalarBatchAndRestart(t *testing.T) {
+	root := t.TempDir()
+	mapPath := filepath.Join(root, "map.json")
+	keyPath := filepath.Join(root, "key")
+	data, e := os.ReadFile("../../internal/v2placement/testdata/map-v1.json")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(mapPath, data, 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(keyPath, []byte("0123456789abcdef0123456789abcdef"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	cc := conf.Cluster{Name: "example", Type: conf.PlacementCluster, PlacementMap: mapPath, PlacementReplica: "site-a", PlacementProducer: "relay-1/inc-1", PlacementStream: "lane-0", PlacementHoldLimit: 2, PlacementSpool: filepath.Join(root, "spool"), PlacementMaxRecords: 2, PlacementMaxBytes: 4 << 20, PlacementKeyFile: keyPath}
+	ms := metrics.New()
+	clusters, e := NewClusters(&conf.Main{}, &conf.Clusters{Cluster: []conf.Cluster{cc}}, zap.NewNop(), ms)
+	if e != nil {
+		t.Fatal(e)
+	}
+	cl := clusters[cc.Name]
+	if cl.placementRuntime == nil || len(cl.Hosts) != 0 {
+		t.Fatal("durable config used legacy host queues")
+	}
+	p := rec.NewTyped([]byte("example.metric"), 1, 100)
+	if e = cl.PushBytes(p, ms); e != nil {
+		t.Fatal(e)
+	}
+	selector, _, e := placementDocument(t).Routing.Select(string(p.Path))
+	if e != nil {
+		t.Fatal(e)
+	}
+	barrier, e := cl.BeginPlacementMove(selector.GroupID())
+	if e != nil {
+		t.Fatal(e)
+	}
+	if barrier.Final != 1 {
+		t.Fatal("wrong persisted final", barrier)
+	}
+	if _, drained, e := cl.PlacementDrainStatus(selector.GroupID()); e != nil || drained {
+		t.Fatal("unacknowledged queue appears drained", e)
+	}
+	if e = cl.PushBytesBatch(p, ms, NewBatch()); e != nil {
+		t.Fatal(e)
+	}
+	if e = cl.PushBytes(p, ms); e != placement.ErrHeldFull {
+		t.Fatal("configured spool not bounded", e)
+	}
+	if e = cl.placementRuntime.output.Close(); e != nil {
+		t.Fatal(e)
+	}
+	clusters, e = NewClusters(&conf.Main{}, &conf.Clusters{Cluster: []conf.Cluster{cc}}, zap.NewNop(), metrics.New())
+	if e != nil {
+		t.Fatal(e)
+	}
+	cl = clusters[cc.Name]
+	defer cl.placementRuntime.output.Close()
+	if cl.placement.Stats.Queued.Load() != 1 || cl.placement.Stats.Pending.Load() != 1 {
+		t.Fatal("configured restart lost old dispatch or held suffix")
 	}
 }

@@ -30,6 +30,7 @@ type Cluster struct {
 	Type             string
 	sticky           *stickyCluster
 	placement        *placement.Router
+	placementRuntime *placementRuntime
 	placementPath    string
 	placementMetrics *metrics.PlacementMetrics
 }
@@ -159,6 +160,10 @@ func (cl *Cluster) resolveHosts(path []byte, ms *metrics.Prom) ([]Target, error)
 // The sending is stopped on demand. Wait-group should be marked as done after
 // finished.
 func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
+	if cl.placementRuntime != nil {
+		cl.sendPlacement(cwg, finish)
+		return
+	}
 	if cl.sticky != nil {
 		go cl.sticky.monitor(finish)
 	}

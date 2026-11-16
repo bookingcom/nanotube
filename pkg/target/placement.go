@@ -1,10 +1,12 @@
 package target
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/bookingcom/nanotube/internal/placement"
 	"github.com/bookingcom/nanotube/internal/v2placement"
@@ -38,7 +40,7 @@ func readPlacement(path string) (v2placement.Document, error) {
 func getPlacementCluster(cl *Cluster, cc conf.Cluster, cfg conf.Main, lg *zap.Logger, ms *metrics.Prom) (*Cluster, error) {
 	reject := func(err error) (*Cluster, error) { ms.Placement.Reject(cl.Name); return cl, err }
 	if !cc.PlacementLegacyWire {
-		return reject(placement.ErrTransport)
+		return getDurablePlacementCluster(cl, cc, lg, ms)
 	}
 	d, err := readPlacement(cc.PlacementMap)
 	if err != nil {
@@ -126,4 +128,80 @@ func (cls Clusters) RejectPlacementRestart() {
 			cl.placementMetrics.Reject(cl.Name)
 		}
 	}
+}
+
+type placementRuntime struct {
+	output *placement.Durable
+	key    []byte
+	log    *zap.Logger
+}
+
+func getDurablePlacementCluster(cl *Cluster, cc conf.Cluster, lg *zap.Logger, ms *metrics.Prom) (*Cluster, error) {
+	reject := func(e error) (*Cluster, error) { ms.Placement.Reject(cl.Name); return cl, e }
+	doc, e := readPlacement(cc.PlacementMap)
+	if e != nil {
+		return reject(e)
+	}
+	key, e := os.ReadFile(cc.PlacementKeyFile)
+	if e != nil {
+		return reject(e)
+	}
+	if len(key) < 32 || len(key) > 4096 {
+		return reject(fmt.Errorf("placement key file must contain 32..4096 bytes"))
+	}
+	r, out, e := placement.OpenDurable(doc, cc.PlacementReplica, v2placement.Lane{Producer: cc.PlacementProducer, Stream: cc.PlacementStream}, cc.PlacementHoldLimit, placement.DurableConfig{Root: cc.PlacementSpool, MaxRecords: cc.PlacementMaxRecords, MaxBytes: cc.PlacementMaxBytes})
+	if e != nil {
+		return reject(e)
+	}
+	cl.placement = r
+	cl.placementPath = cc.PlacementMap
+	cl.placementMetrics = ms.Placement
+	cl.placementRuntime = &placementRuntime{out, key, lg}
+	ms.Placement.Attach(cl.Name, &r.Stats)
+	lg.Warn("experimental durable placement output enabled; synchronous spool requires throughput qualification", zap.String("cluster", cl.Name))
+	return cl, nil
+}
+func (cl *Cluster) sendPlacement(wg *sync.WaitGroup, finish chan struct{}) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-finish:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		defer cancel()
+		runtime := cl.placementRuntime
+		if e := runtime.output.Run(ctx, runtime.key, nil); e != nil {
+			runtime.log.Error("durable placement output stopped", zap.Error(e))
+		}
+		if e := runtime.output.Close(); e != nil {
+			runtime.log.Error("durable placement spool close failed", zap.Error(e))
+		}
+	}()
+}
+
+// BeginPlacementMove persists the PG hold before returning its final position.
+// The controller must obtain durable store fence and coverage receipts before
+// calling AdoptPlacement. Configuration reload alone cannot authorize a move.
+func (cl *Cluster) BeginPlacementMove(group string) (placement.Barrier, error) {
+	if cl.placement == nil {
+		return placement.Barrier{}, fmt.Errorf("cluster has no placement router")
+	}
+	return cl.placement.BeginMove(group)
+}
+func (cl *Cluster) AdoptPlacement(doc v2placement.Document, acts []v2placement.Activation) error {
+	if cl.placement == nil {
+		return fmt.Errorf("cluster has no placement router")
+	}
+	return cl.placement.Adopt(doc, acts)
+}
+
+func (cl *Cluster) PlacementDrainStatus(group string) (placement.Barrier, bool, error) {
+	if cl.placement == nil {
+		return placement.Barrier{}, false, fmt.Errorf("cluster has no placement router")
+	}
+	return cl.placement.DrainStatus(group)
 }

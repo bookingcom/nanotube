@@ -45,8 +45,10 @@ type Sink interface {
 }
 
 type Counters struct {
-	Rejected, Held, Dropped atomic.Uint64
-	Pending                 atomic.Int64
+	Rejected, Held, Dropped                       atomic.Uint64
+	Pending                                       atomic.Int64
+	Queued                                        atomic.Int64
+	OutputErrors, PersistenceErrors, Acknowledged atomic.Uint64
 }
 
 type pending struct {
@@ -80,6 +82,7 @@ type snapshot struct {
 // Router serializes control operations, but each group has an independent
 // dispatch gate. Waiting for one group's ACKs never holds another group's gate.
 type Router struct {
+	durable *Durable
 	control sync.Mutex
 	current atomic.Pointer[snapshot]
 	replica string
@@ -205,6 +208,13 @@ func (r *Router) delivery(s *snapshot, rt *route, record *rec.RecBytes, v uint32
 // Push routes the post-rewrite bytes. Placement batches use this same gate
 // immediately: an old epoch cannot escape later through a staged host batch.
 func (r *Router) Push(record *rec.RecBytes) error {
+	if r.durable != nil {
+		return r.durable.push(record)
+	}
+	return r.push(record)
+}
+
+func (r *Router) push(record *rec.RecBytes) error {
 	if record == nil || len(record.Path) == 0 {
 		return fmt.Errorf("empty placement routing name")
 	}
@@ -255,6 +265,13 @@ type Barrier struct {
 // BeginMove closes dispatch for exactly one group. The caller must obtain its
 // durable ACK through Final, a store fence, and coverage before calling Adopt.
 func (r *Router) BeginMove(group string) (Barrier, error) {
+	if r.durable != nil {
+		return r.durable.beginMove(group)
+	}
+	return r.beginMove(group)
+}
+
+func (r *Router) beginMove(group string) (Barrier, error) {
 	r.control.Lock()
 	defer r.control.Unlock()
 	if !r.sink.Epochs() {
@@ -280,6 +297,13 @@ func (r *Router) BeginMove(group string) (Barrier, error) {
 // Acknowledge accepts only cumulative durable positions from the trusted sink.
 // The sink must authenticate the producer, stream, group and epoch externally.
 func (r *Router) Acknowledge(group string, epoch, sequence uint64) error {
+	if r.durable != nil {
+		return r.durable.acknowledge(group, epoch, sequence)
+	}
+	return r.acknowledge(group, epoch, sequence)
+}
+
+func (r *Router) acknowledge(group string, epoch, sequence uint64) error {
 	r.control.Lock()
 	defer r.control.Unlock()
 	if !r.sink.Epochs() {
@@ -306,6 +330,13 @@ func (r *Router) Acknowledge(group string, epoch, sequence uint64) error {
 // Successful adoption attempts release; a full sink retains held records until
 // RetryHeld succeeds. No socket flush or queue-empty check authorizes adoption.
 func (r *Router) Adopt(d v2placement.Document, activations []v2placement.Activation) (err error) {
+	if r.durable != nil {
+		return r.durable.adopt(d, activations)
+	}
+	return r.adopt(d, activations)
+}
+
+func (r *Router) adopt(d v2placement.Document, activations []v2placement.Activation) (err error) {
 	r.control.Lock()
 	defer r.control.Unlock()
 	defer func() {
@@ -335,14 +366,21 @@ func (r *Router) Adopt(d v2placement.Document, activations []v2placement.Activat
 	for i := range next.routes {
 		n := &next.routes[i]
 		before := &old.routes[old.groups[n.group]]
+		g := n.state
+		g.mu.Lock()
 		if n.replica.Epoch == before.replica.Epoch {
+			if g.moving {
+				g.mu.Unlock()
+				return fmt.Errorf("metadata adoption cannot change a moving group's barrier map")
+			}
+			g.mu.Unlock()
 			continue
 		}
 		if !r.sink.Epochs() {
+			g.mu.Unlock()
 			return ErrTransport
 		}
-		g := n.state
-		g.mu.Lock()
+
 		moving = append(moving, n)
 		if !g.moving || g.releasing || g.acked != g.sent {
 			return fmt.Errorf("group %s has no acknowledged barrier", n.group)
@@ -398,6 +436,13 @@ func (r *Router) release(s *snapshot, rt *route) {
 }
 
 func (r *Router) RetryHeld(group string) error {
+	if r.durable != nil {
+		return r.durable.retryHeld(group)
+	}
+	return r.retryHeld(group)
+}
+
+func (r *Router) retryHeld(group string) error {
 	r.control.Lock()
 	defer r.control.Unlock()
 	s := r.current.Load()
@@ -416,3 +461,31 @@ func (r *Router) RetryHeld(group string) error {
 }
 
 func (r *Router) Revision() uint64 { return r.current.Load().document.Revision }
+
+// DrainStatus is a committed moving-group frontier. A true result means every
+// dispatched old-epoch record has an authenticated durable ACK. It is not a
+// store fence or target coverage receipt.
+func (r *Router) DrainStatus(group string) (Barrier, bool, error) {
+	if r.durable != nil {
+		r.durable.mu.Lock()
+		defer r.durable.mu.Unlock()
+		if r.durable.failed != nil {
+			return Barrier{}, false, r.durable.failed
+		}
+	}
+	r.control.Lock()
+	defer r.control.Unlock()
+	s := r.current.Load()
+	i, ok := s.groups[group]
+	if !ok {
+		return Barrier{}, false, fmt.Errorf("unknown placement group")
+	}
+	rt := &s.routes[i]
+	g := rt.state
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.moving || g.releasing {
+		return Barrier{}, false, fmt.Errorf("group has no old-epoch barrier")
+	}
+	return Barrier{Group: group, MapDigest: s.digest, Revision: s.document.Revision, Epoch: rt.replica.Epoch, Final: g.sent, Lane: r.lane}, g.sent == g.acked, nil
+}

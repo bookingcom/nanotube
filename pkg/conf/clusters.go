@@ -40,11 +40,15 @@ const BlackholeCluster string = "blackhole"
 // Cluster is the config of a single cluster.
 // Cluster type can be toall, jump, lb, or sticky.
 type Cluster struct {
-	PlacementMap       string `toml:"placement_map"`
-	PlacementReplica   string `toml:"placement_replica"`
-	PlacementProducer  string `toml:"placement_producer"`
-	PlacementStream    string `toml:"placement_stream"`
-	PlacementHoldLimit int    `toml:"placement_hold_limit"`
+	PlacementSpool      string `toml:"placement_spool"`
+	PlacementMaxRecords int    `toml:"placement_max_records"`
+	PlacementMaxBytes   int64  `toml:"placement_max_bytes"`
+	PlacementKeyFile    string `toml:"placement_key_file"`
+	PlacementMap        string `toml:"placement_map"`
+	PlacementReplica    string `toml:"placement_replica"`
+	PlacementProducer   string `toml:"placement_producer"`
+	PlacementStream     string `toml:"placement_stream"`
+	PlacementHoldLimit  int    `toml:"placement_hold_limit"`
 	// Explicit bootstrap-only bridge; legacy protocols discard placement stamps.
 	PlacementLegacyWire bool          `toml:"placement_legacy_wire"`
 	Name                string        `toml:"name"`
@@ -176,14 +180,14 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 			if cluster.PlacementMap == "" || cluster.PlacementReplica == "" || cluster.PlacementProducer == "" || cluster.PlacementStream == "" || cluster.PlacementHoldLimit <= 0 {
 				return cls, fmt.Errorf("placement cluster %s requires map, replica, producer, stream and positive hold limit", cluster.Name)
 			}
-			if !cluster.PlacementLegacyWire {
+			if !cluster.PlacementLegacyWire && (cluster.PlacementSpool == "" || cluster.PlacementMaxRecords < 1 || cluster.PlacementMaxBytes < 4096 || cluster.PlacementKeyFile == "") {
 				return cls, fmt.Errorf("placement cluster %s requires an epoch-aware transport; bootstrap-only legacy wire must be explicitly enabled", cluster.Name)
 			}
 		}
 		if cluster.Type == "" {
 			return cls, fmt.Errorf("cluster with index %d does not have a type", idx)
 		}
-		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster {
+		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster && !(cluster.Type == PlacementCluster && !cluster.PlacementLegacyWire) {
 			return cls, fmt.Errorf("cluster with index %d does not have any hosts", idx)
 		}
 		for _, host := range cls.Cluster[idx].Hosts {

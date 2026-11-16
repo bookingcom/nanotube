@@ -135,3 +135,90 @@ barrier ordering, full holds/sinks, old-epoch ACK rejection and allocation count
 `BenchmarkRouting` separates selector cost from the dispatch gate;
 `BenchmarkPlacementCampaignJump` is also run unmodified against the fetched base.
 These microbenchmarks do not establish line-rate CPU or throughput equivalence.
+
+## Authenticated durable output experiment
+
+A placement cluster can select the epoch-aware output instead of the explicit
+legacy bridge. This is an experimental correctness path: the current spool
+fsyncs a bounded complete snapshot per mutation and the store drains its journal
+per frame. It has no batching or line-rate qualification. Keep the ordinary
+`jump` mode for existing configurations until those costs are addressed.
+
+```toml
+[[cluster]]
+name = "example"
+type = "placement"
+placement_map = "/var/lib/relay/placement.json"
+placement_replica = "site-a"
+placement_producer = "relay-a/inc-1"
+placement_stream = "lane-0"
+placement_hold_limit = 1024
+placement_spool = "/var/lib/relay/spool/site-a-lane-0"
+placement_max_records = 16384
+placement_max_bytes = 268435456
+placement_key_file = "/etc/relay/producer.key"
+```
+
+The key file contains 32..4096 raw bytes, including any newline. Provision a
+unique secret per producer incarnation to that relay and its store endpoints;
+protect the file with filesystem permissions. HMAC-SHA256 authenticates the
+complete bounded `V2A1` frame and its exact ACK, including producer/lane, group,
+replica, store incarnation, map digest/revision, epoch, vshard, stream position,
+name, timestamp and IEEE value bits. This protocol provides authentication and
+integrity; use a trusted network or a TLS dial wrapper for confidentiality.
+It uses a dedicated placed store endpoint, without a legacy fallback. Configured
+legacy `hosts` are unused by this output; endpoints come from the canonical map.
+Blackhole stores are rejected by the durable output.
+
+One spool root belongs to one persistent producer/lane/replica and one process.
+The advisory lock prevents overlapping incarnations. A successful Push means
+its immutable numeric payload and original envelope, or its moving-group hold,
+were committed with file and directory fsync. Held and unacknowledged records
+share the total record bound; a full record bound rejects and meters admission.
+The byte bound covers the map, barriers and queued payloads together. Exhausting
+that bound or failing persistence stops this output until restart/reconciliation.
+A checksum detects snapshot corruption. No secret is persisted in the spool.
+
+Each store has an independent worker and connection. Lost sockets, wrong ACKs
+and uncertain acceptance leave the original frame on disk for bounded retries.
+Only an exact authenticated durable ACK advances the per-group/epoch/lane
+frontier and removes that frame. The ACK position and queue removal are synced
+in the same snapshot. Never turn queue emptiness or a socket flush into a fence.
+A process restart requires the configured map, producer/lane and hold limit to
+match the committed spool; advanced revisions are accepted only from that
+existing state. Capacity may be raised without changing identities.
+
+The controller APIs are `Cluster.BeginPlacementMove(group)`,
+`Cluster.PlacementDrainStatus(group)` and `Cluster.AdoptPlacement(doc, receipts)`.
+The first persists the hold before returning its final old-epoch position; the
+second reports whether that position has durable ACK coverage. Wait for every
+producer lane, quiesce the store's placed receiver, then use the store's checked
+fence API and obtain actual target coverage. Adoption validates the canonical
+fence/coverage receipts and atomically persists the new map, epoch reset and
+ordered held suffix. Unacknowledged old-epoch records are retried to the old
+owner until drained; held records are first stamped for the new owner at E+1.
+Unrelated store workers continue while the moving group is held. Metadata-only
+adoption also requires a drained queue, and cannot change an active barrier's
+map identity. Transport inventory changes and SIGUSR2 process replacement remain
+rejected. There is no operational HTTP/controller endpoint in this experiment.
+
+The matching store API is `Store.ReceivePlacedTCP(listener, config, resolver)`
+on the v2 branch of go-carbon. `Config.PlacementKeys` maps authenticated producer
+incarnations to independent secrets. A journaled L2 store accepts raw points;
+L3 requires its canonical policy resolver. One daemon root currently owns one
+PG; a host with several PG roots needs a dispatching PlacedSink. The receiver
+owns producer methods until `Server.Wait` completes. `Store.DurableRelayEnds`
+and `Store.FenceRelayPlacement` then check the complete final census against
+positions recovered from the very same stamped data journal. Store ACKs follow
+catalog and journal sync, and do not independently attest target copy coverage.
+Validated historical map authority permits original journal replay after map
+adoption while live old-map intake remains closed.
+
+`internal/v2wire` and its Python-calculated `testdata/frame-v1.hex` are copied
+byte for byte in both repositories. The ordinary gates include SIGKILL spool
+reopen, lost ACK replay, advanced-map restart, bounded admission, old/new epoch
+ordering, independent stores, store SIGKILL and duplicate/stale rejection. The
+opt-in `TestExternalStoreACK` additionally runs this relay against the store's
+loopback `TestRelayACKSurvivesStoreSIGKILL` helper; both roots must be retained
+when repeating it across a store kill. These are offline correctness receipts,
+not power-loss, throughput, complete move-controller or deployment evidence.
