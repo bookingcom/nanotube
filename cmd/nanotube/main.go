@@ -171,11 +171,6 @@ func main() {
 			continue
 		}
 		if s == syscall.SIGUSR2 {
-			if clusters.HasPlacement() {
-				clusters.RejectPlacementRestart()
-				lg.Error("Process reload rejected: placement restart requires durable producer and epoch state; use SIGHUP for map-only reload")
-				continue
-			}
 			lg.Info("Reload: Got signal for reload. Checking config.")
 			_, _, _, _, _, _, err = readConfigs(cfgPath)
 			if err != nil {

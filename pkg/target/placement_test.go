@@ -33,11 +33,11 @@ func placedTestCluster(t testing.TB) (*Cluster, []*fakeQueued) {
 	for i, id := range []string{"a", "b", "c", "d"} {
 		targets[id] = hosts[i]
 	}
-	r, e := placement.New(placementDocument(t), "site-a", v2placement.Lane{Producer: "relay-1/inc-1", Stream: "lane-0"}, &legacyPlacementSink{targets: targets}, 2)
+	r, e := placement.New(placementDocument(t), "site-a")
 	if e != nil {
 		t.Fatal(e)
 	}
-	return &Cluster{Type: conf.PlacementCluster, placement: r}, hosts
+	return &Cluster{Type: conf.PlacementCluster, placement: r, placementTargets: targets}, hosts
 }
 func TestPlacementScalarAndBatchMatchLegacy(t *testing.T) {
 	for _, batching := range []bool{false, true} {
@@ -80,7 +80,7 @@ func TestPlacementReloadRetainsGoodMapAndMetersFailures(t *testing.T) {
 	ms := metrics.New()
 	cl.Name = "example"
 	cl.placementMetrics = ms.Placement
-	ms.Placement.Attach(cl.Name, &cl.placement.Stats)
+	ms.Placement.Attach(cl.Name, &cl.placement.Stats.Rejected)
 	cl.placementPath = filepath.Join(t.TempDir(), "placement.json")
 	write := func(b []byte) {
 		t.Helper()
@@ -109,11 +109,6 @@ func TestPlacementReloadRetainsGoodMapAndMetersFailures(t *testing.T) {
 	if e := cl.ReloadPlacement(); e == nil {
 		t.Fatal("stale map accepted")
 	}
-	cls := Clusters{cl.Name: cl}
-	if !cls.HasPlacement() {
-		t.Fatal("missing placement restart guard")
-	}
-	cls.RejectPlacementRestart()
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(ms.Placement)
 	metricFamilies, e := registry.Gather()
@@ -124,7 +119,7 @@ func TestPlacementReloadRetainsGoodMapAndMetersFailures(t *testing.T) {
 	for _, family := range metricFamilies {
 		if family.GetName() == "nanotube_placement_reload_rejections_total" {
 			found = true
-			if n := family.Metric[0].Counter.GetValue(); n != 3 {
+			if n := family.Metric[0].Counter.GetValue(); n != 2 {
 				t.Fatalf("rejections %g", n)
 			}
 		}
@@ -132,7 +127,7 @@ func TestPlacementReloadRetainsGoodMapAndMetersFailures(t *testing.T) {
 	if !found {
 		t.Fatal("missing rejection metric")
 	}
-	if n := testutil.CollectAndCount(ms.Placement); n != 8 {
+	if n := testutil.CollectAndCount(ms.Placement); n != 1 {
 		t.Fatalf("metric count %d", n)
 	}
 }
@@ -146,7 +141,7 @@ func TestPlacementConfigBindsExplicitEndpoints(t *testing.T) {
 	if e = os.WriteFile(path, b, 0600); e != nil {
 		t.Fatal(e)
 	}
-	cc := conf.Cluster{Name: "example", Type: conf.PlacementCluster, PlacementMap: path, PlacementReplica: "site-a", PlacementProducer: "relay-1/inc-1", PlacementStream: "lane-0", PlacementHoldLimit: 2, PlacementLegacyWire: true}
+	cc := conf.Cluster{Name: "example", Type: conf.PlacementCluster, PlacementMap: path, PlacementReplica: "site-a"}
 	for _, id := range []string{"d", "b", "a", "c"} {
 		cc.Hosts = append(cc.Hosts, conf.Host{Name: id, Port: 2003})
 	}
@@ -159,17 +154,11 @@ func TestPlacementConfigBindsExplicitEndpoints(t *testing.T) {
 	if e = cl.PushBytes(&rec.RecBytes{Path: []byte("metric.path")}, metrics.New()); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = cl.placement.BeginMove(placementDocument(t).Groups[0].Selector.GroupID()); e != placement.ErrTransport {
-		t.Fatalf("legacy transport permitted move: %v", e)
-	}
 	cc.Hosts = cc.Hosts[:3]
 	if _, e = NewClusters(&conf.Main{HostQueueSize: 16}, &conf.Clusters{Cluster: []conf.Cluster{cc}}, zap.NewNop(), metrics.New()); e == nil {
 		t.Fatal("missing map endpoint accepted")
 	}
-	cc.PlacementLegacyWire = false
-	if _, e = NewClusters(&conf.Main{}, &conf.Clusters{Cluster: []conf.Cluster{cc}}, zap.NewNop(), metrics.New()); e == nil {
-		t.Fatal("implicit legacy downgrade accepted")
-	}
+
 }
 
 func TestPlacementCannotUseStaticTypedHostPlan(t *testing.T) {
@@ -180,68 +169,132 @@ func TestPlacementCannotUseStaticTypedHostPlan(t *testing.T) {
 	}
 }
 
-func TestPlacementDurableConfiguredScalarBatchAndRestart(t *testing.T) {
-	root := t.TempDir()
-	mapPath := filepath.Join(root, "map.json")
-	keyPath := filepath.Join(root, "key")
-	data, e := os.ReadFile("../../internal/v2placement/testdata/map-v1.json")
-	if e != nil {
-		t.Fatal(e)
+// nextMap models the controller's reviewed successor, independent of relay I/O.
+func nextMap(d v2placement.Document) v2placement.Document {
+	data, _ := json.Marshal(d)
+	var n v2placement.Document
+	_ = json.Unmarshal(data, &n)
+	n.Revision++
+	n.Predecessor = d.Digest()
+	n.Operation = fmt.Sprintf("step-%d", n.Revision)
+	return n
+}
+func TestPlacementMovingScalarBatchAndFinalFlip(t *testing.T) {
+	for _, batching := range []bool{false, true} {
+		t.Run(fmt.Sprint(batching), func(t *testing.T) {
+			cl, hosts := placedTestCluster(t)
+			d := placementDocument(t)
+			moving := nextMap(d)
+			moving.Groups[0].Replicas[0].MovingTo = "d"
+			if e := cl.placement.Adopt(moving); e != nil {
+				t.Fatal(e)
+			}
+			records := testRecs(10000)
+			batch := NewBatch()
+			counts := map[string]int{}
+			movingCount := 0
+			for _, r := range records {
+				a, b := cl.placement.Owners(r)
+				counts[a]++
+				if b != "" {
+					counts[b]++
+					movingCount++
+				}
+				var err error
+				if batching {
+					err = cl.PushBytesBatch(r, nil, batch)
+				} else {
+					err = cl.PushBytes(r, nil)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Records already staged retain their selected destinations over a map flip.
+			final := nextMap(moving)
+			rep := &final.Groups[0].Replicas[0]
+			rep.Writer = "d"
+			rep.MovingTo = ""
+			rep.Epoch++
+			rep.Read = append(rep.Read, "d")
+			if e := cl.placement.Adopt(final); e != nil {
+				t.Fatal(e)
+			}
+			batch.Flush()
+			if movingCount == 0 {
+				t.Fatal("no moving records exercised")
+			}
+			total := 0
+			for i, id := range []string{"a", "b", "c", "d"} {
+				if len(hosts[i].got) != counts[id] {
+					t.Fatalf("%s: got %d want %d", id, len(hosts[i].got), counts[id])
+				}
+				total += len(hosts[i].got)
+			}
+			t.Logf("groups=%d input=%d moving=%d deliveries=%d extra=%.4f%%", len(d.Groups), len(records), movingCount, total, 100*float64(movingCount)/float64(len(records)))
+			if total != len(records)+movingCount {
+				t.Fatal("wrong fan-out")
+			}
+			for _, h := range hosts {
+				h.got = nil
+			}
+			for _, r := range records {
+				a, b := cl.placement.Owners(r)
+				if b != "" {
+					t.Fatal("still dual writing")
+				}
+				counts[a] = 0
+				_ = cl.PushBytes(r, nil)
+			}
+			if len(hosts[3].got) != movingCount {
+				t.Fatal("final destination differs")
+			}
+			restarted, e := placement.New(final, "site-a")
+			if e != nil {
+				t.Fatal(e)
+			}
+			for _, r := range records {
+				a, b := cl.placement.Owners(r)
+				c, d := restarted.Owners(r)
+				if a != c || b != d {
+					t.Fatal("restart changed routing")
+				}
+			}
+		})
 	}
-	if e = os.WriteFile(mapPath, data, 0600); e != nil {
-		t.Fatal(e)
-	}
-	if e = os.WriteFile(keyPath, []byte("0123456789abcdef0123456789abcdef"), 0600); e != nil {
-		t.Fatal(e)
-	}
-	cc := conf.Cluster{Name: "example", Type: conf.PlacementCluster, PlacementMap: mapPath, PlacementReplica: "site-a", PlacementProducer: "relay-1/inc-1", PlacementStream: "lane-0", PlacementHoldLimit: 2, PlacementSpool: filepath.Join(root, "spool"), PlacementMaxRecords: 2, PlacementMaxBytes: 4 << 20, PlacementKeyFile: keyPath}
-	ms := metrics.New()
-	clusters, e := NewClusters(&conf.Main{}, &conf.Clusters{Cluster: []conf.Cluster{cc}}, zap.NewNop(), ms)
-	if e != nil {
-		t.Fatal(e)
-	}
-	cl := clusters[cc.Name]
-	if cl.placementRuntime == nil || len(cl.Hosts) != 0 {
-		t.Fatal("durable config used legacy host queues")
-	}
-	p := rec.NewTyped([]byte("example.metric"), 1, 100)
-	if e = cl.PushBytes(p, ms); e != nil {
-		t.Fatal(e)
-	}
-	selector, _, e := placementDocument(t).Routing.Select(string(p.Path))
-	if e != nil {
-		t.Fatal(e)
-	}
-	barrier, e := cl.BeginPlacementMove(selector.GroupID())
-	if e != nil {
-		t.Fatal(e)
-	}
-	if barrier.Final != 1 {
-		t.Fatal("wrong persisted final", barrier)
-	}
-	if _, drained, e := cl.PlacementDrainStatus(selector.GroupID()); e != nil || drained {
-		t.Fatal("unacknowledged queue appears drained", e)
-	}
-	batch := NewBatch()
-	if e = cl.PushBytesBatch(p, ms, batch); e != nil {
-		t.Fatal(e)
-	}
-	if e = batch.Flush(); e != nil {
-		t.Fatal(e)
-	}
-	if e = cl.PushBytes(p, ms); e != placement.ErrHeldFull {
-		t.Fatal("configured spool not bounded", e)
-	}
-	if e = cl.placementRuntime.output.Close(); e != nil {
-		t.Fatal(e)
-	}
-	clusters, e = NewClusters(&conf.Main{}, &conf.Clusters{Cluster: []conf.Cluster{cc}}, zap.NewNop(), metrics.New())
-	if e != nil {
-		t.Fatal(e)
-	}
-	cl = clusters[cc.Name]
-	defer cl.placementRuntime.output.Close()
-	if cl.placement.Stats.Queued.Load() != 1 || cl.placement.Stats.Pending.Load() != 1 {
-		t.Fatal("configured restart lost old dispatch or held suffix")
+}
+func TestPlacementZeroAllocations(t *testing.T) {
+	for _, moving := range []bool{false, true} {
+		d := placementDocument(t)
+		if moving {
+			d = nextMap(d)
+			for i := range d.Groups {
+				d.Groups[i].Replicas[0].MovingTo = "d"
+			}
+		}
+		r, e := placement.New(d, "site-a")
+		if e != nil {
+			t.Fatal(e)
+		}
+		cl := &Cluster{Type: conf.PlacementCluster, placement: r, placementTargets: map[string]Target{}}
+		for _, id := range []string{"a", "b", "c", "d"} {
+			cl.placementTargets[id] = &campaignQueuedTarget{id: nextQueueID()}
+		}
+		record := &rec.RecBytes{Path: []byte("example.metric")}
+		record.PathHash()
+		for _, batching := range []bool{false, true} {
+			batch := NewBatch()
+			n := testing.AllocsPerRun(1000, func() {
+				if batching {
+					_ = cl.PushBytesBatch(record, nil, batch)
+					batch.Flush()
+				} else {
+					_ = cl.PushBytes(record, nil)
+				}
+			})
+			if n != 0 {
+				t.Fatalf("moving=%t batch=%t: %g allocations", moving, batching, n)
+			}
+		}
 	}
 }

@@ -30,6 +30,8 @@ type Requirement struct {
 	Root   string `json:"root"`
 }
 type Replica struct {
+	// MovingTo receives a second copy while Writer remains the donor.
+	MovingTo    string        `json:"moving_to,omitempty"`
 	ID          string        `json:"id"`
 	Epoch       uint64        `json:"write_epoch"`
 	Writer      string        `json:"writer"`
@@ -172,6 +174,12 @@ func (d Document) Validate() error {
 			_, writerExists := stores[r.Writer]
 			if !exists || replicas[r.ID] || r.Epoch == 0 || !writerExists {
 				return fmt.Errorf("invalid writer/epoch")
+			}
+			if r.MovingTo != "" {
+				dest, ok := stores[r.MovingTo]
+				if !ok || dest.Blackhole || stores[r.Writer].Blackhole || r.MovingTo == r.Writer || d.Revision == 1 {
+					return fmt.Errorf("invalid moving destination")
+				}
 			}
 			replicas[r.ID] = true
 			if d.Revision == 1 {

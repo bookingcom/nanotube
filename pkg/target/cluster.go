@@ -30,7 +30,7 @@ type Cluster struct {
 	Type             string
 	sticky           *stickyCluster
 	placement        *placement.Router
-	placementRuntime *placementRuntime
+	placementTargets map[string]Target
 	placementPath    string
 	placementMetrics *metrics.PlacementMetrics
 }
@@ -65,7 +65,14 @@ func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
 	// Keep the established switch intact: extending it can change the Go
 	// compiler's string-switch dispatch on the legacy hot paths.
 	if cl.Type == conf.PlacementCluster {
-		return cl.placement.Push(r)
+		a, b := cl.placement.Owners(r)
+		if h := cl.placementTargets[a]; h != nil {
+			h.Push(r)
+		}
+		if h := cl.placementTargets[b]; h != nil {
+			h.Push(r)
+		}
+		return nil
 	}
 
 	hs, err := cl.resolveHosts(r.Path, metrics)
@@ -105,11 +112,14 @@ func (cl *Cluster) PushBytesBatch(r *rec.RecBytes, metrics *metrics.Prom, b *Bat
 	// Keep the established switch intact: extending it can change the Go
 	// compiler's string-switch dispatch on the legacy hot paths.
 	if cl.Type == conf.PlacementCluster {
-		if cl.placementRuntime != nil {
-			b.addPlacement(cl.placement, r)
-			return nil
+		a, c := cl.placement.Owners(r)
+		if h := cl.placementTargets[a]; h != nil {
+			b.add(h, r)
 		}
-		return cl.placement.Push(r)
+		if h := cl.placementTargets[c]; h != nil {
+			b.add(h, r)
+		}
+		return nil
 	}
 
 	hs, err := cl.resolveHosts(r.Path, metrics)
@@ -164,10 +174,6 @@ func (cl *Cluster) resolveHosts(path []byte, ms *metrics.Prom) ([]Target, error)
 // The sending is stopped on demand. Wait-group should be marked as done after
 // finished.
 func (cl *Cluster) Send(cwg *sync.WaitGroup, finish chan struct{}) {
-	if cl.placementRuntime != nil {
-		cl.sendPlacement(cwg, finish)
-		return
-	}
 	if cl.sticky != nil {
 		go cl.sticky.monitor(finish)
 	}

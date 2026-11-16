@@ -40,26 +40,14 @@ const BlackholeCluster string = "blackhole"
 // Cluster is the config of a single cluster.
 // Cluster type can be toall, jump, lb, or sticky.
 type Cluster struct {
-	PlacementCommitMS     int    `toml:"placement_commit_ms"`
-	PlacementCommitBytes  int    `toml:"placement_commit_bytes"`
-	PlacementSegmentBytes int64  `toml:"placement_segment_bytes"`
-	PlacementSpool        string `toml:"placement_spool"`
-	PlacementMaxRecords   int    `toml:"placement_max_records"`
-	PlacementMaxBytes     int64  `toml:"placement_max_bytes"`
-	PlacementKeyFile      string `toml:"placement_key_file"`
-	PlacementMap          string `toml:"placement_map"`
-	PlacementReplica      string `toml:"placement_replica"`
-	PlacementProducer     string `toml:"placement_producer"`
-	PlacementStream       string `toml:"placement_stream"`
-	PlacementHoldLimit    int    `toml:"placement_hold_limit"`
-	// Explicit bootstrap-only bridge; legacy protocols discard placement stamps.
-	PlacementLegacyWire bool          `toml:"placement_legacy_wire"`
-	Name                string        `toml:"name"`
-	Type                string        `toml:"type"`
-	Hosts               []Host        `toml:"hosts"`
-	Compression         string        `toml:"compression"`
-	Stream              bool          `toml:"stream"`
-	StreamOptions       StreamOptions `toml:"stream_options"`
+	PlacementMap     string        `toml:"placement_map"`
+	PlacementReplica string        `toml:"placement_replica"`
+	Name             string        `toml:"name"`
+	Type             string        `toml:"type"`
+	Hosts            []Host        `toml:"hosts"`
+	Compression      string        `toml:"compression"`
+	Stream           bool          `toml:"stream"`
+	StreamOptions    StreamOptions `toml:"stream_options"`
 }
 
 // Host is the config of a single machine to send metrics to.
@@ -180,20 +168,14 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 			return cls, fmt.Errorf("cluster with index %d does not have a name", idx)
 		}
 		if cluster.Type == PlacementCluster {
-			if cluster.PlacementCommitMS < 0 || cluster.PlacementCommitBytes < 0 || cluster.PlacementSegmentBytes < 0 {
-				return cls, fmt.Errorf("invalid placement WAL bounds")
-			}
-			if cluster.PlacementMap == "" || cluster.PlacementReplica == "" || cluster.PlacementProducer == "" || cluster.PlacementStream == "" || cluster.PlacementHoldLimit <= 0 {
-				return cls, fmt.Errorf("placement cluster %s requires map, replica, producer, stream and positive hold limit", cluster.Name)
-			}
-			if !cluster.PlacementLegacyWire && (cluster.PlacementSpool == "" || cluster.PlacementMaxRecords < 1 || cluster.PlacementMaxBytes < 4096 || cluster.PlacementKeyFile == "") {
-				return cls, fmt.Errorf("placement cluster %s requires an epoch-aware transport; bootstrap-only legacy wire must be explicitly enabled", cluster.Name)
+			if cluster.PlacementMap == "" || cluster.PlacementReplica == "" {
+				return cls, fmt.Errorf("placement cluster %s requires map and replica", cluster.Name)
 			}
 		}
 		if cluster.Type == "" {
 			return cls, fmt.Errorf("cluster with index %d does not have a type", idx)
 		}
-		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster && !(cluster.Type == PlacementCluster && !cluster.PlacementLegacyWire) {
+		if len(cluster.Hosts) == 0 && cluster.Type != BlackholeCluster {
 			return cls, fmt.Errorf("cluster with index %d does not have any hosts", idx)
 		}
 		for _, host := range cls.Cluster[idx].Hosts {

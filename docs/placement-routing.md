@@ -1,43 +1,18 @@
 # Placement routing (experimental)
 
-`type = "placement"` selects the version-one go-carbon placement document for
-one cluster. Other cluster types retain their routing and queue behavior.
+`type = "placement"` opts one cluster into the go-carbon virtual-shard map.
+Existing jump routing and output queues keep their established behavior.
 
-The exact post-parse, post-rewrite path selects a namespace by longest byte
+The exact post-parse, post-rewrite name selects its namespace by longest byte
 prefix, frozen FNV-1a/jump slots for each bootstrap ring length, and the low
-12 bits of CRC32C. The resulting immutable group selects a writer incarnation.
-The host inventory binds that incarnation's explicit `write` endpoint; changing
-host order or discovering an extra host never resizes a bootstrap ring.
+12 bits of CRC32C. That stable identity selects a placement group and replica.
+The map's store IDs bind explicit `write` endpoints from the host inventory;
+reordering hosts does not resize the frozen bootstrap ring.
 
-## Bootstrap compatibility mode
+## Configuration
 
-The current TCP, multi-TCP, binary stream and gRPC outputs do not carry placement
-epochs or durable per-stream ACKs. Using them with placement requires
-an explicit **bootstrap compatibility bridge**. The authenticated durable output
-is described below. It discards the placement envelope
-at the existing host queue boundary and retains that queue's overflow/drop
-semantics. It cannot write to a receiver requiring stamped placement admission.
-Owner changes and moving-group activation are refused on this bridge.
-
-The bridge accepts only map revision one on fresh process startup. In-process SIGHUP adopts a complete
-successor document using predecessor digest, revision +1 and canonical validation.
-Read/source additions can keep write epochs unchanged; ownership/epoch changes
-require activation receipts and an acknowledged transport. Malformed, stale,
-partial or incompatible documents retain the previous snapshot and increment
-`nanotube_placement_reload_rejections_total`; the process also logs the reason.
-The map path is resolved relative to the process working directory. Replace the
-file atomically before sending SIGHUP. Reload is atomic **per cluster**.
-
-SIGUSR2 process replacement is refused while a placement cluster is configured:
-automated producer/epoch handoff between live processes is not implemented.
-SIGHUP does not change rules, rewrites, producer identity, host inventory or other
-configuration. Clusters using the existing routing modes keep their signal and
-restart behavior. Map revisions and write epochs must never be lowered to undo
-a move. Restart/replay is supported only by the durable output described below.
-
-A complete example uses the unmodified golden map in this repository, with four
-explicit inventory endpoints; the second replica in that map is not dispatched
-by this cluster. The bridge is suitable for offline routing comparison only.
+This complete example uses the shared bootstrap fixture. It routes the first
+replica; another cluster can route the second replica independently.
 
 ```toml
 [[cluster]]
@@ -45,10 +20,6 @@ name = "placement-example"
 type = "placement"
 placement_map = "internal/v2placement/testdata/map-v1.json"
 placement_replica = "site-a"
-placement_producer = "relay-1/inc-1"
-placement_stream = "lane-0"
-placement_hold_limit = 1024
-placement_legacy_wire = true
 
 [[cluster.hosts]]
 name = "a"
@@ -64,164 +35,103 @@ name = "d"
 port = 2003
 ```
 
-Host indexes are unused in placement mode. Missing/duplicate configured endpoints
-are errors. Both scalar and batch routing call the current placement gate;
-placement records are not staged as old host destinations in a `target.Batch`.
-The stream input's static jump-only host-plan shortcut rejects placement clusters
-and falls back through this same gate. Existing jump expressions remain intact.
+All non-blackhole stores in the map must have configured hosts, including future
+move destinations. Missing and duplicate endpoints fail construction before any
+connection checks start. Store inventory and endpoints cannot change in a map
+reload; configure them before a move. Ordinary TCP, multi-TCP, binary stream and
+gRPC outputs keep their existing transport and bounded queue/drop behavior.
 
-## Acknowledged transport/control integration seam
+## Moving a group
 
-`internal/placement.Router` compiles the document once, then emits a per-destination
-`Delivery` value containing the record pointer, PG, vshard, replica, store,
-map digest/revision, write epoch, producer lane and sequence. It never mutates the
-shared record to stamp it: replicas can use different epochs for the same record.
-The selector and gate with a non-persisting sink allocate no memory per record.
-The durable output copies numeric payloads and allocates during persistence.
+A replica's optional `moving_to` field names a second store incarnation. The
+`writer` remains the donor. For example, this fragment means dual delivery:
 
-The internal API is tested with both a simulated transport and the authenticated
-durable output below. An operational move-controller endpoint is not supplied:
+```json
+{"id":"site-a","write_epoch":1,"writer":"a","moving_to":"d"}
+```
 
-1. `BeginMove(group)` closes only that group's dispatch gate and returns the old
-   epoch's final accepted sequence. New records enter its bounded hold. The durable
-   output persists this hold; the plain router alone keeps it in memory.
-   A hold overflow is rejected and metered; other groups keep dispatching.
-2. The adapter drains the old lane to **durable** receiver acknowledgements and
-   calls `Acknowledge(group, epoch, sequence)`. Enqueue/write/flush completion and
-   an empty socket or queue are insufficient. Enqueue must be nonblocking and
-   must not call Acknowledge synchronously.
-3. The controller obtains the old owner's fence and new owner's coverage receipts
-   for every producer lane, then calls `Adopt(nextMap, activations)`. The canonical
-   validators check all changed epochs, and this relay also checks that the local
-   lane's final/durable position exactly matches its barrier. Invalid receipts
-   or unacknowledged in-flight records leave the current map and hold intact.
-4. Successful adoption installs one immutable snapshot. Held records receive the
-   new epoch when dispatched, in admission order. A full new sink keeps the held
-   suffix; `RetryHeld(group)` retries without losing or overtaking that suffix.
-   Stale ACKs from the old epoch are rejected.
+This is a fragment of a replica, not a complete placement document. Each record
+selects both destinations from one immutable snapshot. The scalar path pushes
+the same immutable record pointer to both queues; the batch path stages it for
+both hosts and preserves each host's order. Other groups continue with one
+owner. Blackhole donors/destinations, unknown destinations and self-moves are
+rejected. No per-record placement envelopes, sequences, ACKs, disk spool, holds
+or fences are used by this relay.
 
-The map schema deliberately has no `moving` phase field. `BeginMove` is a separate
-control operation; inventing a field in the canonical JSON would break the shared
-contract. A failed fence never implicitly cancels its hold. Transport inventory
-changes are conservatively rejected, including same-epoch endpoint edits.
+The controller owns this sequence:
 
-Hold counters and the pending gauge are exported per cluster:
-`nanotube_placement_held_records_total`,
-`nanotube_placement_dropped_records_total`, and
-`nanotube_placement_pending_records`. Core router counters are atomics collected
-at scrape time, without per-record Prometheus label lookups.
+1. Publish a successor with `writer=A, moving_to=B`. Relays dual-write the group.
+2. A pins a hard-link snapshot of its immutable parts. Copy by checksum to B;
+   B installs copied parts as older than parts built from its live input.
+3. Incrementally copy A's new parts until the delta is small.
+4. Switch reads to B.
+5. Publish the next write map with `writer=B`, `write_epoch=E+1` and no
+   `moving_to`. Wait for every relay to adopt it and drain old output.
+6. Copy one final incremental set from A, preserving copied-part precedence.
+7. Collect A's retained copy later, after the store/controller's safety checks.
 
-The durable output below supplies persisted holds, stable authenticated identities
-and per-stream ACK/replay storage. An operational move still needs controller
-integration, restart reconciliation across all participants and throughput
-qualification before a relay canary.
+This relies on the storage contract that reapplying the same `(name, slot)`
+point is idempotent and rollups are recomputed from slots. The store must enforce
+copied-part precedence. Relay queues may still drop on overflow. A final copy can fill missing slots,
+but cannot repair a dropped same-slot overwrite when B already has an older
+live-written value: copied parts must stay older than B's live parts. Dual writing
+and socket flushes alone do not establish complete target history. Relay drain,
+final copying and store/read readiness belong to the move controller. This
+change supplies routing, not a controller or a store installation protocol.
+
+## Map adoption
+
+Atomically replace the configured map file, then send SIGHUP. The relay validates
+the complete document, exact predecessor digest, revision +1, frozen routing,
+store inventory and monotone write epochs before publishing one atomic pointer
+per cluster. A writer change must promote the previously declared `moving_to`
+and clear that field. An unchanged writer retains its epoch; an active move
+cannot be retargeted directly. Clearing `moving_to` with the same writer cancels
+dual routing. Further moves use successive maps and epochs.
+
+Malformed, stale or incompatible maps retain the active snapshot, log the error
+and increment `nanotube_placement_reload_rejections_total`. SIGHUP changes only
+the placement map. SIGUSR2 uses ordinary process replacement; startup accepts a
+valid current map at any revision. The configuration file is the restart source
+of truth: there is no persisted relay epoch floor, so operators must preserve
+its latest revision. Never restore an old map as rollback.
+
+Selections already in flight or staged in a batch can finish under the old map
+after adoption. SIGHUP success is not a relay-drain certificate. Drain both
+processing and output before the final incremental copy. The stream input's
+static jump-only host-plan shortcut rejects placement clusters and falls back
+to the same scalar/batch routing logic.
 
 ## Contract provenance and verification
 
-`internal/v2placement` is a source copy of the public go-carbon placement v1
-contract, developed in [go-carbon PR 1476](https://github.com/go-graphite/go-carbon/pull/1476).
-Its MIT license is retained in that directory. It is intentionally outside
-`vendor/`; contract updates must preserve fixtures and canonical digests.
-The relay-specific compiler and dispatch/barrier state are in `internal/placement`.
+`internal/v2placement` is an MIT-licensed source copy of the public go-carbon
+placement contract from [PR 1476](https://github.com/go-graphite/go-carbon/pull/1476).
+`moving_to,omitempty` is an additive relay extension awaiting store/controller
+integration; an older strict decoder rejects documents containing it. Coordinate
+that schema adoption before enabling moving maps. When absent, canonical bytes,
+digests and routing vectors remain identical. The historical receipt helpers in
+that contract are unused by relay routing; relay adoption uses topology and
+successor validation plus the dual-owner checks described above.
 
-The unmodified golden fixtures cover frozen 3/4/7-slot tuples, repeated owners,
-alias prefixes, tagged and UTF-8 names, and equal vshards with different legacy
-owners. The decoded canonical `map-v1.json` digest is:
+The unmodified fixtures cover frozen 3/4/7-slot tuples, aliases, repeated owners,
+tagged and UTF-8 names and equal vshards with different legacy owners. Canonical
+`map-v1.json` digest:
 
 ```text
 943319b0cc9be1b2061acf9db29fa03bbbe56d24e51112207b06e723d4988354
 ```
 
-Tests cover scalar/batch legacy equality, the stream shortcut guard, malformed
-and stale reload rejection, detached snapshots, concurrent routing/adoption,
-barrier ordering, full holds/sinks, old-epoch ACK rejection and allocation counts.
-`BenchmarkRouting` separates selector cost from the dispatch gate;
-`BenchmarkPlacementCampaignJump` is also run unmodified against the fetched base.
-These microbenchmarks do not establish line-rate CPU or throughput equivalence.
+Tests cover compiled golden selectors, legacy equality, dual delivery in scalar
+and staged batches, final promotion, restart from the current map, detached
+snapshots, invalid/stale adoption, reload metrics and concurrent routing/adoption.
+`BenchmarkPlacementCampaignOwners` measures single, one-group and all-group dual
+routing with scalar and real batch staging. `scripts/bench_placement_legacy.py`
+pairs the current legacy path with the fetched base in alternating windows.
+These isolate routing CPU and allocations; they do not measure network throughput.
 
-## Authenticated durable output experiment
+Dual-writing a group adds exactly one logical record per input record in that
+group. If its byte-weighted traffic share is f, total logical egress rises from
+B to B(1+f). Compression, fresh stream dictionaries and transport framing affect
+actual NIC bytes. Leave headroom before starting a move on a saturated relay.
 
-A placement cluster can select the epoch-aware output instead of the explicit
-legacy bridge. This is an experimental correctness path: the current spool
-fsyncs a bounded complete snapshot per mutation and the store drains its journal
-per frame. It has no batching or line-rate qualification. Keep the ordinary
-`jump` mode for existing configurations until those costs are addressed.
-
-```toml
-[[cluster]]
-name = "example"
-type = "placement"
-placement_map = "/var/lib/relay/placement.json"
-placement_replica = "site-a"
-placement_producer = "relay-a/inc-1"
-placement_stream = "lane-0"
-placement_hold_limit = 1024
-placement_spool = "/var/lib/relay/spool/site-a-lane-0"
-placement_max_records = 16384
-placement_max_bytes = 268435456
-placement_key_file = "/etc/relay/producer.key"
-```
-
-The key file contains 32..4096 raw bytes, including any newline. Provision a
-unique secret per producer incarnation to that relay and its store endpoints;
-protect the file with filesystem permissions. HMAC-SHA256 authenticates the
-complete bounded `V2A1` frame and its exact ACK, including producer/lane, group,
-replica, store incarnation, map digest/revision, epoch, vshard, stream position,
-name, timestamp and IEEE value bits. This protocol provides authentication and
-integrity; use a trusted network or a TLS dial wrapper for confidentiality.
-It uses a dedicated placed store endpoint, without a legacy fallback. Configured
-legacy `hosts` are unused by this output; endpoints come from the canonical map.
-Blackhole stores are rejected by the durable output.
-
-One spool root belongs to one persistent producer/lane/replica and one process.
-The advisory lock prevents overlapping incarnations. A successful Push means
-its immutable numeric payload and original envelope, or its moving-group hold,
-were committed with file and directory fsync. Held and unacknowledged records
-share the total record bound; a full record bound rejects and meters admission.
-The byte bound covers the map, barriers and queued payloads together. Exhausting
-that bound or failing persistence stops this output until restart/reconciliation.
-A checksum detects snapshot corruption. No secret is persisted in the spool.
-
-Each store has an independent worker and connection. Lost sockets, wrong ACKs
-and uncertain acceptance leave the original frame on disk for bounded retries.
-Only an exact authenticated durable ACK advances the per-group/epoch/lane
-frontier and removes that frame. The ACK position and queue removal are synced
-in the same snapshot. Never turn queue emptiness or a socket flush into a fence.
-A process restart requires the configured map, producer/lane and hold limit to
-match the committed spool; advanced revisions are accepted only from that
-existing state. Capacity may be raised without changing identities.
-
-The controller APIs are `Cluster.BeginPlacementMove(group)`,
-`Cluster.PlacementDrainStatus(group)` and `Cluster.AdoptPlacement(doc, receipts)`.
-The first persists the hold before returning its final old-epoch position; the
-second reports whether that position has durable ACK coverage. Wait for every
-producer lane, quiesce the store's placed receiver, then use the store's checked
-fence API and obtain actual target coverage. Adoption validates the canonical
-fence/coverage receipts and atomically persists the new map, epoch reset and
-ordered held suffix. Unacknowledged old-epoch records are retried to the old
-owner until drained; held records are first stamped for the new owner at E+1.
-Unrelated store workers continue while the moving group is held. Metadata-only
-adoption also requires a drained queue, and cannot change an active barrier's
-map identity. Transport inventory changes and SIGUSR2 process replacement remain
-rejected. There is no operational HTTP/controller endpoint in this experiment.
-
-The matching store API is `Store.ReceivePlacedTCP(listener, config, resolver)`
-on the v2 branch of go-carbon. `Config.PlacementKeys` maps authenticated producer
-incarnations to independent secrets. A journaled L2 store accepts raw points;
-L3 requires its canonical policy resolver. One daemon root currently owns one
-PG; a host with several PG roots needs a dispatching PlacedSink. The receiver
-owns producer methods until `Server.Wait` completes. `Store.DurableRelayEnds`
-and `Store.FenceRelayPlacement` then check the complete final census against
-positions recovered from the very same stamped data journal. Store ACKs follow
-catalog and journal sync, and do not independently attest target copy coverage.
-Validated historical map authority permits original journal replay after map
-adoption while live old-map intake remains closed.
-
-`internal/v2wire` and its Python-calculated `testdata/frame-v1.hex` are copied
-byte for byte in both repositories. The ordinary gates include SIGKILL spool
-reopen, lost ACK replay, advanced-map restart, bounded admission, old/new epoch
-ordering, independent stores, store SIGKILL and duplicate/stale rejection. The
-opt-in `TestExternalStoreACK` additionally runs this relay against the store's
-loopback `TestRelayACKSurvivesStoreSIGKILL` helper; both roots must be retained
-when repeating it across a store kill. These are offline correctness receipts,
-not power-loss, throughput, complete move-controller or deployment evidence.
+Keep this change Draft until the store move protocol and schema support are ready.

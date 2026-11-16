@@ -168,8 +168,5 @@ func procBuf(s [][]byte, rules rules.Rules, rewrites rewrites.Rewrites, shouldNo
 	for _, rec := range s {
 		procBatch(rec, rules, rewrites, shouldNormalize, shouldLog, nowF, lg, metrics, b, cache)
 	}
-	if err := b.Flush(); err != nil {
-		lg.Error("durable placement batch admission failed", zap.Error(err))
-		metrics.ErrorRecs.Inc()
-	}
+	b.Flush()
 }

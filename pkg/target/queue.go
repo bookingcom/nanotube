@@ -1,8 +1,6 @@
 package target
 
 import (
-	"errors"
-	"github.com/bookingcom/nanotube/internal/placement"
 	"sync"
 	"sync/atomic"
 
@@ -206,12 +204,7 @@ type batchRun struct {
 	stop  int
 }
 
-type placedBatch struct {
-	router  *placement.Router
-	records []*rec.RecBytes
-}
 type Batch struct {
-	placed    []placedBatch
 	targets   []queuedTarget
 	recs      [][]*rec.RecBytes
 	points    [][]*streamPoint
@@ -244,24 +237,7 @@ func (b *Batch) add(t Target, r *rec.RecBytes) {
 }
 
 // Flush hands all staged records to their hosts.
-func (b *Batch) addPlacement(r *placement.Router, p *rec.RecBytes) {
-	for i := range b.placed {
-		if b.placed[i].router == r {
-			b.placed[i].records = append(b.placed[i].records, p)
-			return
-		}
-	}
-	b.placed = append(b.placed, placedBatch{router: r, records: []*rec.RecBytes{p}})
-}
-func (b *Batch) Flush() error {
-	var err error
-	for i := range b.placed {
-		x := &b.placed[i]
-		err = errors.Join(err, x.router.PushBatch(x.records))
-		clear(x.records)
-		x.records = x.records[:0]
-	}
-
+func (b *Batch) Flush() {
 	for _, id := range b.used {
 		if len(b.recs[id]) > 0 && len(b.points[id]) > 0 {
 			// Mixed kinds preserve the original single atomic host-queue admission.
@@ -306,7 +282,6 @@ func (b *Batch) Flush() error {
 	clear(b.typed)
 	b.typed = b.typed[:0]
 	b.used = b.used[:0]
-	return err
 }
 
 func (q *recQueue) wakeConsumer(wake bool) {
