@@ -240,3 +240,37 @@ func TestWALKillMidGroup(t *testing.T) {
 		t.Fatal("recovered frontier gap")
 	}
 }
+
+// A crash after checkpoint rename but before old WAL deletion can temporarily
+// retain both durable copies. Recovery must accept the documented headroom.
+func TestWALCheckpointCrashHeadroom(t *testing.T) {
+	root := t.TempDir()
+	r, d := openSpool(t, root, 128)
+	records := make([]*rec.RecBytes, 64)
+	for i := range records {
+		records[i] = durableRecord()
+	}
+	if e := r.PushBatch(records); e != nil {
+		t.Fatal(e)
+	}
+	d.mu.Lock()
+	if e := d.save(); e != nil {
+		t.Fatal(e)
+	}
+	bound := d.snapshotBytes + 1024
+	if d.snapshotBytes+d.walBytes <= bound {
+		t.Fatal("fixture needs overlapping copies")
+	}
+	d.mu.Unlock()
+	if e := d.Close(); e != nil {
+		t.Fatal(e)
+	}
+	_, out, e := OpenDurable(loadFixture(t), "site-a", testLane, 4, DurableConfig{Root: root, MaxRecords: 128, MaxBytes: bound})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer out.Close()
+	if len(out.queue) != 64 || out.queue[63].Sequence != 64 {
+		t.Fatal("checkpoint cleanup crash lost suffix")
+	}
+}

@@ -216,7 +216,7 @@ func (d *Durable) replay(state *diskState) error {
 			return err
 		}
 		total += info.Size()
-		if total > d.cfg.MaxBytes {
+		if total > d.cfg.MaxBytes && total-d.cfg.MaxBytes > d.cfg.MaxBytes {
 			return errors.New("persisted WAL exceeds byte bound")
 		}
 	}
