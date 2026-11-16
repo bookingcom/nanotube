@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"sync"
 
+	"github.com/bookingcom/nanotube/internal/placement"
 	"github.com/bookingcom/nanotube/pkg/conf"
 	"github.com/bookingcom/nanotube/pkg/metrics"
 	"github.com/bookingcom/nanotube/pkg/rec"
@@ -23,11 +24,14 @@ type ClusterTarget interface {
 
 // Cluster represents a set of host with some kind of routing (sharding) defined by it's type.
 type Cluster struct {
-	Name   string
-	Hosts  []Target // ordered by index
-	Hm     sync.RWMutex
-	Type   string
-	sticky *stickyCluster
+	Name             string
+	Hosts            []Target // ordered by index
+	Hm               sync.RWMutex
+	Type             string
+	sticky           *stickyCluster
+	placement        *placement.Router
+	placementPath    string
+	placementMetrics *metrics.PlacementMetrics
 }
 
 func (cl *Cluster) availHostsList() []Target {
@@ -55,6 +59,12 @@ func (cl *Cluster) PushBytes(r *rec.RecBytes, metrics *metrics.Prom) error {
 	case conf.StickyCluster:
 		cl.sticky.route(r).Push(r)
 		return nil
+	}
+
+	// Keep the established switch intact: extending it can change the Go
+	// compiler's string-switch dispatch on the legacy hot paths.
+	if cl.Type == conf.PlacementCluster {
+		return cl.placement.Push(r)
 	}
 
 	hs, err := cl.resolveHosts(r.Path, metrics)
@@ -89,6 +99,12 @@ func (cl *Cluster) PushBytesBatch(r *rec.RecBytes, metrics *metrics.Prom, b *Bat
 	case conf.StickyCluster:
 		b.add(cl.sticky.route(r), r)
 		return nil
+	}
+
+	// Keep the established switch intact: extending it can change the Go
+	// compiler's string-switch dispatch on the legacy hot paths.
+	if cl.Type == conf.PlacementCluster {
+		return cl.placement.Push(r)
 	}
 
 	hs, err := cl.resolveHosts(r.Path, metrics)

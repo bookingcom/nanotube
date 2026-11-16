@@ -148,3 +148,28 @@ func TestClustersInvalidIndices(t *testing.T) {
 		t.Errorf("reading config succeeded, but failure is expected")
 	}
 }
+
+func TestPlacementOptIn(t *testing.T) {
+	const valid = `
+[[cluster]]
+name = "example"
+type = "placement"
+placement_map = "placement.json"
+placement_replica = "site-a"
+placement_producer = "relay-1/inc-1"
+placement_stream = "lane-0"
+placement_hold_limit = 1024
+placement_legacy_wire = true
+[[cluster.hosts]]
+name = "localhost"
+port = 2003
+`
+	if _, err := ReadClustersConfig(strings.NewReader(valid)); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{`placement_map = "placement.json"`, `placement_replica = "site-a"`, `placement_producer = "relay-1/inc-1"`, `placement_stream = "lane-0"`, `placement_hold_limit = 1024`, `placement_legacy_wire = true`} {
+		if _, err := ReadClustersConfig(strings.NewReader(strings.Replace(valid, line, "", 1))); err == nil {
+			t.Fatalf("accepted placement without %s", line)
+		}
+	}
+}

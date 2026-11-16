@@ -112,6 +112,8 @@ func NewClusters(mainCfg *conf.Main, cfg *conf.Clusters, lg *zap.Logger, ms *met
 			Type: cc.Type,
 		}
 		switch cc.Type {
+		case conf.PlacementCluster:
+			cl, err = getPlacementCluster(cl, cc, clusterCfg, lg, ms)
 		case conf.JumpCluster:
 			cl, err = getJumpCluster(cl, cc, clusterCfg, lg, ms)
 		case conf.BlackholeCluster, conf.ToallCluster, conf.LB, conf.StickyCluster:

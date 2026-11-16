@@ -18,6 +18,9 @@ type Clusters struct {
 // fnv1a hasing following by the jump one. Every record is sent to only one host.
 const JumpCluster string = "jump"
 
+// PlacementCluster uses the canonical frozen virtual-shard placement map.
+const PlacementCluster string = "placement"
+
 // LB cluster type distributes incoming datapoints using fnv modulo N, where
 // N  equal no. of available hosts
 // As such, this cluster type keeps the list of available hosts and sends traffic
@@ -37,12 +40,19 @@ const BlackholeCluster string = "blackhole"
 // Cluster is the config of a single cluster.
 // Cluster type can be toall, jump, lb, or sticky.
 type Cluster struct {
-	Name          string        `toml:"name"`
-	Type          string        `toml:"type"`
-	Hosts         []Host        `toml:"hosts"`
-	Compression   string        `toml:"compression"`
-	Stream        bool          `toml:"stream"`
-	StreamOptions StreamOptions `toml:"stream_options"`
+	PlacementMap       string `toml:"placement_map"`
+	PlacementReplica   string `toml:"placement_replica"`
+	PlacementProducer  string `toml:"placement_producer"`
+	PlacementStream    string `toml:"placement_stream"`
+	PlacementHoldLimit int    `toml:"placement_hold_limit"`
+	// Explicit bootstrap-only bridge; legacy protocols discard placement stamps.
+	PlacementLegacyWire bool          `toml:"placement_legacy_wire"`
+	Name                string        `toml:"name"`
+	Type                string        `toml:"type"`
+	Hosts               []Host        `toml:"hosts"`
+	Compression         string        `toml:"compression"`
+	Stream              bool          `toml:"stream"`
+	StreamOptions       StreamOptions `toml:"stream_options"`
 }
 
 // Host is the config of a single machine to send metrics to.
@@ -161,6 +171,14 @@ func ReadClustersConfig(r io.Reader) (Clusters, error) {
 		}
 		if cluster.Name == "" {
 			return cls, fmt.Errorf("cluster with index %d does not have a name", idx)
+		}
+		if cluster.Type == PlacementCluster {
+			if cluster.PlacementMap == "" || cluster.PlacementReplica == "" || cluster.PlacementProducer == "" || cluster.PlacementStream == "" || cluster.PlacementHoldLimit <= 0 {
+				return cls, fmt.Errorf("placement cluster %s requires map, replica, producer, stream and positive hold limit", cluster.Name)
+			}
+			if !cluster.PlacementLegacyWire {
+				return cls, fmt.Errorf("placement cluster %s requires an epoch-aware transport; bootstrap-only legacy wire must be explicitly enabled", cluster.Name)
+			}
 		}
 		if cluster.Type == "" {
 			return cls, fmt.Errorf("cluster with index %d does not have a type", idx)
