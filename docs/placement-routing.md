@@ -12,13 +12,14 @@ host order or discovering an extra host never resizes a bootstrap ring.
 ## Bootstrap compatibility mode
 
 The current TCP, multi-TCP, binary stream and gRPC outputs do not carry placement
-epochs or durable per-stream ACKs. The only configured transport in this Draft is
-an explicit **bootstrap compatibility bridge**. It discards the placement envelope
+epochs or durable per-stream ACKs. Using them with placement requires
+an explicit **bootstrap compatibility bridge**. The authenticated durable output
+is described below. It discards the placement envelope
 at the existing host queue boundary and retains that queue's overflow/drop
 semantics. It cannot write to a receiver requiring stamped placement admission.
 Owner changes and moving-group activation are refused on this bridge.
 
-A fresh process accepts only map revision one. In-process SIGHUP adopts a complete
+The bridge accepts only map revision one on fresh process startup. In-process SIGHUP adopts a complete
 successor document using predecessor digest, revision +1 and canonical validation.
 Read/source additions can keep write epochs unchanged; ownership/epoch changes
 require activation receipts and an acknowledged transport. Malformed, stale,
@@ -28,11 +29,11 @@ The map path is resolved relative to the process working directory. Replace the
 file atomically before sending SIGHUP. Reload is atomic **per cluster**.
 
 SIGUSR2 process replacement is refused while a placement cluster is configured:
-there is no durable relay producer/epoch authority to coordinate a replacement.
+automated producer/epoch handoff between live processes is not implemented.
 SIGHUP does not change rules, rewrites, producer identity, host inventory or other
 configuration. Clusters using the existing routing modes keep their signal and
 restart behavior. Map revisions and write epochs must never be lowered to undo
-a move. This Draft does not implement placement restart/replay.
+a move. Restart/replay is supported only by the durable output described below.
 
 A complete example uses the unmodified golden map in this repository, with four
 explicit inventory endpoints; the second replica in that map is not dispatched
@@ -75,13 +76,15 @@ and falls back through this same gate. Existing jump expressions remain intact.
 `Delivery` value containing the record pointer, PG, vshard, replica, store,
 map digest/revision, write epoch, producer lane and sequence. It never mutates the
 shared record to stamp it: replicas can use different epochs for the same record.
-Steady-state routing and envelope construction allocate no memory per record.
+The selector and gate with a non-persisting sink allocate no memory per record.
+The durable output copies numeric payloads and allocates during persistence.
 
-The internal API is tested with a trusted simulated transport. No network adapter
-or operational move-controller endpoint is supplied:
+The internal API is tested with both a simulated transport and the authenticated
+durable output below. An operational move-controller endpoint is not supplied:
 
 1. `BeginMove(group)` closes only that group's dispatch gate and returns the old
-   epoch's final accepted sequence. New records enter its bounded in-memory hold.
+   epoch's final accepted sequence. New records enter its bounded hold. The durable
+   output persists this hold; the plain router alone keeps it in memory.
    A hold overflow is rejected and metered; other groups keep dispatching.
 2. The adapter drains the old lane to **durable** receiver acknowledgements and
    calls `Acknowledge(group, epoch, sequence)`. Enqueue/write/flush completion and
@@ -108,10 +111,10 @@ Hold counters and the pending gauge are exported per cluster:
 `nanotube_placement_pending_records`. Core router counters are atomics collected
 at scrape time, without per-record Prometheus label lookups.
 
-The first operational move still needs a durable, epoch-aware output queue,
-stable authenticated producer identities, per-stream ACK/replay storage, an
-actual control integration and restart reconciliation. The current hold is not
-durable; process termination loses it. A relay canary must wait for those seams.
+The durable output below supplies persisted holds, stable authenticated identities
+and per-stream ACK/replay storage. An operational move still needs controller
+integration, restart reconciliation across all participants and throughput
+qualification before a relay canary.
 
 ## Contract provenance and verification
 
