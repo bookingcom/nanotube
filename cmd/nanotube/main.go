@@ -125,6 +125,9 @@ func main() {
 	defer stopSignals()
 	sgn := make(chan os.Signal, 1)
 	signal.Notify(sgn, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR2)
+	if clusters.HasPlacement() {
+		signal.Notify(sgn, syscall.SIGHUP)
+	}
 	defer signal.Stop(sgn)
 
 	n := gracenet.Net{}
@@ -159,6 +162,14 @@ func main() {
 	for {
 		s := <-sgn
 
+		if s == syscall.SIGHUP {
+			for name, cluster := range clusters {
+				if err := cluster.ReloadPlacement(); err != nil {
+					lg.Error("Placement reload rejected; current map retained", zap.String("cluster", name), zap.Error(err))
+				}
+			}
+			continue
+		}
 		if s == syscall.SIGUSR2 {
 			lg.Info("Reload: Got signal for reload. Checking config.")
 			_, _, _, _, _, _, err = readConfigs(cfgPath)

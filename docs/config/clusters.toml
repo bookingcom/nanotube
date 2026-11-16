@@ -64,3 +64,6 @@ type = 'sticky'
     [[cluster.hosts]]
     name = 'relay-b.example.net'
     port = 2003
+
+# Experimental placement routing and the bootstrap-only legacy-wire bridge:
+# see ../placement-routing.md for a complete canonical-map example and limits.

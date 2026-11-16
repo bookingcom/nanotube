@@ -11,6 +11,7 @@ import (
 
 // Prom is the set of Prometheus metrics.
 type Prom struct {
+	Placement                                         *PlacementMetrics
 	InputHandoffConnections, InputHandoffFailures     prometheus.Counter
 	streamInputReserved                               atomic.Int64
 	StreamInputActive, StreamInputReservedBytes       prometheus.Gauge
@@ -73,6 +74,7 @@ type Prom struct {
 // This does not include metrics registration.
 func New() *Prom {
 	return &Prom{
+		Placement:                  newPlacementMetrics(),
 		InputHandoffConnections:    prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "input_handoff_connections_total", Help: "Accepted input sockets successfully moved to a successor."}),
 		InputHandoffFailures:       prometheus.NewCounter(prometheus.CounterOpts{Namespace: "nanotube", Name: "input_handoff_failures_total", Help: "Rejected input handoffs or legacy reload fallbacks; see error logs for connections at risk."}),
 		StreamInputActive:          prometheus.NewGauge(prometheus.GaugeOpts{Namespace: "nanotube", Name: "stream_input_active_connections", Help: "Admitted stream readers."}),
@@ -246,6 +248,7 @@ func New() *Prom {
 // Register registers the metrics. It fatally fails and exits if metrics fail to register.
 // Meant to be called from main and fail completely if something goes wrong.
 func Register(m *Prom, cfg *conf.Main) {
+	prometheus.MustRegister(m.Placement)
 	prometheus.MustRegister(m.StickyRecords, m.StickyFailovers, m.StickyUnhealthy)
 	for _, c := range []prometheus.Collector{m.InputHandoffConnections, m.InputHandoffFailures, m.RouteCacheHits, m.RouteCacheMisses, m.RouteCacheEvictions, m.RouteCacheBytes, m.StreamInputActive, m.StreamInputReservedBytes, m.StreamInputResets, m.StreamInputDictionaryNames, m.StreamInputNamesDefined, m.StreamInputDictionaryBytes, m.StreamInputRouteBytes, m.StreamInputSharedNames, m.StreamInputSharedBytes, m.StreamInputConnections, m.StreamInputFrames, m.StreamInputPoints, m.StreamInputErrors, m.StreamInputRouteHits, m.StreamInputRouteMisses} {
 		if err := prometheus.Register(c); err != nil {
