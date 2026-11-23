@@ -304,7 +304,7 @@ github.com/moby/docker-image-spec/specs-go/v1
 # github.com/moby/locker v1.0.1
 ## explicit; go 1.13
 github.com/moby/locker
-# github.com/moby/moby/api v1.56.1
+# github.com/moby/moby/api v1.57.0
 ## explicit; go 1.24
 github.com/moby/moby/api/types
 github.com/moby/moby/api/types/blkiodev
@@ -323,10 +323,11 @@ github.com/moby/moby/api/types/storage
 github.com/moby/moby/api/types/swarm
 github.com/moby/moby/api/types/system
 github.com/moby/moby/api/types/volume
-# github.com/moby/moby/client v0.6.2
+# github.com/moby/moby/client v0.6.3
 ## explicit; go 1.24
 github.com/moby/moby/client
 github.com/moby/moby/client/internal
+github.com/moby/moby/client/internal/httperror
 github.com/moby/moby/client/internal/mod
 github.com/moby/moby/client/internal/timestamp
 github.com/moby/moby/client/pkg/versions
