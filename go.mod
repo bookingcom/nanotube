@@ -12,7 +12,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/klauspost/compress v1.20.2
 	github.com/libp2p/go-reuseport v0.4.0
-	github.com/moby/moby/client v0.6.2
+	github.com/moby/moby/client v0.6.3
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/vishvananda/netns v0.0.5
@@ -72,7 +72,7 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
-	github.com/moby/moby/api v1.56.1 // indirect
+	github.com/moby/moby/api v1.57.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
