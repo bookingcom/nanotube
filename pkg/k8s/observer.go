@@ -29,19 +29,12 @@ func ObserveViaK8sAPI(q chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWind
 
 		tick := time.NewTicker(time.Second * time.Duration(cfg.K8sContainerUpdPeriodSec))
 		defer tick.Stop()
-		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 		ms.K8sCurrentForwardedContainers.Set(0)
 
-		for {
-			<-tick.C
-			time.Sleep(time.Second * time.Duration(rnd.Intn(cfg.K8sObserveJitterRangeSec+1)))
-
-			err := updateWatchedContainers(q, rateLimiters, stop, &contWG, cfg, cs, lg, ms)
-			if err != nil {
-				lg.Error("error updating watched containers", zap.Error(err))
-			}
-		}
+		runObserver(func() error {
+			return updateWatchedContainers(q, rateLimiters, stop, &contWG, cfg, cs, lg, ms)
+		}, tick.C, newObserveJitter(cfg), stop, lg)
 	}()
 
 	go func() {
@@ -60,19 +53,12 @@ func ObserveLocal(q chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, 
 
 		tick := time.NewTicker(time.Second * time.Duration(cfg.K8sContainerUpdPeriodSec))
 		defer tick.Stop()
-		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 		ms.K8sCurrentForwardedContainers.Set(0)
 
-		for {
-			<-tick.C
-			time.Sleep(time.Second * time.Duration(rnd.Intn(cfg.K8sObserveJitterRangeSec+1)))
-
-			err := updateWatchedContainersLocal(q, rateLimiters, stop, &contWG, cfg, cs, lg, ms)
-			if err != nil {
-				lg.Error("error updating watched containers", zap.Error(err))
-			}
-		}
+		runObserver(func() error {
+			return updateWatchedContainersLocal(q, rateLimiters, stop, &contWG, cfg, cs, lg, ms)
+		}, tick.C, newObserveJitter(cfg), stop, lg)
 	}()
 
 	go func() {
@@ -80,6 +66,51 @@ func ObserveLocal(q chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, 
 		contWG.Wait() // ...containers are halted too. Wait for them to finish...
 		wg.Done()     // signal that all containers are done.
 	}()
+}
+
+// runObserver scans for labeled containers once right away, then again on every
+// tick after a random jitter, until stop is closed.
+//
+// The first scan does not wait for a tick or a jitter: a restarted instance must
+// reopen the listeners inside the watched containers as soon as possible, because
+// the containers cannot send anything until it does. The jitter only spreads the
+// periodic rescans of many instances over time. If the first scan fails, the
+// error is logged and the scan is retried on the next tick.
+func runObserver(update func() error, tick <-chan time.Time, jitter func() time.Duration, stop <-chan struct{}, lg *zap.Logger) {
+	if err := update(); err != nil {
+		lg.Error("error updating watched containers on startup, retrying on the next tick", zap.Error(err))
+	}
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-tick:
+		}
+
+		if d := jitter(); d > 0 {
+			t := time.NewTimer(d)
+			select {
+			case <-stop:
+				t.Stop()
+				return
+			case <-t.C:
+			}
+		}
+
+		if err := update(); err != nil {
+			lg.Error("error updating watched containers", zap.Error(err))
+		}
+	}
+}
+
+// newObserveJitter returns a function that picks a random delay of 0 to
+// K8sObserveJitterRangeSec whole seconds for each periodic rescan.
+func newObserveJitter(cfg *conf.Main) func() time.Duration {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return func() time.Duration {
+		return time.Second * time.Duration(rnd.Intn(cfg.K8sObserveJitterRangeSec+1))
+	}
 }
 
 func updateWatchedContainersLocal(q chan<- [][]byte, rateLimiters []*ratelimiter.SlidingWindow, stop <-chan struct{}, wg *sync.WaitGroup, cfg *conf.Main, cs map[string]*Cont, lg *zap.Logger, ms *metrics.Prom) error {
